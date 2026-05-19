@@ -657,7 +657,7 @@ export function ScienceAIPage() {
             <textarea
               ref={textareaRef}
               value={input}
-              placeholder="Ask about water level indicator, rain alarm, Arduino projects..."
+              placeholder="Ask about Products..."
               rows={1}
               wrap="soft"
               onChange={(event) => setInput(event.target.value)}
