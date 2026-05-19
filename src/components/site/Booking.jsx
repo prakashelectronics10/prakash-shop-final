@@ -311,6 +311,15 @@ export function Booking() {
             <p className="mt-4 text-muted-foreground">
               Share your contact details, location, repair type and a photo. The booking time is recorded automatically.
             </p>
+            <div className="mt-5 flex items-start gap-3 rounded-2xl border p-4 text-sm" style={{ backgroundColor: "rgba(250, 31, 31, 0.51)", borderColor: "rgb(251, 57, 36)", color: "#92400e" }}>
+              <span className="inline-flex w-8 items-center justify-center rounded-full text-amber-900" style={{ backgroundColor: "rgba(255, 0, 0, 0.95)", color: "#fff", padding: "6px" }}>
+                <AlertTriangle className="h-4 w-4" />
+              </span>
+              <div>
+                <p className="font-semibold" style={{ color: "#fb7070" }}>Warning</p>
+                <p style={{ color: "white" }}>Enter your valid email address to receive booking confirmation and updates.</p>
+              </div>
+            </div>
             <div className="mt-6 flex items-center gap-3 rounded-2xl glass p-4 text-sm text-muted-foreground">
               <CalendarClock className="h-5 w-5 text-accent" />
               {new Date().toLocaleString("en-IN", {
@@ -355,15 +364,7 @@ export function Booking() {
                     </article>
                   ))}
                 </div>
-                <div className="mt-6 flex items-start gap-3 rounded-2xl border p-4 text-sm" style={{ backgroundColor: "rgba(250, 31, 31, 0.51)", borderColor: "rgb(251, 57, 36)", color: "#92400e" }}>
-              <span className="inline-flex w-8 items-center justify-center rounded-full text-amber-900" style={{ backgroundColor: "rgba(255, 0, 0, 0.95)", color: "#fff", padding: "6px" }}>
-                <AlertTriangle className="h-4 w-4" />
-              </span>
-              <div>
-                <p className="font-semibold" style={{ color: "#ff8d8d" }}>Warning</p>
-                <p style={{ color: "white" }}>Enter your valid email address to receive booking confirmation and updates.</p>
-              </div>
-            </div>
+            
               </div>
             )}
           </aside>
