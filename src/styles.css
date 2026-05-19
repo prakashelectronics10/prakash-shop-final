@@ -1084,7 +1084,7 @@ html {
 .floating-cart-link {
   position: fixed;
   right: 1.2rem;
-  bottom: 5.35rem;
+  bottom: 9.75rem;
   z-index: 90;
   display: inline-flex;
   align-items: center;
@@ -2880,7 +2880,7 @@ html {
 
   .floating-cart-link {
     right: 0.85rem;
-    bottom: 4.85rem;
+    bottom: 8.75rem;
     min-height: 3.25rem;
     padding: 0.62rem 0.85rem 0.62rem 0.62rem;
   }
@@ -4299,6 +4299,13 @@ html {
   .science-ai-page .ai-suggestion-actions span {
     grid-column: 1 / -1;
   }
+}
+
+.science-ai-page .ai-message.ai .ai-bubble.typing {
+  width: fit-content;
+  max-width: fit-content;
+  min-width: 4.25rem;
+  padding-inline: 0.95rem;
 }
 
 /* Production performance and accessibility refinements */
