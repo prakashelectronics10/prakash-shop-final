@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import lottie from "lottie-web";
 
-const CONFETTI_URL = "/Confetti.json";
+const CONFETTI_URL = "/confetti.json";
 const SUCCESS_URL = "/Success.json";
 const SUCCESS_START_DELAY_MS = 1200;
 
