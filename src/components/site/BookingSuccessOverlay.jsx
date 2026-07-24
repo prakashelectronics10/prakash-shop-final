@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import lottie from "lottie-web";
 
-const CONFETTI_URL = "/confetti.json";
+const CONFETTI_URL = "/Confetti.json";
 const SUCCESS_URL = "/Success.json";
-const SUCCESS_START_DELAY_MS = 2200;
+const SUCCESS_START_DELAY_MS = 1200;
 
 async function loadAnimationData(url) {
   const response = await fetch(url, { cache: "force-cache" });
