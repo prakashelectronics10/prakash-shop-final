@@ -1,0 +1,303 @@
+.snap-carousel {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  width: 100%;
+  max-width: 72rem;
+  margin-inline: auto;
+}
+
+.snap-carousel-viewport {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  /* Feather cards into the background — no overlay bands / hard vertical lines */
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent 0%,
+    rgba(0, 0, 0, 0.25) 2%,
+    #000 10%,
+    #000 90%,
+    rgba(0, 0, 0, 0.25) 98%,
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent 0%,
+    rgba(0, 0, 0, 0.25) 2%,
+    #000 10%,
+    #000 90%,
+    rgba(0, 0, 0, 0.25) 98%,
+    transparent 100%
+  );
+  -webkit-mask-size: 100% 100%;
+  mask-size: 100% 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+}
+
+.snap-carousel-track {
+  position: relative;
+  display: flex;
+  width: 100%;
+  gap: 1rem;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  scroll-padding-inline: max(0.75rem, calc((100% - min(20.5rem, 86vw)) / 2));
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  padding-block: 0.5rem;
+  padding-inline: max(0.75rem, calc((100% - min(20.5rem, 86vw)) / 2));
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.snap-carousel-track:active {
+  cursor: grabbing;
+}
+
+.snap-carousel-track::-webkit-scrollbar {
+  display: none;
+}
+
+.snap-carousel-slide {
+  flex: 0 0 min(20.5rem, 86vw);
+  scroll-snap-align: center;
+  scroll-snap-stop: always;
+  min-width: 0;
+  touch-action: pan-x;
+}
+
+.snap-carousel-slide > * {
+  height: 100%;
+  -webkit-user-drag: none;
+}
+
+.snap-carousel-slide img,
+.snap-carousel-slide a {
+  -webkit-user-drag: none;
+  user-select: none;
+}
+
+.snap-carousel-nav {
+  position: relative;
+  z-index: 30;
+  display: inline-flex;
+  width: 3rem;
+  height: 3rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(125, 211, 252, 0.28);
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.04)),
+    rgba(3, 13, 31, 0.78);
+  color: #e2e8f0;
+  box-shadow:
+    0 14px 34px rgba(2, 6, 23, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(16px) saturate(150%);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+  transition:
+    transform 180ms ease,
+    border-color 180ms ease,
+    color 180ms ease,
+    box-shadow 180ms ease,
+    opacity 180ms ease,
+    visibility 180ms ease;
+}
+
+.snap-carousel-nav:hover {
+  transform: scale(1.06);
+  border-color: rgba(103, 232, 249, 0.55);
+  color: #67e8f9;
+}
+
+.snap-carousel-nav:active {
+  transform: scale(0.96);
+}
+
+.snap-carousel-nav:focus-visible {
+  outline: 2px solid rgba(103, 232, 249, 0.7);
+  outline-offset: 3px;
+}
+
+.snap-carousel-nav.is-hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+@media (max-width: 768px) {
+  .snap-carousel {
+    gap: 0;
+  }
+
+  .snap-carousel-viewport {
+    -webkit-mask-image: linear-gradient(
+      to right,
+      transparent 0%,
+      rgba(0, 0, 0, 0.2) 3%,
+      #000 14%,
+      #000 86%,
+      rgba(0, 0, 0, 0.2) 97%,
+      transparent 100%
+    );
+    mask-image: linear-gradient(
+      to right,
+      transparent 0%,
+      rgba(0, 0, 0, 0.2) 3%,
+      #000 14%,
+      #000 86%,
+      rgba(0, 0, 0, 0.2) 97%,
+      transparent 100%
+    );
+  }
+
+  .snap-carousel-nav {
+    position: absolute;
+    top: 50%;
+    width: 2.65rem;
+    height: 2.65rem;
+    transform: translateY(-50%);
+  }
+
+  .snap-carousel-nav-prev {
+    left: 0.15rem;
+  }
+
+  .snap-carousel-nav-next {
+    right: 0.15rem;
+  }
+
+  .snap-carousel-nav:hover {
+    transform: translateY(-50%) scale(1.05);
+  }
+
+  .snap-carousel-nav:active {
+    transform: translateY(-50%) scale(0.96);
+  }
+
+  .snap-carousel-slide {
+    flex-basis: min(18.75rem, 82vw);
+  }
+}
+
+@media (max-width: 480px) {
+  .snap-carousel-slide {
+    flex-basis: min(17.5rem, 86vw);
+  }
+}
+
+/* Section-specific slide sizing */
+.snap-carousel--offers .snap-carousel-slide.is-active .offer-card {
+  border-color: rgba(103, 232, 249, 0.42);
+  box-shadow:
+    0 28px 64px rgba(2, 6, 23, 0.48),
+    0 0 36px rgba(34, 211, 238, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.snap-carousel--services .snap-carousel-slide {
+  flex-basis: min(16.5rem, 78vw);
+  height: clamp(22rem, 70vw, 28rem);
+}
+
+.snap-carousel--services .snap-carousel-track {
+  scroll-padding-inline: max(0.75rem, calc((100% - min(16.5rem, 78vw)) / 2));
+  padding-inline: max(0.75rem, calc((100% - min(16.5rem, 78vw)) / 2));
+}
+
+@media (min-width: 640px) {
+  .snap-carousel--services .snap-carousel-slide {
+    flex-basis: min(18rem, 42vw);
+    height: clamp(26rem, 55vw, 32rem);
+  }
+}
+
+@media (min-width: 1024px) {
+  .snap-carousel--services .snap-carousel-slide {
+    flex-basis: 16.5rem;
+    height: 30rem;
+  }
+
+  .snap-carousel--services .snap-carousel-track {
+    scroll-padding-inline: max(0.75rem, calc((100% - 16.5rem) / 2));
+    padding-inline: max(0.75rem, calc((100% - 16.5rem) / 2));
+  }
+}
+
+.snap-carousel--services .snap-carousel-slide > * {
+  border-radius: 1.25rem;
+  overflow: hidden;
+  border: 1px solid rgba(125, 211, 252, 0.28);
+  box-shadow: 0 18px 44px rgba(2, 6, 23, 0.34);
+}
+
+.snap-carousel--services .snap-carousel-slide.is-active > * {
+  border-color: rgba(103, 232, 249, 0.45);
+  box-shadow:
+    0 24px 56px rgba(2, 6, 23, 0.45),
+    0 0 28px rgba(34, 211, 238, 0.12);
+}
+
+.snap-carousel--featured .snap-carousel-slide {
+  flex-basis: min(20rem, 88vw);
+}
+
+@media (min-width: 640px) {
+  .snap-carousel--featured .snap-carousel-slide {
+    flex-basis: min(22rem, 70vw);
+  }
+}
+
+@media (min-width: 768px) {
+  .snap-carousel--featured .snap-carousel-slide {
+    flex-basis: 23.75rem;
+  }
+}
+
+@media (max-width: 768px) {
+  .snap-carousel-nav {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: rgba(3, 13, 31, 0.92);
+  }
+}
+
+/* Featured repairs glass — works on mobile without overlapping 3D cards */
+.featured-repair-card {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.04)),
+    rgba(8, 18, 40, 0.92);
+  backdrop-filter: blur(14px) saturate(150%);
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
+  border: 1px solid rgba(125, 211, 252, 0.28);
+  min-height: 100%;
+}
+
+@media (min-width: 640px) {
+  .featured-repair-card {
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.03)),
+      rgba(8, 18, 40, 0.82);
+    backdrop-filter: blur(20px) saturate(160%);
+    -webkit-backdrop-filter: blur(20px) saturate(160%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .featured-repair-card {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: rgba(8, 18, 40, 0.96);
+  }
+}
