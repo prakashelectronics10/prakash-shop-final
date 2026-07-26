@@ -1,0 +1,99 @@
+/* Card Fan Carousel — portrait cards, centered, GSAP drives x/y/rot/scale */
+
+.fan-layout {
+  position: relative;
+  height: 38rem;
+  min-height: 22rem;
+  overflow: visible;
+  touch-action: pan-y;
+  isolation: isolate;
+  transform-style: preserve-3d;
+  perspective: 1200px;
+}
+
+.fan-card {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 16.5rem;
+  height: 26rem;
+  margin-top: -13rem;
+  margin-left: -8.25rem;
+  border-radius: 1.35rem;
+  overflow: hidden;
+  border: 1px solid oklch(1 0 0 / 0.12);
+  box-shadow:
+    0 18px 48px -12px oklch(0.05 0.05 270 / 0.55),
+    0 0 0 1px oklch(1 0 0 / 0.04) inset;
+  background: oklch(0.18 0.05 270);
+  will-change: transform, z-index;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  transform: translateZ(0);
+  transform-style: preserve-3d;
+  user-select: none;
+  -webkit-user-drag: none;
+  contain: layout paint style;
+}
+
+.fan-card:focus-visible {
+  outline: 2px solid oklch(0.72 0.18 220 / 0.8);
+  outline-offset: 3px;
+}
+
+@media (max-width: 1023px) {
+  .fan-layout {
+    height: 34rem;
+  }
+  .fan-card {
+    width: 14rem;
+    height: 22rem;
+    margin-top: -11rem;
+    margin-left: -7rem;
+    border-radius: 1.2rem;
+  }
+}
+
+@media (max-width: 767px) {
+  .fan-layout {
+    height: 28rem;
+  }
+  .fan-card {
+    width: 11.5rem;
+    height: 18.5rem;
+    margin-top: -9.25rem;
+    margin-left: -5.75rem;
+    border-radius: 1.1rem;
+  }
+}
+
+@media (max-width: 639px) {
+  .fan-layout {
+    height: 26rem;
+  }
+  .fan-card {
+    width: 10rem;
+    height: 16.5rem;
+    margin-top: -8.25rem;
+    margin-left: -5rem;
+  }
+}
+
+@media (max-width: 479px) {
+  .fan-layout {
+    height: 22rem;
+  }
+  .fan-card {
+    width: 8.75rem;
+    height: 14.25rem;
+    margin-top: -7.125rem;
+    margin-left: -4.375rem;
+    border-radius: 1rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fan-card {
+    transition: none !important;
+  }
+}
