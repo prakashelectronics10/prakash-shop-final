@@ -18,10 +18,12 @@ const CartPage = lazy(() => import('./components/site/CartPage').then((module) =
 const AdminApp = lazy(() => import('./admin/AdminApp'));
 const Offers = lazy(() => import('./components/site/Offers').then((module) => ({ default: module.Offers })));
 const Services = lazy(() => import('./components/site/Services').then((module) => ({ default: module.Services })));
-const Stats = lazy(() => import('./components/site/Stats').then((module) => ({ default: module.Stats })));
+const TrendingProducts = lazy(() => import('./components/site/TrendingProducts').then((module) => ({ default: module.TrendingProducts })));
+const TopProducts = lazy(() => import('./components/site/TopProducts').then((module) => ({ default: module.TopProducts })));
 const Testimonials = lazy(() => import('./components/site/Testimonials').then((module) => ({ default: module.Testimonials })));
 const QuickRouteCards = lazy(() => import('./components/site/QuickRouteCards').then((module) => ({ default: module.QuickRouteCards })));
 const Gallery = lazy(() => import('./components/site/Gallery').then((module) => ({ default: module.Gallery })));
+const GalleryPage = lazy(() => import('./components/site/GalleryPage').then((module) => ({ default: module.GalleryPage })));
 const Carousel3D = lazy(() => import('./components/site/Carousel3D').then((module) => ({ default: module.Carousel3D })));
 const About = lazy(() => import('./components/site/About').then((module) => ({ default: module.About })));
 const Contact = lazy(() => import('./components/site/Contact').then((module) => ({ default: module.Contact })));
@@ -61,6 +63,12 @@ const routeMeta = [
     title: 'Book Electronics Repair in Chitarpur | Prakash Electronics',
     description: 'Book TV repair, fan repair, cooler repairing, AC repairing, speaker repair, home appliances repairing, or electronics product requests with Prakash Electronics and Electricals.',
     keywords: 'home appliances repairing, cooler repairing, AC repairing, TV repair, fan repair, book repair Chitarpur',
+  },
+  {
+    match: (path) => path === '/gallery',
+    title: 'Gallery | Prakash Electronics and Electricals Chitarpur',
+    description: 'Browse workshop photos, repair work, electronics products, and shop moments from Prakash Electronics and Electricals in Chitarpur, Ramgarh.',
+    keywords: 'Prakash Electronics gallery, repair photos, electronics shop gallery Chitarpur, workshop photos',
   },
   {
     match: (path) => path === '/cart',
@@ -294,6 +302,16 @@ function App() {
     );
   }
 
+  if (window.location.pathname === '/gallery' || params.get('page') === 'gallery') {
+    return (
+      <PublicShell>
+        <LazyScreen>
+          <GalleryPage />
+        </LazyScreen>
+      </PublicShell>
+    );
+  }
+
   if (window.location.pathname === '/cart' || params.get('page') === 'cart') {
     return (
       <PublicShell>
@@ -367,12 +385,13 @@ function App() {
         <main>
           <DeferredSection anchorId="offers" minHeight={420}><Offers sectionId="" /></DeferredSection>
           <DeferredSection anchorId="services" minHeight={420}><Services sectionId="" /></DeferredSection>
-          <DeferredSection anchorId="stats" minHeight={240}><Stats sectionId="" /></DeferredSection>
-          <DeferredSection anchorId="testimonials" minHeight={420}><Testimonials sectionId="" /></DeferredSection>
+          <DeferredSection anchorId="trending" minHeight={320}><TrendingProducts sectionId="" /></DeferredSection>
+          <DeferredSection anchorId="top-products" minHeight={320}><TopProducts sectionId="" /></DeferredSection>
           <DeferredSection minHeight={280}><QuickRouteCards /></DeferredSection>
           <DeferredSection anchorId="gallery" minHeight={420}><Gallery sectionId="" /></DeferredSection>
           <DeferredSection anchorId="featured-repairs" minHeight={420}><Carousel3D sectionId="" /></DeferredSection>
           <DeferredSection anchorId="about" minHeight={420}><About sectionId="" /></DeferredSection>
+          <DeferredSection anchorId="testimonials" minHeight={420}><Testimonials sectionId="" /></DeferredSection>
           <DeferredSection anchorId="contact" minHeight={420}><Contact sectionId="" /></DeferredSection>
         </main>
         <Suspense fallback={null}>
