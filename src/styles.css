@@ -6115,6 +6115,11 @@ footer {
   );
 }
 
+.gallery-marquee-stack {
+  display: grid;
+  gap: 0.85rem;
+}
+
 .gallery-marquee-track {
   display: flex;
   width: max-content;
@@ -6123,7 +6128,12 @@ footer {
   padding-inline: 1rem;
   will-change: transform;
   transform: translate3d(0, 0, 0);
+  backface-visibility: hidden;
   animation: galleryMarqueeScroll var(--gallery-marquee-duration) linear infinite;
+}
+
+.gallery-marquee-track--ltr {
+  animation-name: galleryMarqueeScrollReverse;
 }
 
 .gallery-marquee-track.is-paused {
@@ -6134,6 +6144,8 @@ footer {
   flex: 0 0 min(15rem, 72vw);
   width: min(15rem, 72vw);
   height: clamp(11.5rem, 42vw, 17rem);
+  content-visibility: auto;
+  contain-intrinsic-size: 240px 280px;
 }
 
 @keyframes galleryMarqueeScroll {
@@ -6145,7 +6157,20 @@ footer {
   }
 }
 
+@keyframes galleryMarqueeScrollReverse {
+  from {
+    transform: translate3d(var(--gallery-loop-span), 0, 0);
+  }
+  to {
+    transform: translate3d(0, 0, 0);
+  }
+}
+
 @media (min-width: 640px) {
+  .gallery-marquee-stack {
+    gap: 1rem;
+  }
+
   .gallery-marquee-track {
     gap: 1rem;
   }
@@ -6154,6 +6179,7 @@ footer {
     flex-basis: 16.5rem;
     width: 16.5rem;
     height: 18rem;
+    contain-intrinsic-size: 264px 288px;
   }
 }
 
@@ -6164,7 +6190,8 @@ footer {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .gallery-marquee-track {
+  .gallery-marquee-track,
+  .gallery-marquee-track--ltr {
     animation: none;
     overflow-x: auto;
     max-width: 100%;
@@ -6175,6 +6202,7 @@ footer {
 
   .gallery-marquee-card {
     scroll-snap-align: center;
+    content-visibility: visible;
   }
 }
 
