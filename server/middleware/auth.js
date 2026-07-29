@@ -23,6 +23,7 @@ const allPermissions = [
   "autoSliderBanners",
   "projectParts",
   "projectSliders",
+  "brandsSlider",
   "about",
   "footer",
   "webSettings",
