@@ -49,6 +49,7 @@ const adminPermission = z.enum([
   "shopProducts",
   "projectParts",
   "projectSliders",
+  "brandsSlider",
   "about",
   "footer",
   "webSettings",
