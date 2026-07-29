@@ -25,6 +25,7 @@ const { publicRouter, analyticsRouter } = require("./routes/publicRoutes");
 const projectPartRoutes = require("./routes/projectPartRoutes");
 const scienceAIRoutes = require("./routes/scienceAIRoutes");
 const shopProductRoutes = require("./routes/shopProductRoutes");
+const brandSliderRoutes = require("./routes/brandSliderRoutes");
 const { getAppSettings, updateAppLogo, updateProfileImage } = require("./controllers/mobileController");
 const { upload } = require("./controllers/uploadController");
 const { getSitePayload, getHtmlShellSiteMeta } = require("./services/siteService");
@@ -139,6 +140,7 @@ app.use("/api/invoices", requireAdmin, invoiceRoutes);
 app.use("/api/admin", requireAdmin, adminRoutes);
 app.use("/api/project-parts", projectPartRoutes);
 app.use("/api/shop-products", shopProductRoutes);
+app.use("/api/brand-sliders", brandSliderRoutes);
 app.use("/api/science-ai", scienceAIRoutes);
 
 app.get(["/science-ai", "/science-ai/"], (_req, res) => {
