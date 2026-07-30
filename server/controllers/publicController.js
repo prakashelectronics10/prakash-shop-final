@@ -13,7 +13,6 @@ const { enqueueEmail, isEmailConfigured } = require("../services/email");
 const { renderContactAdminEmail } = require("../services/email/templates/contactTemplate");
 const { notifyReviewCreated } = require("../services/mobileNotificationService");
 const { validateEmailDeliverability } = require("../utils/validateEmail");
-const { suggestAddresses, validateAddress } = require("../utils/validateAddress");
 
 const SCIENCE_PROJECTS_CATEGORY = "Wiring Accessories";
 const LEGACY_SCIENCE_PROJECTS_CATEGORY = "Science Projects and Parts";
@@ -289,39 +288,6 @@ const validateBookingEmail = asyncHandler(async (req, res) => {
   });
 });
 
-const suggestBookingAddresses = asyncHandler(async (req, res) => {
-  const query = String(req.body.query || req.body.address || req.query.q || "").trim();
-  const result = await suggestAddresses(query, 6);
-  res.json({
-    success: true,
-    suggestions: result.suggestions || [],
-    message: result.message || "",
-  });
-});
-
-const validateBookingAddress = asyncHandler(async (req, res) => {
-  const address = String(req.body.address || req.body.query || "").trim();
-  const result = await validateAddress(address);
-  if (!result.valid) {
-    res.status(400).json({
-      success: false,
-      valid: false,
-      message: result.reason || "Invalid location / address",
-      suggestions: result.suggestions || [],
-    });
-    return;
-  }
-
-  res.json({
-    success: true,
-    valid: true,
-    message: result.reason || "Location verified",
-    address: result.address,
-    place: result.place || null,
-    suggestions: result.suggestions || [],
-  });
-});
-
 const createBooking = asyncHandler(async (req, res) => {
   const bookingProducts = parseBookingProducts(req.body.products || req.body.cartProducts);
   const productSummary = summarizeProducts(bookingProducts);
@@ -344,12 +310,7 @@ const createBooking = asyncHandler(async (req, res) => {
   const pincode = String(req.body.pincode || "").replace(/\D/g, "");
   if (!/^\d{6}$/.test(pincode)) throw new AppError("Pincode must be exactly 6 digits", 400);
   const landmark = safeString(req.body.landmark, 200);
-
-  const addressCheck = await validateAddress(String(req.body.address || "").trim());
-  if (!addressCheck.valid) {
-    throw new AppError(addressCheck.reason || "Please enter a real, verifiable location / address", 400);
-  }
-  const verifiedAddress = addressCheck.address || String(req.body.address || "").trim();
+  const address = safeString(req.body.address, 500);
 
   await validateBookingStock(bookingProducts);
 
@@ -403,7 +364,7 @@ const createBooking = asyncHandler(async (req, res) => {
     customerEmail: emailCheck.email || customerEmail,
     phoneNumber,
     whatsappNumber,
-    address: verifiedAddress,
+    address,
     pincode,
     landmark,
     repairType: req.body.repairType,
@@ -434,6 +395,4 @@ module.exports = {
   getSite,
   trackFormSubmit,
   validateBookingEmail,
-  validateBookingAddress,
-  suggestBookingAddresses,
 };
