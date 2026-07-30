@@ -105,8 +105,12 @@ export function Footer() {
           <div className="md:col-span-1">
             <div className="flex items-center gap-2">
               <img
-                src="/logo512.png"
+                src="/logo-72.webp"
                 alt="Brand logo"
+                width="36"
+                height="36"
+                loading="lazy"
+                decoding="async"
                 className="h-9 w-9 rounded-xl object-cover shadow-[0_0_8px_#036DFE]"
               />
               <span className="font-display text-lg font-bold">
@@ -123,7 +127,14 @@ export function Footer() {
             <h3 className="font-display text-sm font-semibold uppercase tracking-wider">Contact</h3>
             <ul className="mt-4 space-y-2 text-sm text-muted-foreground">
               {contact?.phone && <li>{contact.phone}</li>}
-              {contact?.email && <li>{contact.email}</li>}
+              {contact?.email && (
+                <li>
+                  <a href={`mailto:$support@prakashshop.in`} className="hover:underline">
+                    support@prakashshop.in
+                  </a>
+                </li>
+              )}
+         
               {contact?.shortAddress && <li>{contact.shortAddress}</li>}
             </ul>
             {googleMapEmbedUrl && (

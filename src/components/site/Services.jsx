@@ -25,9 +25,10 @@ function ServiceFanCard({ card, loadImages = true, priority = false }) {
           <OptimizedImage
             src={card.imgUrl}
             alt={card.alt || card.title}
-            width={360}
-            height={560}
-            sizes="(min-width: 1024px) 264px, (min-width: 768px) 224px, 78vw"
+            width={528}
+            height={960}
+            crop
+            sizes="(min-width: 1024px) 264px, (min-width: 640px) 288px, 78vw"
             className="h-full w-full object-cover"
             loading={priority ? "eager" : "lazy"}
             fetchPriority={priority ? "high" : "low"}

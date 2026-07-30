@@ -711,6 +711,7 @@ export function AIChatInput({
             className={`pulse-ai-mode-chip ${thinkActive ? "on" : ""}`}
             title="Think: step-by-step reasoning before the final answer"
             type="button"
+            aria-label="Think"
             aria-pressed={thinkActive}
             onClick={(event) => {
               event.stopPropagation();
@@ -719,13 +720,14 @@ export function AIChatInput({
             }}
           >
             <Lightbulb size={16} />
-            Think
+            <span className="pulse-ai-mode-label">Think</span>
           </button>
 
           <button
             className={`pulse-ai-mode-chip deep ${deepSearchActive ? "on" : ""}`}
             title="Deep Research: compare more products, services, and offers"
             type="button"
+            aria-label="Deep Research"
             aria-pressed={deepSearchActive}
             onClick={(event) => {
               event.stopPropagation();
@@ -734,7 +736,7 @@ export function AIChatInput({
             }}
           >
             <Globe size={16} />
-            Deep Research
+            <span className="pulse-ai-mode-label">Deep Research</span>
           </button>
 
           {(thinkActive || deepSearchActive) && (

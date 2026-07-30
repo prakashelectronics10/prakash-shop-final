@@ -94,6 +94,57 @@
   }
 }
 
+/* Homepage promo banner below Trending Products (440×98, no shadow) */
+.trending-promo-banner {
+  padding-block: clamp(0.35rem, 1.5vw, 0.85rem);
+}
+
+.trending-promo-banner__frame {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 440 / 98;
+  overflow: hidden;
+  border-radius: clamp(12px, 1.6vw, 18px);
+  background: oklch(0.2 0.03 265 / 0.35);
+  box-shadow: none;
+}
+
+.trending-promo-banner__track {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  transition: transform 0.45s ease;
+  will-change: transform;
+}
+
+.trending-promo-banner__slide {
+  position: relative;
+  flex: 0 0 100%;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.trending-promo-banner__link {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+}
+
+.trending-promo-banner__image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .trending-promo-banner__track {
+    transition: none;
+  }
+}
+
 @media (max-width: 768px) {
   html { scroll-behavior: auto; }
   .glass,
@@ -180,6 +231,7 @@
 html {
   scrollbar-width: thin;
   scrollbar-color: oklch(0.65 0.22 265 / 0.8) oklch(0.14 0.04 270 / 0.4);
+  scrollbar-gutter: stable;
 }
 
 ::-webkit-scrollbar {
@@ -721,17 +773,18 @@ html {
   width: 100%;
   max-width: 280px;
   min-height: 430px;
-  background: rgba(255, 255, 255, 0.06);
-  backdrop-filter: blur(18px);
+  background: rgba(15, 23, 42, 0.9);
   box-shadow: 0 20px 45px rgba(0, 0, 0, 0.22);
   transition: border-color 250ms ease;
   content-visibility: auto;
-  contain-intrinsic-size: 420px;
+  contain-intrinsic-size: auto 440px;
+  contain: layout paint style;
 }
 
 .shop-product-card {
   max-width: none;
   min-height: 440px;
+  contain-intrinsic-size: auto 440px;
 }
 
 @media (hover: hover) {
@@ -2589,7 +2642,61 @@ html {
   background: rgba(255, 255, 255, 0.08);
 }
 
-/* Compact Lottie loading / empty states — content-area only, never full-page */
+/* CSS-only loading state matching product-card skeletons. */
+.site-loading-skeleton {
+  display: grid;
+  justify-items: center;
+  gap: 0.75rem;
+  width: min(100%, 18rem);
+  min-height: 10rem;
+  margin: 1.5rem auto 0.75rem;
+  padding: 0.75rem;
+  text-align: center;
+  pointer-events: none;
+}
+
+.site-loading-skeleton-card {
+  display: grid;
+  gap: 0.65rem;
+  width: min(100%, 14rem);
+  padding: 0.65rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 18px;
+  background: rgba(15, 23, 42, 0.72);
+}
+
+.site-loading-skeleton-media,
+.site-loading-skeleton-line {
+  display: block;
+  overflow: hidden;
+  border-radius: 10px;
+  background: linear-gradient(110deg, rgba(30, 41, 59, 0.82) 20%, rgba(56, 189, 248, 0.14) 45%, rgba(30, 41, 59, 0.82) 70%);
+  background-size: 200% 100%;
+  animation: trendingSkeletonShine 1.4s linear infinite;
+}
+
+.site-loading-skeleton-media {
+  aspect-ratio: 4 / 3;
+}
+
+.site-loading-skeleton-line {
+  width: 68%;
+  height: 0.65rem;
+}
+
+.site-loading-skeleton-line--wide {
+  width: 92%;
+}
+
+.site-loading-skeleton--section {
+  margin-block: 2rem;
+}
+
+.site-loading-skeleton--detail {
+  margin-block: 2rem 1rem;
+}
+
+/* Lottie is retained only for empty-result artwork, never for loading. */
 .site-state-lottie {
   display: flex;
   flex-direction: column;
@@ -2686,6 +2793,11 @@ html {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .site-loading-skeleton-media,
+  .site-loading-skeleton-line {
+    animation: none;
+  }
+
   .site-state-lottie-placeholder {
     animation: none;
   }
@@ -4031,6 +4143,7 @@ html {
     max-width: none;
     min-height: 0;
     border-radius: 14px;
+    contain-intrinsic-size: auto 280px;
   }
 
   .part-card-body {
@@ -6592,15 +6705,27 @@ footer {
   margin-top: 2rem;
 }
 
+.catalog-grid-sentinel {
+  width: 100%;
+  height: 48px;
+  pointer-events: none;
+}
+
 .catalog-product-skeleton {
   width: 100%;
-  min-height: 320px;
+  min-height: 440px;
   border-radius: 18px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   background:
     linear-gradient(110deg, rgba(15, 23, 42, 0.7) 20%, rgba(56, 189, 248, 0.1) 45%, rgba(15, 23, 42, 0.7) 70%);
   background-size: 200% 100%;
   animation: trendingSkeletonShine 1.4s linear infinite;
+}
+
+@media (max-width: 760px) {
+  .catalog-product-skeleton {
+    min-height: 280px;
+  }
 }
 
 .showcase-products-grid > .showcase-product-card:nth-child(n + 5),
@@ -6862,6 +6987,10 @@ footer {
 
 .product-price-display--card .product-price-selling {
   font-size: 0.95rem;
+}
+
+.product-price-display--card .product-price-discount {
+  font-size: 0.85rem;
 }
 
 .product-price-display--detail .product-price-selling {

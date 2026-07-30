@@ -1,11 +1,12 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowLeft, Bot, Check, Filter, PackageSearch, Search, ShoppingBag, ShoppingCart, Tag, X, Zap } from "lucide-react";
+import { ArrowLeft, Check, Filter, PackageSearch, Search, ShoppingBag, ShoppingCart, Tag, X, Zap } from "lucide-react";
 import { apiRequest } from "../../api/client";
 import { SCIENCE_PROJECTS_CATEGORY, cartStockMessage, getCartStockLimit, useCart } from "../../context/CartContext";
 import { useSwipeNavigation } from "../../hooks/useSwipeNavigation";
 import { Navbar } from "./Navbar";
 import { Footer } from "./Footer";
+import { CatalogFloatingActions } from "./CatalogFloatingActions";
 import { OptimizedImage } from "./OptimizedImage";
 import { ProductShareButton } from "./ProductShareButton";
 import { ProductPriceDisplay } from "./ProductPriceDisplay";
@@ -72,6 +73,7 @@ const WiringPartCard = memo(function WiringPartCard({ part, onAddToCart, cartQua
               fetchPriority={eager ? "high" : undefined}
               width={280}
               height={210}
+              crop
               sizes="(min-width: 1024px) 25vw, (min-width: 760px) 50vw, 46vw"
             />
           ) : <PackageSearch size={48} />}
@@ -85,11 +87,11 @@ const WiringPartCard = memo(function WiringPartCard({ part, onAddToCart, cartQua
           <h3>{part.name}</h3>
           <div className="part-tags" />
           <p>{part.shortDescription || part.description || "Wiring accessory available in shop."}</p>
-          <small className="stock-limit-text">{cartStockMessage(part)}</small>
+          
         </div>
       </a>
       <div className="part-card-foot cart-card-foot">
-        <ProductPriceDisplay product={part} size="card" />
+        <ProductPriceDisplay product={part} size="card" showDiscountBadge />
         <div className="product-card-actions">
           <button
             className={`cart-icon-button ${cartQuantity ? "added" : ""}`}
@@ -270,13 +272,30 @@ export function ProjectsPartsPage() {
   useEffect(() => {
     if (!filterOpen) return undefined;
     const previousOverflow = document.body.style.overflow;
+    const previousPosition = document.body.style.position;
+    const previousTop = document.body.style.top;
+    const previousLeft = document.body.style.left;
+    const previousRight = document.body.style.right;
+    const previousWidth = document.body.style.width;
+    const scrollY = window.scrollY;
     document.body.style.overflow = "hidden";
+    document.body.style.position = "fixed";
+    document.body.style.top = `-${scrollY}px`;
+    document.body.style.left = "0";
+    document.body.style.right = "0";
+    document.body.style.width = "100%";
     const onKeyDown = (event) => {
       if (event.key === "Escape") closeFilters();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => {
       document.body.style.overflow = previousOverflow;
+      document.body.style.position = previousPosition;
+      document.body.style.top = previousTop;
+      document.body.style.left = previousLeft;
+      document.body.style.right = previousRight;
+      document.body.style.width = previousWidth;
+      window.scrollTo(0, scrollY);
       window.removeEventListener("keydown", onKeyDown);
     };
   }, [closeFilters, filterOpen]);
@@ -541,16 +560,13 @@ export function ProjectsPartsPage() {
                   />
                 ))}
               </div>
-              {hasMoreParts ? <div ref={partsGridSentinelRef} aria-hidden="true" style={{ height: 1 }} /> : null}
+              {hasMoreParts ? <div ref={partsGridSentinelRef} className="catalog-grid-sentinel" aria-hidden="true" /> : null}
             </>
           )}
         </section>
       </main>
       {filterSheet}
-      <a className="science-ai-float" href="/pulse-ai" aria-label="Open Pulse AI">
-        <Bot size={24} />
-        <span>Pulse AI</span>
-      </a>
+      <CatalogFloatingActions />
       <Footer />
     </div>
   );
@@ -645,7 +661,7 @@ export function ProjectPartDetailPage() {
           </a>
         </div>
 
-        {loading && <LoadingState message="Loading product details..." className="site-state-lottie--detail" />}
+        {loading && <LoadingState message="Loading product details..." className="site-loading-skeleton--detail" />}
         {error && !loading && <div className="parts-state">{error}</div>}
 
         {part && !loading && (
@@ -722,10 +738,7 @@ export function ProjectPartDetailPage() {
           <RelatedProductsSection product={part} sourceType="project-part" limit={8} />
         ) : null}
       </main>
-      <a className="science-ai-float" href="/pulse-ai" aria-label="Open Pulse AI">
-        <Bot size={24} />
-        <span>Pulse AI</span>
-      </a>
+      <CatalogFloatingActions />
       <Footer />
     </div>
   );

@@ -5,16 +5,20 @@ export function OptimizedImage({
   alt,
   width,
   height,
-  sizes = "100vw",
+  sizes,
   loading = "lazy",
   decoding = "async",
   fetchPriority,
+  crop = false,
   className,
   ...props
 }) {
   const displayWidth = Number(width) > 0 ? Number(width) : 1200;
-  const optimizedSrc = getOptimizedImageUrl(src, { width: displayWidth });
-  const sources = getResponsiveImageSources(src, { width: displayWidth });
+  const resolvedSizes = sizes
+    || (displayWidth > 0 && displayWidth <= 480 ? `${displayWidth}px` : "100vw");
+  const imageOptions = { width: displayWidth, height, crop };
+  const optimizedSrc = getOptimizedImageUrl(src, imageOptions);
+  const sources = getResponsiveImageSources(src, imageOptions);
   const isPriority = fetchPriority === "high";
 
   if (!optimizedSrc) return null;
@@ -25,7 +29,7 @@ export function OptimizedImage({
       alt={alt || ""}
       width={width}
       height={height}
-      sizes={sources ? sizes : undefined}
+      sizes={sources ? resolvedSizes : undefined}
       loading={isPriority ? "eager" : loading}
       decoding={decoding}
       fetchPriority={fetchPriority}
@@ -38,8 +42,8 @@ export function OptimizedImage({
 
   return (
     <picture>
-      {sources.avif ? <source type="image/avif" srcSet={sources.avif} sizes={sizes} /> : null}
-      {sources.webp ? <source type="image/webp" srcSet={sources.webp} sizes={sizes} /> : null}
+      {sources.avif ? <source type="image/avif" srcSet={sources.avif} sizes={resolvedSizes} /> : null}
+      {sources.webp ? <source type="image/webp" srcSet={sources.webp} sizes={resolvedSizes} /> : null}
       {image}
     </picture>
   );

@@ -26,6 +26,7 @@ function OfferCard({ offer, eager }) {
             loading={eager ? "eager" : "lazy"}
             width={480}
             height={270}
+            crop
             sizes="(min-width: 1024px) 340px, (min-width: 640px) 300px, 86vw"
           />
         ) : (

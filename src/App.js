@@ -19,6 +19,7 @@ const AdminApp = lazy(() => import('./admin/AdminApp'));
 const Offers = lazy(() => import('./components/site/Offers').then((module) => ({ default: module.Offers })));
 const Services = lazy(() => import('./components/site/Services').then((module) => ({ default: module.Services })));
 const TrendingProducts = lazy(() => import('./components/site/TrendingProducts').then((module) => ({ default: module.TrendingProducts })));
+const TrendingBannerSlider = lazy(() => import('./components/site/TrendingBannerSlider').then((module) => ({ default: module.TrendingBannerSlider })));
 const TopProducts = lazy(() => import('./components/site/TopProducts').then((module) => ({ default: module.TopProducts })));
 const Testimonials = lazy(() => import('./components/site/Testimonials').then((module) => ({ default: module.Testimonials })));
 const QuickRouteCards = lazy(() => import('./components/site/QuickRouteCards').then((module) => ({ default: module.QuickRouteCards })));
@@ -390,6 +391,7 @@ function App() {
           <DeferredSection anchorId="offers" minHeight={420}><Offers sectionId="" /></DeferredSection>
           <DeferredSection anchorId="services" minHeight={420}><Services sectionId="" /></DeferredSection>
           <DeferredSection anchorId="trending" minHeight={320}><TrendingProducts sectionId="" /></DeferredSection>
+          <DeferredSection minHeight={140}><TrendingBannerSlider /></DeferredSection>
           <DeferredSection anchorId="top-products" minHeight={320}><TopProducts sectionId="" /></DeferredSection>
           <DeferredSection minHeight={280}><QuickRouteCards /></DeferredSection>
           <DeferredSection anchorId="gallery" minHeight={420}><Gallery sectionId="" /></DeferredSection>

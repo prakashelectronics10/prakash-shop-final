@@ -64,6 +64,7 @@ const sectionCards = [
   { key: "featuredRepairs", label: "Featured Repairs", note: "Highlighted repair cards" },
   { key: "shopProducts", label: "Shop Products", note: "Public product shop catalog" },
   { key: "autoSliderBanners", label: "AutoSlider Banner", note: "Hero banners and allowed products" },
+  { key: "trendingBanners", label: "Trending Banner", note: "Homepage banner below Trending Products (440×98)" },
   { key: "projectParts", label: "Wiring Accessories", note: "Wiring products catalog with brands" },
   { key: "projectSliders", label: "Wiring Accessories Slider", note: "Public page carousel images" },
   { key: "brandsSlider", label: "Brands Slider", note: "Homepage brand logo marquee" },
@@ -359,6 +360,7 @@ function App() {
     projectSliders: [],
     brandsSlider: [],
     autoSlider: { banners: [], products: [] },
+    trendingBanners: [],
     webSettings: null,
   });
 
@@ -398,6 +400,7 @@ function App() {
     const canShopProducts = canAccessSection(currentAdmin, "shopProducts");
     const canWebSettings = canAccessSection(currentAdmin, "webSettings");
     const canAutoSlider = canAccessSection(currentAdmin, "autoSliderBanners") || canShopProducts;
+    const canTrendingBanners = canAccessSection(currentAdmin, "trendingBanners");
     const canNotificationEmails = canAccessSection(currentAdmin, "notificationEmails");
 
     const [
@@ -416,6 +419,7 @@ function App() {
       brandsSlider,
       webSettings,
       autoSlider,
+      trendingBanners,
     ] = await Promise.all([
       apiFetch("/admin/dashboard"),
       canAccessSection(currentAdmin, "admins") ? apiFetch("/admin/admins") : Promise.resolve({ data: [] }),
@@ -432,6 +436,7 @@ function App() {
       canBrandsSlider ? apiFetch("/brand-sliders/admin") : Promise.resolve({ data: [] }),
       canWebSettings ? apiFetch("/admin/web-settings") : Promise.resolve({ data: null }),
       canAutoSlider ? apiFetch("/admin/auto-slider-banners") : Promise.resolve({ data: { banners: [], products: [] } }),
+      canTrendingBanners ? apiFetch("/admin/trending-banners") : Promise.resolve({ data: [] }),
     ]);
 
     setData({
@@ -450,6 +455,7 @@ function App() {
       brandsSlider: brandsSlider.data || [],
       webSettings: webSettings.data,
       autoSlider: autoSlider.data || { banners: [], products: [] },
+      trendingBanners: trendingBanners.data || [],
     });
   };
 
@@ -700,6 +706,9 @@ function App() {
         )}
         {active === "autoSliderBanners" && (
           <AutoSliderBannerManager banners={data.autoSlider.banners} products={data.autoSlider.products} runAction={runAction} busy={busy} />
+        )}
+        {active === "trendingBanners" && (
+          <TrendingBannerManager banners={data.trendingBanners} runAction={runAction} busy={busy} />
         )}
         {active === "projectSliders" && (
           <ProjectSlidersManager sliders={data.projectSliders} runAction={runAction} busy={busy} />
@@ -2812,6 +2821,115 @@ function AutoSliderBannerManager({ banners, products, runAction, busy }) {
       })}
     </section>
   </div>;
+}
+
+function TrendingBannerManager({ banners, runAction, busy }) {
+  const empty = { imageUrl: "", title: "", alt: "", link: "", displayOrder: 0, isActive: true };
+  const [form, setForm] = useState(empty);
+  const [editingId, setEditingId] = useState("");
+  const reset = () => { setEditingId(""); setForm(empty); };
+  const save = () => runAction(async () => {
+    await apiFetch(editingId ? `/admin/trending-banners/${editingId}` : "/admin/trending-banners", {
+      method: editingId ? "PUT" : "POST",
+      body: JSON.stringify({
+        ...form,
+        link: String(form.link || "").trim(),
+        displayOrder: Number(form.displayOrder || 0),
+      }),
+    });
+    reset();
+  }, editingId ? "Trending banner updated" : "Trending banner added");
+  const edit = (banner) => {
+    setEditingId(banner._id || banner.id);
+    setForm({
+      imageUrl: banner.imageUrl || "",
+      title: banner.title || "",
+      alt: banner.alt || "",
+      link: banner.link || "",
+      displayOrder: banner.displayOrder || 0,
+      isActive: banner.isActive !== false,
+    });
+  };
+  const remove = (banner) => runAction(async () => {
+    if (!window.confirm(`Delete ${banner.title || "this trending banner"}?`)) return false;
+    await apiFetch(`/admin/trending-banners/${banner._id || banner.id}`, { method: "DELETE" });
+  }, "Trending banner deleted");
+
+  return (
+    <div className="manager-grid">
+      <section className="editor glass-panel">
+        <h2>{editingId ? "Edit Trending Banner" : "Add Trending Banner"}</h2>
+        <p className="muted">
+          These banners appear on the homepage just below Trending Products. Upload images in a <strong>440 × 98</strong> aspect ratio.
+          One active image stays static; multiple active images slide automatically. Add an optional click link for each banner.
+        </p>
+        <ImageField value={form.imageUrl} onChange={(imageUrl) => setForm({ ...form, imageUrl })} />
+        {form.imageUrl ? (
+          <div
+            style={{
+              marginTop: "0.75rem",
+              width: "100%",
+              maxWidth: 440,
+              aspectRatio: "440 / 98",
+              overflow: "hidden",
+              borderRadius: 12,
+              border: "1px solid rgba(148, 163, 184, 0.35)",
+              background: "rgba(15, 23, 42, 0.35)",
+            }}
+          >
+            <img
+              src={form.imageUrl}
+              alt={form.alt || form.title || "Trending banner preview"}
+              style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+            />
+          </div>
+        ) : null}
+        <div className="two-col">
+          <Input label="Banner Title" value={form.title} onChange={(title) => setForm({ ...form, title })} />
+          <Input label="Image alt text" value={form.alt} onChange={(alt) => setForm({ ...form, alt })} />
+        </div>
+        <Input
+          label="Click Link (optional)"
+          value={form.link}
+          onChange={(link) => setForm({ ...form, link })}
+          placeholder="/products or https://..."
+        />
+        <p className="muted" style={{ marginTop: "-0.35rem" }}>
+          When a visitor taps this banner, they open this link. Leave blank for a non-clickable banner.
+        </p>
+        <div className="two-col">
+          <Input label="Display Order" type="number" value={form.displayOrder} onChange={(displayOrder) => setForm({ ...form, displayOrder })} />
+          <Toggle label="Enabled on homepage" checked={form.isActive} onChange={(isActive) => setForm({ ...form, isActive })} />
+        </div>
+        <div className="button-row">
+          <button className="primary-button" disabled={busy || !form.imageUrl} onClick={save}>
+            {busy ? "Saving..." : editingId ? "Update Banner" : "Add Banner"}
+          </button>
+          {editingId ? <button className="ghost-button" type="button" onClick={reset}>Cancel</button> : null}
+        </div>
+      </section>
+      <section className="list-panel glass-panel">
+        <h2>Trending Banners</h2>
+        {!banners.length && <p className="muted">No trending banners yet. Add one to show it below Trending Products.</p>}
+        {banners.map((banner) => (
+          <div className="list-item" key={banner._id || banner.id}>
+            <img className="thumb" src={banner.imageUrl} alt={banner.alt || banner.title || "Trending banner"} />
+            <div>
+              <strong>{banner.title || "Untitled banner"}</strong>
+              <span>
+                Order {banner.displayOrder || 0} · {banner.isActive ? "Enabled" : "Disabled"}
+                {banner.link ? ` · Link: ${banner.link}` : ""}
+              </span>
+            </div>
+            <div className="button-row">
+              <button type="button" onClick={() => edit(banner)}>Edit</button>
+              <button className="danger" type="button" onClick={() => remove(banner)}>Delete</button>
+            </div>
+          </div>
+        ))}
+      </section>
+    </div>
+  );
 }
 
 function ProjectSlidersManager({ sliders, runAction, busy }) {

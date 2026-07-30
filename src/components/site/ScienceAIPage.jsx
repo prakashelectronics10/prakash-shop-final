@@ -894,7 +894,7 @@ function SuggestionCards({ suggestions }) {
         {availableSuggestions.map((item) => (
           <article className="ai-suggestion-card" key={`${item.name}-${item.component}`}>
             <div className="ai-suggestion-image">
-              {item.imageUrl ? <OptimizedImage src={item.imageUrl} alt={item.name} width={180} height={140} /> : <PackageSearch size={34} />}
+              {item.imageUrl ? <OptimizedImage src={item.imageUrl} alt={item.name} width={180} height={140} sizes="180px" loading="lazy" /> : <PackageSearch size={34} />}
             </div>
             <div className="ai-suggestion-content">
               <div className="ai-suggestion-meta">

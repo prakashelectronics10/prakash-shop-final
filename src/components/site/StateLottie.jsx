@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { LottieSvgAnimation } from "./LottieSvgAnimation";
 
-const LOADING_SRC = "/loading.json";
 const BLANK_SRC = "/blank.json";
 
 const animationCache = new Map();
@@ -82,16 +81,22 @@ function StateLottieShell({ variant, src, title, message, className = "" }) {
   );
 }
 
-/** Compact loading animation for product grids, sections, and detail panels. */
+/** Lightweight CSS-only loading state; avoids fetching/rendering Lottie while content loads. */
 export function LoadingState({ message = "Loading...", className = "" }) {
   return (
-    <StateLottieShell
-      variant="loading"
-      src={LOADING_SRC}
-      title="Loading"
-      message={message}
-      className={className}
-    />
+    <div
+      className={`site-loading-skeleton ${className}`.trim()}
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+    >
+      <div className="site-loading-skeleton-card" aria-hidden="true">
+        <span className="site-loading-skeleton-media" />
+        <span className="site-loading-skeleton-line site-loading-skeleton-line--wide" />
+        <span className="site-loading-skeleton-line" />
+      </div>
+      {message ? <p className="site-state-lottie-message">{message}</p> : null}
+    </div>
   );
 }
 

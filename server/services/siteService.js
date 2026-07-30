@@ -148,6 +148,7 @@ function getFallbackSitePayload() {
     content: normalizeContentPayload(siteContent),
     webSettings: normalizeSettings(null),
     heroSlider: [],
+    trendingBanners: [],
     isFallback: true,
   };
 }
@@ -180,7 +181,7 @@ async function getSitePayload() {
         .lean(),
       SiteContent.find({}).lean(),
       WebSetting.findOne({ key: "global" }).lean(),
-      AutoSliderBanner.find({ isActive: true }).select("imageUrl title alt link displayOrder").sort({ displayOrder: 1, createdAt: -1 }).lean(),
+      AutoSliderBanner.find({ isActive: true }).select("imageUrl title alt link displayOrder placement").sort({ displayOrder: 1, createdAt: -1 }).lean(),
       ShopProduct.find({ isActive: true, showInHeroSlider: true }).select("name slug imageUrl shortDescription displayOrder").sort({ displayOrder: 1, name: 1 }).lean(),
     ]);
   } catch (error) {
@@ -197,6 +198,19 @@ async function getSitePayload() {
       }, {})
     : siteContent;
 
+  const mapBanner = (banner) => ({
+    id: String(banner._id),
+    imageUrl: banner.imageUrl,
+    title: banner.title,
+    alt: banner.alt || banner.title,
+    link: String(banner.link || "").trim(),
+    displayOrder: banner.displayOrder,
+    source: "banner",
+  });
+
+  const heroBannerDocs = bannerDocs.filter((banner) => banner.placement !== "belowTrending");
+  const trendingBannerDocs = bannerDocs.filter((banner) => banner.placement === "belowTrending");
+
   const payload = {
     hero: heroDoc || hero,
     contact: normalizePublicContact(contactDoc || contact),
@@ -206,15 +220,7 @@ async function getSitePayload() {
     content: normalizeContentPayload(content),
     webSettings: normalizeSettings(webSettingsDoc),
     heroSlider: [
-      ...bannerDocs.map((banner) => ({
-        id: String(banner._id),
-        imageUrl: banner.imageUrl,
-        title: banner.title,
-        alt: banner.alt || banner.title,
-        link: String(banner.link || "").trim(),
-        displayOrder: banner.displayOrder,
-        source: "banner",
-      })),
+      ...heroBannerDocs.map(mapBanner),
       ...heroProductDocs.filter((product) => product.imageUrl).map((product) => {
         const productId = String(product.slug || product._id || "").trim();
         return {
@@ -229,6 +235,7 @@ async function getSitePayload() {
         };
       }),
     ],
+    trendingBanners: trendingBannerDocs.map(mapBanner),
     isFallback: !contentDocs.length,
   };
 

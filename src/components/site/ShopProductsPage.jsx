@@ -1,11 +1,12 @@
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowLeft, Bot, Check, Filter, PackageSearch, Search, ShoppingBag, ShoppingCart, Tag, X } from "lucide-react";
+import { ArrowLeft, Check, Filter, PackageSearch, Search, ShoppingBag, ShoppingCart, Tag, X } from "lucide-react";
 import { apiRequest } from "../../api/client";
 import { SCIENCE_PROJECTS_CATEGORY, isWiringAccessoriesCategory, cartStockMessage, getCartStockLimit, useCart } from "../../context/CartContext";
 import { Navbar } from "./Navbar";
 import { CANONICAL_WIRING_PARTS_PATH } from "../../utils/routes";
 import { Footer } from "./Footer";
+import { CatalogFloatingActions } from "./CatalogFloatingActions";
 import { OptimizedImage } from "./OptimizedImage";
 import { ProductShareButton } from "./ProductShareButton";
 import { ProductPriceDisplay } from "./ProductPriceDisplay";
@@ -60,6 +61,7 @@ const ProductCard = memo(function ProductCard({ product, onAddToCart, cartQuanti
               fetchPriority={eager ? "high" : undefined}
               width={280}
               height={210}
+              crop
               sizes="(min-width: 1024px) 25vw, (min-width: 760px) 50vw, 46vw"
             />
           ) : <PackageSearch size={48} />}
@@ -72,7 +74,7 @@ const ProductCard = memo(function ProductCard({ product, onAddToCart, cartQuanti
         </div>
       </a>
       <div className="part-card-foot cart-card-foot">
-        <ProductPriceDisplay product={product} size="card" />
+        <ProductPriceDisplay product={product} size="card" showDiscountBadge />
         <div className="product-card-actions">
           <a href={detailUrl}>.</a>
           <button
@@ -183,7 +185,7 @@ export function ShopProductsPage() {
   }, [highestPrice, maxPrice]);
 
   const filteredProducts = useMemo(() => {
-    const ceiling = Number(maxPrice);
+    const ceiling = maxPrice === "" ? Number.POSITIVE_INFINITY : Number(maxPrice);
     return products.filter((product) => {
       const matchesSearch = productMatchesSearch(product, debouncedSearch);
       const matchesCategory = !category || product.category === category;
@@ -215,13 +217,30 @@ export function ShopProductsPage() {
   useEffect(() => {
     if (!filterOpen) return undefined;
     const previousOverflow = document.body.style.overflow;
+    const previousPosition = document.body.style.position;
+    const previousTop = document.body.style.top;
+    const previousLeft = document.body.style.left;
+    const previousRight = document.body.style.right;
+    const previousWidth = document.body.style.width;
+    const scrollY = window.scrollY;
     document.body.style.overflow = "hidden";
+    document.body.style.position = "fixed";
+    document.body.style.top = `-${scrollY}px`;
+    document.body.style.left = "0";
+    document.body.style.right = "0";
+    document.body.style.width = "100%";
     const onKeyDown = (event) => {
       if (event.key === "Escape") closeFilters();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => {
       document.body.style.overflow = previousOverflow;
+      document.body.style.position = previousPosition;
+      document.body.style.top = previousTop;
+      document.body.style.left = previousLeft;
+      document.body.style.right = previousRight;
+      document.body.style.width = previousWidth;
+      window.scrollTo(0, scrollY);
       window.removeEventListener("keydown", onKeyDown);
     };
   }, [closeFilters, filterOpen]);
@@ -407,16 +426,13 @@ export function ShopProductsPage() {
                   />
                 ))}
               </div>
-              {hasMoreProducts ? <div ref={productGridSentinelRef} aria-hidden="true" style={{ height: 1 }} /> : null}
+              {hasMoreProducts ? <div ref={productGridSentinelRef} className="catalog-grid-sentinel" aria-hidden="true" /> : null}
             </>
           )}
         </section>
       </main>
       {filterSheet}
-      <a className="science-ai-float" href="/pulse-ai" aria-label="Open Pulse AI">
-        <Bot size={24} />
-        <span>Pulse AI</span>
-      </a>
+      <CatalogFloatingActions />
       <Footer />
     </div>
   );
@@ -521,7 +537,7 @@ export function ProductDetailPage() {
             <span>Back to {source === "shop" ? "products" : "wiring accessories"}</span>
           </a>
         </div>
-        {loading && <LoadingState message="Loading product details..." className="site-state-lottie--detail" />}
+        {loading && <LoadingState message="Loading product details..." className="site-loading-skeleton--detail" />}
         {error && !loading && <div className="parts-state">{error}</div>}
 
         {product && !loading && (
@@ -645,6 +661,7 @@ export function ProductDetailPage() {
           />
         ) : null}
       </main>
+      <CatalogFloatingActions />
       <Footer />
     </div>
   );

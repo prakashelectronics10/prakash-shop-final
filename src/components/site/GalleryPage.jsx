@@ -64,6 +64,7 @@ export function GalleryPage() {
                       decoding="async"
                       width={480}
                       height={480}
+                      crop
                       sizes="(min-width: 768px) 25vw, 50vw"
                       className="gallery-tile-image h-full w-full object-cover"
                     />

@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react";
-import { CalendarClock, ShoppingBag, Trash2, UploadCloud, X, AlertTriangle, MapPin, CheckCircle2 } from "lucide-react";
+import { CalendarClock, ShoppingBag, Trash2, UploadCloud, X, AlertTriangle } from "lucide-react";
 import { apiRequest } from "../../api/client";
 import { cartItemToBookingProduct, cartStockMessage, getCartStockLimit, useCart } from "../../context/CartContext";
 import { Navbar } from "./Navbar";
@@ -77,46 +77,16 @@ export function Booking() {
   const [previews, setPreviews] = useState([]);
   const [status, setStatus] = useState("");
   const [emailCheck, setEmailCheck] = useState({ status: "idle", message: "" });
-  const [addressCheck, setAddressCheck] = useState({
-    status: "idle",
-    message: "",
-    suggestions: [],
-    verifiedAddress: "",
-  });
   const [busy, setBusy] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [selectedProducts, setSelectedProducts] = useState([]);
   const [showSuccessAnimation, setShowSuccessAnimation] = useState(false);
   const fileInputRef = useRef(null);
   const selectionLoadedRef = useRef(false);
-  const addressVerifiedRef = useRef("");
 
   const update = (key, value) => setForm((current) => ({ ...current, [key]: value }));
   const updateDigits = (key, value) => update(key, value.replace(/\D/g, "").slice(0, 10));
   const updatePincode = (value) => update("pincode", value.replace(/\D/g, "").slice(0, 6));
-
-  const markAddressUnverified = useCallback((message = "") => {
-    addressVerifiedRef.current = "";
-    setAddressCheck({
-      status: message ? "invalid" : "idle",
-      message,
-      suggestions: [],
-      verifiedAddress: "",
-    });
-  }, []);
-
-  const applyVerifiedAddress = useCallback((formatted, message = "Location verified") => {
-    const value = String(formatted || "").trim();
-    if (!value) return;
-    addressVerifiedRef.current = value;
-    setForm((current) => ({ ...current, address: value }));
-    setAddressCheck({
-      status: "valid",
-      message,
-      suggestions: [],
-      verifiedAddress: value,
-    });
-  }, []);
 
   useEffect(() => {
     const email = form.customerEmail.trim().toLowerCase();
@@ -156,76 +126,6 @@ export function Booking() {
       window.clearTimeout(timer);
     };
   }, [form.customerEmail]);
-
-  useEffect(() => {
-    const query = form.address.trim();
-    if (!query) {
-      markAddressUnverified();
-      return undefined;
-    }
-
-    // Already locked to a verified formatted place
-    if (addressVerifiedRef.current && addressVerifiedRef.current === query) {
-      setAddressCheck((current) => (
-        current.status === "valid" && current.verifiedAddress === query
-          ? current
-          : {
-              status: "valid",
-              message: "Location verified",
-              suggestions: [],
-              verifiedAddress: query,
-            }
-      ));
-      return undefined;
-    }
-
-    if (query.length < 3) {
-      markAddressUnverified("Type a full location (Area, City, State or PIN)");
-      return undefined;
-    }
-
-    let active = true;
-    setAddressCheck((current) => ({
-      ...current,
-      status: "checking",
-      message: "Searching real locations...",
-      verifiedAddress: "",
-    }));
-
-    const timer = window.setTimeout(async () => {
-      try {
-        const response = await apiRequest("/public/suggest-addresses", {
-          method: "POST",
-          body: JSON.stringify({ query }),
-          cache: "no-store",
-          timeout: 10000,
-        });
-        if (!active) return;
-        const suggestions = Array.isArray(response.suggestions) ? response.suggestions : [];
-        setAddressCheck({
-          status: suggestions.length ? "suggest" : "invalid",
-          message: response.message || (suggestions.length
-            ? "Select a verified location from the list"
-            : "No matching place found. Try City, Area, State or PIN"),
-          suggestions,
-          verifiedAddress: "",
-        });
-      } catch (error) {
-        if (!active) return;
-        setAddressCheck({
-          status: "invalid",
-          message: error.message || "Unable to verify location",
-          suggestions: [],
-          verifiedAddress: "",
-        });
-      }
-    }, 550);
-
-    return () => {
-      active = false;
-      window.clearTimeout(timer);
-    };
-  }, [form.address, markAddressUnverified]);
 
   useEffect(() => {
     if (selectionLoadedRef.current) return;
@@ -385,22 +285,6 @@ export function Booking() {
         setBusy(false);
         return;
       }
-      if (addressCheck.status === "checking" || addressCheck.status === "suggest") {
-        setStatus(addressCheck.status === "suggest"
-          ? "Please select a verified location from the suggestions."
-          : "Please wait while we verify your location.");
-        setBusy(false);
-        return;
-      }
-      if (
-        addressCheck.status !== "valid"
-        || !addressCheck.verifiedAddress
-        || form.address.trim() !== addressCheck.verifiedAddress.trim()
-      ) {
-        setStatus(addressCheck.message || "Please select a real, verified location before submitting.");
-        setBusy(false);
-        return;
-      }
       if (!/^\d{6}$/.test(form.pincode)) {
         setStatus("Pincode must be exactly 6 digits.");
         setBusy(false);
@@ -416,7 +300,7 @@ export function Booking() {
         return;
       }
       const payload = new FormData();
-      Object.entries({ ...form, address: addressCheck.verifiedAddress }).forEach(([key, value]) => payload.append(key, value));
+      Object.entries(form).forEach(([key, value]) => payload.append(key, value));
       if (selectedProducts.length) {
         const summary = selectedProductsSummary(selectedProducts);
         payload.append("products", JSON.stringify(selectedProducts));
@@ -436,8 +320,6 @@ export function Booking() {
       setImages([]);
       setPreviews([]);
       setSelectedProducts([]);
-      addressVerifiedRef.current = "";
-      setAddressCheck({ status: "idle", message: "", suggestions: [], verifiedAddress: "" });
       setEmailCheck({ status: "idle", message: "" });
       sessionStorage.removeItem("selectedProjectPartBooking");
       sessionStorage.removeItem("selectedCartBooking");
@@ -545,17 +427,12 @@ export function Booking() {
               <Field label="What do you want Repair or BUY?" value={form.repairType} onChange={(v) => update("repairType", v)} placeholder="Fan, induction, torch..." required />
             </div>
             <div className="mt-4">
-              <LocationAddressField
+              <Field
+                label="Location / Address"
                 value={form.address}
                 placeholder={LOCATION_PLACEHOLDER}
-                addressCheck={addressCheck}
-                onChange={(value) => {
-                  addressVerifiedRef.current = "";
-                  update("address", value);
-                }}
-                onSelectSuggestion={(place) => {
-                  applyVerifiedAddress(place.formatted || place.displayName, "Location verified");
-                }}
+                onChange={(value) => update("address", value)}
+                required
               />
             </div>
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
@@ -659,8 +536,6 @@ export function Booking() {
               disabled={
                 busy
                 || emailCheck.status === "checking"
-                || addressCheck.status === "checking"
-                || addressCheck.status !== "valid"
                 || emailCheck.status !== "valid"
                 || form.pincode.length !== 6
               }
@@ -696,74 +571,3 @@ function Field({ label, value, onChange, placeholder = "", required = false, typ
   );
 }
 
-function LocationAddressField({ value, onChange, onSelectSuggestion, addressCheck, placeholder }) {
-  const openSuggestions = addressCheck.status === "suggest" && addressCheck.suggestions?.length > 0;
-  const borderClass = addressCheck.status === "valid"
-    ? "border-emerald-400/70 focus:border-emerald-400"
-    : addressCheck.status === "invalid"
-      ? "border-red-400/70 focus:border-red-400"
-      : "border-border focus:border-primary";
-
-  return (
-    <div className="relative">
-      <label className="mb-2 block text-sm font-medium text-muted-foreground">Location / Address</label>
-      <div className="relative">
-        <MapPin className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-accent" />
-        <input
-          type="text"
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && openSuggestions) {
-              event.preventDefault();
-              onSelectSuggestion(addressCheck.suggestions[0]);
-            }
-          }}
-          placeholder={placeholder}
-          required
-          autoComplete="street-address"
-          className={`w-full rounded-xl glass border bg-transparent py-3 pl-10 pr-10 text-sm outline-none transition-colors ${borderClass}`}
-          aria-autocomplete="list"
-          aria-controls="booking-address-suggestions"
-        />
-        {addressCheck.status === "valid" && (
-          <CheckCircle2 className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-emerald-400" />
-        )}
-      </div>
-
-      {addressCheck.message && (
-        <p className={`mt-2 text-xs ${addressCheck.status === "valid" ? "text-emerald-400" : addressCheck.status === "checking" ? "text-sky-300" : "text-red-300"}`}>
-          {addressCheck.message}
-        </p>
-      )}
-
-      {openSuggestions && (
-        <ul id="booking-address-suggestions" className="booking-address-suggestions" role="listbox">
-          {addressCheck.suggestions.map((place) => {
-            const key = place.placeId || place.formatted || place.displayName;
-            const label = place.formatted || place.displayName;
-            return (
-              <li key={key} role="option" aria-selected="false">
-                <button
-                  type="button"
-                  className="booking-address-suggestion"
-                  onClick={() => onSelectSuggestion(place)}
-                >
-                  <MapPin className="h-4 w-4 shrink-0 text-accent" />
-                  <span>
-                    <strong>{label}</strong>
-                    {(place.city || place.state || place.postcode) && (
-                      <small>
-                        {[place.city, place.state, place.postcode].filter(Boolean).join(" · ")}
-                      </small>
-                    )}
-                  </span>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </div>
-  );
-}

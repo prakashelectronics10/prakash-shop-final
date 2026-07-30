@@ -21,6 +21,7 @@ const allPermissions = [
   "featuredRepairs",
   "shopProducts",
   "autoSliderBanners",
+  "trendingBanners",
   "projectParts",
   "projectSliders",
   "brandsSlider",

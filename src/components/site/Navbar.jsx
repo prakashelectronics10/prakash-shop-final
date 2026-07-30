@@ -119,16 +119,19 @@ export function Navbar() {
           }}
         >
           <a href="/#home" className="flex items-center gap-2">
-            <img 
-              src="/logo192.png" 
-              alt="Prakash Electronics logo" 
-              width={36}
-              height={36}
-              className="h-9 w-9 rounded-xl shadow-glow"
-              loading="eager"
-              decoding="async"
-              fetchPriority="high"
-            />
+            <picture>
+              <source type="image/webp" srcSet="/logo-72.webp" />
+              <img
+                src="/logo-72.png"
+                alt="Prakash Electronics logo"
+                width={36}
+                height={36}
+                className="h-9 w-9 rounded-xl shadow-glow"
+                loading="eager"
+                decoding="async"
+                fetchPriority="low"
+              />
+            </picture>
             <span className="font-display text-lg font-bold tracking-tight">
               {brandFirst || "Prakash"} <span className="text-gradient">{brandTail || "Electronics"}</span>
             </span>

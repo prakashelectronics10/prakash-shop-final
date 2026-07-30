@@ -40,9 +40,6 @@
 /hero.json
   Cache-Control: public, max-age=2592000
 
-/loading.json
-  Cache-Control: public, max-age=2592000
-
 /blank.json
   Cache-Control: public, max-age=2592000
 
@@ -51,6 +48,15 @@
 
 /logo512.png
   Cache-Control: public, max-age=2592000
+
+/logo-72.webp
+  Cache-Control: public, max-age=31536000, immutable
+
+/logo-72.png
+  Cache-Control: public, max-age=31536000, immutable
+
+/apple-touch-icon.png
+  Cache-Control: public, max-age=31536000, immutable
 
 /favicon-16.png
   Cache-Control: public, max-age=2592000

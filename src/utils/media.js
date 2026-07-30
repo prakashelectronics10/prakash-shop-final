@@ -25,7 +25,7 @@ const SEED_AVIF_WIDTHS = {
   "hero-technician": [360, 480, 720, 960, 1080, 1254],
 };
 
-const RESPONSIVE_IMAGE_WIDTHS = [240, 360, 480, 720, 960, 1200, 1600];
+const RESPONSIVE_IMAGE_WIDTHS = [160, 240, 360, 480, 720, 960, 1200, 1600];
 
 function normalizeLocalSeedPath(url) {
   if (/^https?:\/\/(?:localhost|127\.0\.0\.1):\d+\/seed-assets\//i.test(url)) {
@@ -65,8 +65,8 @@ function seedImageUrl(base, width, format = "webp") {
 }
 
 function qualityForWidth(width) {
-  if (width <= 360) return "q_auto:eco";
-  if (width <= 720) return "q_auto:eco";
+  if (width <= 360) return "q_55";
+  if (width <= 720) return "q_60";
   if (width <= 1200) return "q_auto:good";
   return "q_auto:good";
 }
@@ -105,21 +105,30 @@ function getCloudinaryRootUrl(value) {
   return `${prefix}${rest}`;
 }
 
-function cloudinaryImageUrl(value, width, format) {
+function cloudinaryImageUrl(value, width, format, options = {}) {
   const root = getCloudinaryRootUrl(value);
   if (!root) return "";
   const quality = qualityForWidth(width);
+  const requestedWidth = Math.max(1, Number(options.width) || width);
+  const requestedHeight = Math.max(0, Number(options.height) || 0);
+  const targetHeight = options.crop && requestedHeight
+    ? Math.max(1, Math.round(width * (requestedHeight / requestedWidth)))
+    : 0;
+  const resize = targetHeight
+    ? `c_fill,g_auto,w_${width},h_${targetHeight}`
+    : `c_limit,w_${width}`;
   const transform = format === "auto"
-    ? `f_auto,${quality},c_limit,w_${width}`
-    : `f_${format},${quality},c_limit,w_${width}`;
+    ? `f_auto,${quality},${resize}`
+    : `f_${format},${quality},${resize}`;
   return root.replace("/image/upload/", `/image/upload/${transform}/`);
 }
 
 function responsiveWidthList(maxWidth = 1200) {
   const max = Math.max(160, Number(maxWidth) || 1200);
-  const widths = RESPONSIVE_IMAGE_WIDTHS.filter((width) => width <= Math.ceil(max * 1.25));
-  if (!widths.length) return [Math.min(360, max)];
-  // Always include the target width bucket so browsers can pick a tight match
+  // Keep srcset close to the requested display width so Lighthouse does not
+  // flag oversized Cloudinary downloads for card/thumbnail layouts.
+  const widths = RESPONSIVE_IMAGE_WIDTHS.filter((width) => width <= Math.ceil(max * 1.1));
+  if (!widths.length) return [Math.min(240, max)];
   if (!widths.includes(max) && max >= 160 && max <= 2000) {
     const next = RESPONSIVE_IMAGE_WIDTHS.find((width) => width >= max);
     if (next && !widths.includes(next)) widths.push(next);
@@ -151,14 +160,14 @@ export function getCloudinaryResponsiveImageSources(value, options = {}) {
   const widths = responsiveWidthList(options.maxWidth || options.width);
   const avif = widths
     .map((width) => {
-      const url = cloudinaryImageUrl(value, width, "avif");
+      const url = cloudinaryImageUrl(value, width, "avif", options);
       return url ? `${url} ${width}w` : "";
     })
     .filter(Boolean)
     .join(", ");
   const webp = widths
     .map((width) => {
-      const url = cloudinaryImageUrl(value, width, "webp");
+      const url = cloudinaryImageUrl(value, width, "webp", options);
       return url ? `${url} ${width}w` : "";
     })
     .filter(Boolean)
@@ -189,7 +198,7 @@ export function getOptimizedImageUrl(value, options = {}) {
     return getOptimizedImageUrl(url.replace(/^http:\/\//i, "https://"), options);
   }
 
-  const cloudinary = cloudinaryImageUrl(url, width, "auto");
+  const cloudinary = cloudinaryImageUrl(url, width, "auto", options);
   if (cloudinary) return cloudinary;
 
   return url;

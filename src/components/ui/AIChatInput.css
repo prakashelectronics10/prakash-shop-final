@@ -427,13 +427,22 @@
 
   .pulse-ai-modes {
     gap: 0.4rem;
-    padding: 0 0.55rem 0.5rem;
+    padding: 0 0.55rem 0.2rem;
+    margin-top: 0;
   }
 
   .pulse-ai-mode-chip {
     font-size: 0.78rem;
     min-height: 34px;
-    padding: 0.32rem 0.7rem;
+    width: 34px;
+    min-width: 34px;
+    padding: 0;
+    justify-content: center;
+    gap: 0;
+  }
+
+  .pulse-ai-mode-label {
+    display: none;
   }
 
   .pulse-ai-mode-hint {
@@ -455,10 +464,11 @@
   }
 
   .pulse-ai-mode-chip {
-    flex: 1 1 auto;
+    flex: 0 0 auto;
+    width: 34px;
+    min-width: 34px;
     justify-content: center;
-    min-width: 0;
-    padding: 0.32rem 0.55rem;
+    padding: 0;
   }
 
   .pulse-voice-bar {

@@ -69,10 +69,11 @@ export function applyDynamicWebSettings(webSettings) {
 function siteDataFingerprint(payload) {
   if (!payload || typeof payload !== "object") return "";
   const hero = payload.heroSlider?.length || 0;
+  const trending = payload.trendingBanners?.length || 0;
   const products = payload.products?.length || 0;
   const offers = payload.offers?.length || 0;
   const updated = payload.webSettings?.updatedAt || payload.contact?.updatedAt || "";
-  return `${updated}|${hero}|${products}|${offers}|${payload.content?.updatedAt || ""}`;
+  return `${updated}|${hero}|${trending}|${products}|${offers}|${payload.content?.updatedAt || ""}`;
 }
 
 export function SiteDataProvider({ children }) {
@@ -162,6 +163,7 @@ export function SiteDataProvider({ children }) {
       contact: normalizePublicContact(data?.contact),
       hero: data?.hero || null,
       heroSlider: data?.heroSlider || emptyList,
+      trendingBanners: data?.trendingBanners || emptyList,
       webSettings: data?.webSettings || null,
     }),
     [data, loading, error, loadSiteData, emptyContent, emptyList],
