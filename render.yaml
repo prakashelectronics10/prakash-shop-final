@@ -1,0 +1,68 @@
+services:
+  - type: web
+    name: prakash-electronics
+    runtime: node
+    plan: free
+    branch: main
+    buildCommand: npm ci && npm --prefix server ci && npm run build
+    startCommand: npm --prefix server start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PRODUCTION_DOMAIN
+        value: prakashshop.in
+      - key: PRODUCTION_URL
+        value: https://prakashshop.in
+      - key: FRONTEND_URL
+        value: https://prakashshop.in
+      - key: REACT_APP_API_URL
+        value: /api
+      - key: GENERATE_SOURCEMAP
+        value: "false"
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: COOKIE_SAME_SITE
+        value: lax
+      - key: ADMIN_SESSION_BIND_IP
+        value: "false"
+      - key: SITE_CACHE_TTL_MS
+        value: "60000"
+      - key: CLOUDINARY_FOLDER
+        value: prakash-electronics
+      - key: MAIL_FROM_NAME
+        value: Prakash Electronics
+      - key: MAIL_WEBSITE_URL
+        value: https://prakashshop.in
+      - key: MAIL_REPLY_TO
+        sync: false
+      - key: MAIL_SUPPORT_EMAIL
+        sync: false
+      - key: MAIL_SUPPORT_PHONE
+        sync: false
+      - key: MONGODB_URI
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
+      - key: BREVO_API_KEY
+        sync: false
+      - key: BREVO_FROM_EMAIL
+        sync: false
+      - key: BREVO_FROM_NAME
+        value: Prakash Electronics
+      - key: BREVO_ENABLED
+        value: "true"
+      - key: GOOGLE_MAPS_API_KEY
+        sync: false
