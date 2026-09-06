@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 export const SCIENCE_PROJECTS_CATEGORY = "Wiring Accessories";
 export const LEGACY_SCIENCE_PROJECTS_CATEGORY = "Science Projects and Parts";
@@ -12,6 +12,9 @@ const CART_STORAGE_KEY = "prakash:guest-cart:v1";
 const MAX_QUANTITY = 99;
 
 const CartContext = createContext(null);
+const CartActionsContext = createContext(null);
+const cartListeners = new Set();
+let cartSnapshot = [];
 
 function safeString(value, fallback = "") {
   const text = String(value ?? "").trim();
@@ -72,6 +75,16 @@ function storageWrite(items) {
   } catch (_error) {
     // Session storage can be unavailable in restrictive browser modes.
   }
+}
+
+function publishCartSnapshot(items) {
+  cartSnapshot = Array.isArray(items) ? items : [];
+  cartListeners.forEach((listener) => listener());
+}
+
+function subscribeCart(listener) {
+  cartListeners.add(listener);
+  return () => cartListeners.delete(listener);
 }
 
 function sourceKey(product = {}, overrides = {}) {
@@ -167,11 +180,25 @@ export function cartItemToBookingProduct(item) {
 }
 
 export function CartProvider({ children }) {
-  const [items, setItems] = useState(storageRead);
+  const initialItemsRef = useRef(null);
+  if (initialItemsRef.current === null) {
+    initialItemsRef.current = storageRead();
+    publishCartSnapshot(initialItemsRef.current);
+  }
+
+  const [items, setItems] = useState(initialItemsRef.current);
+  const itemsRef = useRef(initialItemsRef.current);
 
   useEffect(() => {
     storageWrite(items);
   }, [items]);
+
+  const replaceItems = useCallback((nextItems) => {
+    const safeItems = Array.isArray(nextItems) ? nextItems : [];
+    itemsRef.current = safeItems;
+    publishCartSnapshot(safeItems);
+    setItems(safeItems);
+  }, []);
 
   const addItem = useCallback((product, overrides = {}) => {
     const nextItem = createCartProduct(product, overrides);
@@ -180,7 +207,8 @@ export function CartProvider({ children }) {
       return { item: nextItem, status: "blocked", message: cartStockMessage(nextItem) };
     }
 
-    const found = items.find((item) => item.cartId === nextItem.cartId);
+    const currentItems = itemsRef.current;
+    const found = currentItems.find((item) => item.cartId === nextItem.cartId);
     const requestedQuantity = (found?.quantity || 0) + nextItem.quantity;
     const nextQuantity = clampQuantity(requestedQuantity, limit);
     const nextCartItem = {
@@ -190,26 +218,24 @@ export function CartProvider({ children }) {
       quantity: nextQuantity,
     };
 
-    setItems((current) => {
-      if (found) {
-        return current.map((item) => (item.cartId === nextItem.cartId ? nextCartItem : item));
-      }
-      return [nextCartItem, ...current];
-    });
+    replaceItems(found
+      ? currentItems.map((item) => (item.cartId === nextItem.cartId ? nextCartItem : item))
+      : [nextCartItem, ...currentItems]);
 
     return {
       item: nextCartItem,
       status: requestedQuantity > limit ? "limited" : "added",
       message: requestedQuantity > limit ? cartStockMessage(nextCartItem) : "",
     };
-  }, [items]);
+  }, [replaceItems]);
 
   const updateQuantity = useCallback((cartId, quantity) => {
-    const found = items.find((item) => item.cartId === cartId);
+    const currentItems = itemsRef.current;
+    const found = currentItems.find((item) => item.cartId === cartId);
     const limit = found ? getCartStockLimit(found) : MAX_QUANTITY;
     const nextQuantity = clampQuantity(quantity, limit);
-    setItems((current) =>
-      current.map((item) =>
+    replaceItems(
+      currentItems.map((item) =>
         item.cartId === cartId ? { ...item, quantity: nextQuantity } : item,
       ),
     );
@@ -217,49 +243,51 @@ export function CartProvider({ children }) {
       status: Number(quantity) > limit ? "limited" : "updated",
       message: Number(quantity) > limit ? cartStockMessage(found) : "",
     };
-  }, [items]);
+  }, [replaceItems]);
 
   const increment = useCallback((cartId) => {
-    const found = items.find((item) => item.cartId === cartId);
+    const currentItems = itemsRef.current;
+    const found = currentItems.find((item) => item.cartId === cartId);
     if (!found) return { status: "missing", message: "" };
     const limit = getCartStockLimit(found);
     if (found.quantity >= limit) {
       return { status: "limited", message: cartStockMessage(found) };
     }
-    setItems((current) =>
-      current.map((item) =>
+    replaceItems(
+      currentItems.map((item) =>
         item.cartId === cartId ? { ...item, quantity: clampQuantity(item.quantity + 1, limit) } : item,
       ),
     );
     return { status: "updated", message: "" };
-  }, [items]);
+  }, [replaceItems]);
 
   const decrement = useCallback((cartId) => {
-    const found = items.find((item) => item.cartId === cartId);
+    const currentItems = itemsRef.current;
+    const found = currentItems.find((item) => item.cartId === cartId);
     if (!found) return { status: "missing", message: "" };
     if (found.quantity <= 1) {
       return { status: "minimum", message: "Minimum quantity is 1." };
     }
-    setItems((current) =>
-      current.map((item) =>
+    replaceItems(
+      currentItems.map((item) =>
         item.cartId === cartId ? { ...item, quantity: clampQuantity(item.quantity - 1, getCartStockLimit(item)) } : item,
       ),
     );
     return { status: "updated", message: "" };
-  }, [items]);
+  }, [replaceItems]);
 
   const removeItem = useCallback((cartId) => {
-    setItems((current) => current.filter((item) => item.cartId !== cartId));
-  }, []);
+    replaceItems(itemsRef.current.filter((item) => item.cartId !== cartId));
+  }, [replaceItems]);
 
   const clearCart = useCallback(() => {
-    setItems([]);
-  }, []);
+    replaceItems([]);
+  }, [replaceItems]);
 
   const getQuantity = useCallback((product, overrides = {}) => {
     const probe = createCartProduct(product, overrides);
-    return items.find((item) => item.cartId === probe.cartId)?.quantity || 0;
-  }, [items]);
+    return itemsRef.current.find((item) => item.cartId === probe.cartId)?.quantity || 0;
+  }, []);
 
   const totals = useMemo(() => {
     const quantity = items.reduce((sum, item) => sum + clampQuantity(item.quantity, getCartStockLimit(item) || 1), 0);
@@ -285,7 +313,16 @@ export function CartProvider({ children }) {
     [addItem, clearCart, decrement, getQuantity, increment, items, removeItem, totals, updateQuantity],
   );
 
-  return <CartContext.Provider value={value}>{children}</CartContext.Provider>;
+  const actionsValue = useMemo(
+    () => ({ addItem, updateQuantity, increment, decrement, removeItem, clearCart, getQuantity }),
+    [addItem, clearCart, decrement, getQuantity, increment, removeItem, updateQuantity],
+  );
+
+  return (
+    <CartActionsContext.Provider value={actionsValue}>
+      <CartContext.Provider value={value}>{children}</CartContext.Provider>
+    </CartActionsContext.Provider>
+  );
 }
 
 export function useCart() {
@@ -294,4 +331,21 @@ export function useCart() {
     throw new Error("useCart must be used inside CartProvider");
   }
   return context;
+}
+
+export function useCartActions() {
+  const context = useContext(CartActionsContext);
+  if (!context) {
+    throw new Error("useCartActions must be used inside CartProvider");
+  }
+  return context;
+}
+
+export function useCartQuantity(product, overrides = {}) {
+  const cartId = useMemo(() => createCartProduct(product, overrides).cartId, [overrides, product]);
+  return useSyncExternalStore(
+    subscribeCart,
+    () => cartSnapshot.find((item) => item.cartId === cartId)?.quantity || 0,
+    () => 0,
+  );
 }
