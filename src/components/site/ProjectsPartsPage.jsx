@@ -2,13 +2,14 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ArrowLeft, Bot, Check, Filter, PackageSearch, Search, ShoppingBag, ShoppingCart, Tag, X, Zap } from "lucide-react";
 import { apiRequest } from "../../api/client";
-import { SCIENCE_PROJECTS_CATEGORY, cartStockMessage, getCartStockLimit, useCart } from "../../context/CartContext";
+import { SCIENCE_PROJECTS_CATEGORY, cartStockMessage, getCartStockLimit, useCart, useCartActions, useCartQuantity } from "../../context/CartContext";
 import { useSwipeNavigation } from "../../hooks/useSwipeNavigation";
 import { Navbar } from "./Navbar";
 import { Footer } from "./Footer";
 import { OptimizedImage } from "./OptimizedImage";
 import { ProductShareButton } from "./ProductShareButton";
 import { ProductPriceDisplay } from "./ProductPriceDisplay";
+import { CatalogPagination } from "./CatalogPagination";
 import { ProgressSliderDots } from "./ProgressSliderDots";
 import { RelatedProductsSection } from "./RelatedProductsSection";
 import { CatalogGridSkeleton, EmptyProductsState, LoadingState } from "./StateLottie";
@@ -18,11 +19,10 @@ import {
   formatTagQuery,
   getTagSearchHref,
   normalizeTag,
-  productMatchesSearch,
   readSearchQueryFromLocation,
 } from "../../utils/productSearch";
 import { CANONICAL_WIRING_PARTS_PATH } from "../../utils/routes";
-import { useCatalogPageSize, useWindowedItems } from "../../hooks/useWindowedItems";
+import { useCatalogPageSize } from "../../hooks/useWindowedItems";
 import {
   CATALOG_CACHE_TTL_MS,
   WIRING_CATALOG_CACHE_KEY,
@@ -52,7 +52,8 @@ function useDebouncedValue(value, delay = 220) {
   return debounced;
 }
 
-const WiringPartCard = memo(function WiringPartCard({ part, onAddToCart, cartQuantity, eager = false }) {
+const WiringPartCard = memo(function WiringPartCard({ part, onAddToCart, eager = false }) {
+  const cartQuantity = useCartQuantity(part, { sourceType: "project-part" });
   const detailUrl = getProductSharePath(part);
   const stockLimit = getCartStockLimit(part);
   const atStockLimit = stockLimit > 0 && cartQuantity >= stockLimit;
@@ -117,7 +118,7 @@ const WiringPartCard = memo(function WiringPartCard({ part, onAddToCart, cartQua
 });
 
 export function ProjectsPartsPage() {
-  const { addItem, getQuantity } = useCart();
+  const { addItem } = useCartActions();
   const cachedCatalog = useMemo(
     () => readCatalogCache(WIRING_CATALOG_CACHE_KEY, { ttlMs: CATALOG_CACHE_TTL_MS, allowStale: true }),
     [],
@@ -125,6 +126,9 @@ export function ProjectsPartsPage() {
   const [parts, setParts] = useState(() => cachedCatalog?.data?.parts || []);
   const [sliders, setSliders] = useState(() => cachedCatalog?.data?.sliders || []);
   const [taxonomy, setTaxonomy] = useState(() => cachedCatalog?.data?.taxonomy || { categories: [], subCategoriesByCategory: {} });
+  const [page, setPage] = useState(() => cachedCatalog?.data?.page || 1);
+  const [catalogTotal, setCatalogTotal] = useState(() => cachedCatalog?.data?.total || cachedCatalog?.data?.parts?.length || 0);
+  const [catalogPages, setCatalogPages] = useState(() => cachedCatalog?.data?.pages || 1);
   const [activeSlide, setActiveSlide] = useState(0);
   const [loading, setLoading] = useState(() => !(cachedCatalog?.data?.parts?.length));
   const [error, setError] = useState("");
@@ -148,8 +152,16 @@ export function ProjectsPartsPage() {
     const hadCache = Boolean(cachedCatalog?.data?.parts?.length);
     async function load() {
       try {
+        setLoading(true);
+        const query = new URLSearchParams({
+          page: String(page),
+          limit: String(gridPageSize),
+        });
+        if (debouncedSearch) query.set("search", debouncedSearch);
+        if (category) query.set("category", category);
+        if (subCategory) query.set("subCategory", subCategory);
         const [partsResponse, slidersResponse, taxonomyResponse] = await Promise.all([
-          apiRequest("/project-parts/public/parts?limit=120", { cacheTtl: CATALOG_CACHE_TTL_MS }),
+          apiRequest(`/project-parts/public/parts?${query.toString()}`, { cacheTtl: CATALOG_CACHE_TTL_MS }),
           apiRequest("/project-parts/public/sliders", { cacheTtl: CATALOG_CACHE_TTL_MS }),
           apiRequest("/project-parts/public/taxonomy", { cacheTtl: CATALOG_CACHE_TTL_MS }),
         ]);
@@ -161,12 +173,17 @@ export function ProjectsPartsPage() {
           subCategoriesByCategory: taxonomyResponse.data?.subCategoriesByCategory || {},
         };
         setParts(nextParts);
+        setCatalogTotal(partsResponse.data?.total || 0);
+        setCatalogPages(partsResponse.data?.pages || 1);
         setSliders(nextSliders);
         setTaxonomy(nextTaxonomy);
         writeCatalogCache(WIRING_CATALOG_CACHE_KEY, {
           parts: nextParts,
           sliders: nextSliders,
           taxonomy: nextTaxonomy,
+          page,
+          total: partsResponse.data?.total || 0,
+          pages: partsResponse.data?.pages || 1,
         });
         setError("");
       } catch (err) {
@@ -179,7 +196,7 @@ export function ProjectsPartsPage() {
     return () => {
       mounted = false;
     };
-  }, [cachedCatalog]);
+  }, [cachedCatalog, category, debouncedSearch, gridPageSize, page, subCategory]);
 
   useEffect(() => {
     const node = sliderSectionRef.current;
@@ -232,22 +249,6 @@ export function ProjectsPartsPage() {
     }
   }, [brandOptions, category, subCategory]);
 
-  const filteredParts = useMemo(() => {
-    return parts.filter((part) => {
-      const matchesSearch = productMatchesSearch(part, debouncedSearch, [
-        part.price !== null && part.price !== undefined ? String(part.price) : "",
-      ]);
-      const matchesCategory = !category || part.category === category;
-      const matchesBrand = !subCategory || part.subCategory === subCategory;
-      return matchesSearch && matchesCategory && matchesBrand;
-    });
-  }, [category, parts, debouncedSearch, subCategory]);
-
-  const { visibleItems: visibleParts, hasMore: hasMoreParts, sentinelRef: partsGridSentinelRef } = useWindowedItems(
-    filteredParts,
-    { pageSize: gridPageSize, rootMargin: "200px 0px" },
-  );
-
   const activeFilterCount = useMemo(() => {
     let count = 0;
     if (category) count += 1;
@@ -260,12 +261,20 @@ export function ProjectsPartsPage() {
   const resetSheetFilters = useCallback(() => {
     setCategory("");
     setSubCategory("");
+    setPage(1);
   }, []);
 
   const selectCategory = useCallback((nextCategory) => {
     setCategory(nextCategory);
     setSubCategory("");
+    setPage(1);
   }, []);
+
+  const goToPage = useCallback((nextPage) => {
+    const safePage = Math.min(Math.max(1, Number(nextPage) || 1), Math.max(1, catalogPages));
+    setPage(safePage);
+    document.querySelector(".parts-products")?.scrollIntoView({ block: "start" });
+  }, [catalogPages]);
 
   useEffect(() => {
     if (!filterOpen) return undefined;
@@ -363,7 +372,7 @@ export function ProjectsPartsPage() {
               <div className="shop-filter-section-head">
                 <h4>Sub-categories (Brands)</h4>
                 {subCategory ? (
-                  <button type="button" className="shop-filter-clear-link" onClick={() => setSubCategory("")}>
+                  <button type="button" className="shop-filter-clear-link" onClick={() => { setSubCategory(""); setPage(1); }}>
                     Clear
                   </button>
                 ) : null}
@@ -379,7 +388,7 @@ export function ProjectsPartsPage() {
                     role="option"
                     aria-selected={!subCategory}
                     className={`shop-filter-category-chip ${!subCategory ? "selected" : ""}`}
-                    onClick={() => setSubCategory("")}
+                    onClick={() => { setSubCategory(""); setPage(1); }}
                   >
                     All Brands
                   </button>
@@ -390,7 +399,7 @@ export function ProjectsPartsPage() {
                       role="option"
                       aria-selected={subCategory === item}
                       className={`shop-filter-category-chip ${subCategory === item ? "selected" : ""}`}
-                      onClick={() => setSubCategory(item)}
+                      onClick={() => { setSubCategory(item); setPage(1); }}
                     >
                       {item}
                     </button>
@@ -405,7 +414,7 @@ export function ProjectsPartsPage() {
               Reset
             </button>
             <button className="shop-filter-sheet-apply" type="button" onClick={closeFilters}>
-              Show {filteredParts.length} products
+              Show {catalogTotal} products
             </button>
           </div>
         </div>
@@ -491,10 +500,10 @@ export function ProjectsPartsPage() {
                 type="search"
                 value={searchQuery}
                 placeholder="Search products or #tags (e.g. #switch)..."
-                onChange={(event) => setSearchQuery(event.target.value)}
+                onChange={(event) => { setSearchQuery(event.target.value); setPage(1); }}
               />
               {searchQuery && (
-                <button type="button" onClick={() => setSearchQuery("")} aria-label="Clear product search">
+                <button type="button" onClick={() => { setSearchQuery(""); setPage(1); }} aria-label="Clear product search">
                   <X size={16} />
                 </button>
               )}
@@ -516,7 +525,7 @@ export function ProjectsPartsPage() {
 
           {!loading && !error && (
             <span className="parts-search-count shop-count">
-              {filteredParts.length} of {parts.length} products
+              {catalogTotal} products
             </span>
           )}
           {error && <div className="parts-state">{error}</div>}
@@ -525,23 +534,29 @@ export function ProjectsPartsPage() {
           {!loading && !error && parts.length === 0 && (
             <EmptyProductsState message="No wiring accessories are published yet." />
           )}
-          {!loading && !error && parts.length > 0 && filteredParts.length === 0 && (
+          {!loading && !error && catalogTotal > 0 && parts.length === 0 && (
             <EmptyProductsState message="No matching wiring products found." />
           )}
-          {!loading && !error && filteredParts.length > 0 && (
+          {!loading && !error && parts.length > 0 && (
             <>
               <div className="parts-grid">
-                {visibleParts.map((part, index) => (
+                {parts.map((part, index) => (
                   <WiringPartCard
                     key={part._id || part.slug}
                     part={part}
                     onAddToCart={addProjectPartToCart}
-                    cartQuantity={getQuantity(part, { sourceType: "project-part" })}
                     eager={index < 4}
                   />
                 ))}
               </div>
-              {hasMoreParts ? <div ref={partsGridSentinelRef} aria-hidden="true" style={{ height: 1 }} /> : null}
+              <CatalogPagination
+                page={page}
+                pages={catalogPages}
+                total={catalogTotal}
+                pageSize={gridPageSize}
+                loading={loading}
+                onPageChange={goToPage}
+              />
             </>
           )}
         </section>
