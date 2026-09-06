@@ -82,7 +82,8 @@ function buildFilter(query, publicOnly = true) {
   if (query.category) filter.category = query.category;
 
   if (query.search) {
-    const searchRegex = { $regex: escapeRegex(query.search), $options: "i" };
+    const cleanedSearch = String(query.search).trim().replace(/^#+/, "");
+    const searchRegex = { $regex: escapeRegex(cleanedSearch), $options: "i" };
     filter.$or = [
       { name: searchRegex },
       { shortDescription: searchRegex },
@@ -113,7 +114,8 @@ function buildPublicProjectPartFilter(query) {
   const filter = { isActive: true };
 
   if (query.search) {
-    const searchRegex = { $regex: escapeRegex(query.search), $options: "i" };
+    const cleanedSearch = String(query.search).trim().replace(/^#+/, "");
+    const searchRegex = { $regex: escapeRegex(cleanedSearch), $options: "i" };
     filter.$or = [
       { name: searchRegex },
       { shortDescription: searchRegex },
@@ -148,8 +150,8 @@ function normalizeShopProduct(product) {
 }
 
 function normalizeProjectPart(part) {
-  const originalCategory = part.category || "Wiring Products";
-  const originalSubCategory = part.subCategory || "";
+  const originalCategory = part.originalCategory || part.category || "Wiring Products";
+  const originalSubCategory = part.originalSubCategory || part.subCategory || "";
   return {
     ...part,
     stock: part.stock ?? 1,
@@ -165,6 +167,73 @@ function normalizeProjectPart(part) {
     sourceId: String(part._id || ""),
     specifications: [],
     tags: unique([SCIENCE_PROJECTS_CATEGORY, originalCategory, originalSubCategory, ...(part.tags || [])]),
+  };
+}
+
+function projectShopProductFields() {
+  return {
+    name: 1,
+    slug: 1,
+    shortDescription: 1,
+    category: 1,
+    originalCategory: { $literal: "" },
+    originalSubCategory: { $literal: "" },
+    subCategory: { $literal: "" },
+    mrp: 1,
+    discountPercent: 1,
+    price: 1,
+    quantity: { $ifNull: ["$quantity", 1] },
+    stock: { $ifNull: ["$quantity", 1] },
+    stockQuantity: { $ifNull: ["$quantity", 1] },
+    availability: 1,
+    imageUrl: 1,
+    tags: { $ifNull: ["$tags", []] },
+    isActive: 1,
+    showInHeroSlider: 1,
+    isTopProduct: 1,
+    displayOrder: { $ifNull: ["$displayOrder", 0] },
+    viewCount: { $ifNull: ["$viewCount", 0] },
+    createdAt: 1,
+    sourceType: { $literal: "shop-product" },
+    sourceCollection: { $literal: "shop-products" },
+    sourceId: { $toString: "$_id" },
+  };
+}
+
+function projectProjectPartFields() {
+  return {
+    name: 1,
+    slug: 1,
+    shortDescription: 1,
+    category: { $literal: SCIENCE_PROJECTS_CATEGORY },
+    originalCategory: { $ifNull: ["$category", "Wiring Products"] },
+    originalSubCategory: { $ifNull: ["$subCategory", ""] },
+    subCategory: { $ifNull: ["$subCategory", ""] },
+    mrp: 1,
+    discountPercent: 1,
+    price: 1,
+    quantity: { $ifNull: ["$stock", 1] },
+    stock: { $ifNull: ["$stock", 1] },
+    stockQuantity: { $ifNull: ["$stock", 1] },
+    availability: 1,
+    imageUrl: 1,
+    tags: {
+      $setUnion: [
+        [SCIENCE_PROJECTS_CATEGORY],
+        [{ $ifNull: ["$category", ""] }],
+        [{ $ifNull: ["$subCategory", ""] }],
+        { $ifNull: ["$tags", []] },
+      ],
+    },
+    isActive: 1,
+    showInHeroSlider: { $literal: false },
+    isTopProduct: 1,
+    displayOrder: { $ifNull: ["$displayOrder", 0] },
+    viewCount: { $ifNull: ["$viewCount", 0] },
+    createdAt: 1,
+    sourceType: { $literal: "project-part" },
+    sourceCollection: { $literal: "project-parts" },
+    sourceId: { $toString: "$_id" },
   };
 }
 
@@ -206,42 +275,53 @@ async function normalizeShopDisplayOrders(targetProduct) {
 
 exports.getShopProducts = catchAsync(async (req, res) => {
   const page = positiveInt(req.query.page, 1);
-  const limit = Math.min(positiveInt(req.query.limit, 60), 300);
+  const limit = Math.min(positiveInt(req.query.limit, 60), 120);
   const skip = (page - 1) * limit;
-  const fetchLimit = Math.min(skip + limit, 300);
   const shopFilter = buildPublicShopFilter(req.query);
   const projectPartFilter = buildPublicProjectPartFilter(req.query);
+  const pipeline = [
+    { $match: shopFilter || { _id: { $exists: false } } },
+    { $project: projectShopProductFields() },
+  ];
 
-  const [shopItems, projectPartItems, shopTotal, projectPartTotal] = await Promise.all([
-    shopFilter
-      ? ShopProduct.find(shopFilter)
-          .select(publicListProductProjection)
-          .sort({ displayOrder: 1, name: 1 })
-          .limit(fetchLimit)
-          .maxTimeMS(5000)
-          .lean()
-      : Promise.resolve([]),
-    projectPartFilter
-      ? ProjectPart.find(projectPartFilter)
-          .select(publicListProjectPartProjection)
-          .sort({ displayOrder: 1, name: 1 })
-          .limit(fetchLimit)
-          .maxTimeMS(5000)
-          .lean()
-      : Promise.resolve([]),
-    shopFilter ? ShopProduct.countDocuments(shopFilter) : Promise.resolve(0),
-    projectPartFilter ? ProjectPart.countDocuments(projectPartFilter) : Promise.resolve(0),
-  ]);
+  if (projectPartFilter) {
+    pipeline.push({
+      $unionWith: {
+        coll: ProjectPart.collection.name,
+        pipeline: [
+          { $match: projectPartFilter },
+          { $project: projectProjectPartFields() },
+        ],
+      },
+    });
+  }
 
-  const merged = [
-    ...shopItems.map(normalizeShopProduct),
-    ...projectPartItems.map(normalizeProjectPart),
-  ].sort(sortPublicCatalog);
-  const items = merged.slice(skip, skip + limit);
-  const total = shopTotal + projectPartTotal;
+  pipeline.push(
+    { $sort: { displayOrder: 1, name: 1, _id: 1 } },
+    {
+      $facet: {
+        items: [
+          { $skip: skip },
+          { $limit: limit },
+        ],
+        meta: [
+          { $count: "total" },
+        ],
+        price: [
+          { $group: { _id: null, maxPrice: { $max: "$price" } } },
+        ],
+      },
+    },
+  );
+
+  const [result] = await ShopProduct.aggregate(pipeline).option({ maxTimeMS: 7000 });
+  const items = (result?.items || []).map((item) =>
+    item.sourceType === "project-part" ? normalizeProjectPart(item) : normalizeShopProduct(item));
+  const total = result?.meta?.[0]?.total || 0;
+  const maxPrice = result?.price?.[0]?.maxPrice || 0;
 
   res.set("Cache-Control", "public, max-age=120, stale-while-revalidate=600");
-  res.json({ success: true, data: { items, total, page, pages: Math.ceil(total / limit) } });
+  res.json({ success: true, data: { items, total, page, pages: Math.ceil(total / limit), maxPrice } });
 });
 
 exports.getShopProductById = catchAsync(async (req, res) => {
