@@ -9,7 +9,7 @@ import { Footer } from "./Footer";
 import { OptimizedImage } from "./OptimizedImage";
 import { ProductShareButton } from "./ProductShareButton";
 import { ProductPriceDisplay } from "./ProductPriceDisplay";
-import { CatalogPagination } from "./CatalogPagination";
+import { CatalogInfiniteLoader } from "./CatalogInfiniteLoader";
 import { RelatedProductsSection } from "./RelatedProductsSection";
 import { CatalogGridSkeleton, EmptyProductsState, LoadingState } from "./StateLottie";
 import { applyProductPageMeta, getProductSharePath } from "../../utils/productShare";
@@ -21,7 +21,6 @@ import {
   readSearchQueryFromLocation,
 } from "../../utils/productSearch";
 import { formatINR } from "../../utils/productPricing";
-import { useCatalogPageSize } from "../../hooks/useWindowedItems";
 import {
   CATALOG_CACHE_TTL_MS,
   SHOP_CATALOG_CACHE_KEY,
@@ -30,6 +29,16 @@ import {
 } from "../../utils/catalogCache";
 
 const DESCRIPTION_PREVIEW_LIMIT = 520;
+const CATALOG_BATCH_SIZE = 24;
+
+function mergeCatalogItems(current, incoming) {
+  const byId = new Map();
+  [...current, ...incoming].forEach((item) => {
+    const key = `${item.sourceType || "shop"}-${item._id || item.sourceId || item.slug}`;
+    byId.set(key, item);
+  });
+  return [...byId.values()];
+}
 
 function useDebouncedValue(value, delay = 220) {
   const [debounced, setDebounced] = useState(value);
@@ -60,8 +69,8 @@ const ProductCard = memo(function ProductCard({ product, onAddToCart, eager = fa
               loading={eager ? "eager" : "lazy"}
               decoding="async"
               fetchPriority={eager ? "high" : undefined}
-              width={280}
-              height={210}
+              width={720}
+              height={540}
               sizes="(min-width: 1024px) 25vw, (min-width: 760px) 50vw, 46vw"
             />
           ) : <PackageSearch size={48} />}
@@ -135,13 +144,15 @@ export function ShopProductsPage() {
   const [highestPrice, setHighestPrice] = useState(() => cachedCatalog?.data?.maxPrice || 0);
   const [loading, setLoading] = useState(() => !(cachedCatalog?.data?.products?.length));
   const [error, setError] = useState("");
+  const [loadMoreError, setLoadMoreError] = useState("");
+  const [retryKey, setRetryKey] = useState(0);
   const [search, setSearch] = useState(() => readSearchQueryFromLocation());
   const [category, setCategory] = useState("");
   const [maxPrice, setMaxPrice] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
   const [cartNotice, setCartNotice] = useState("");
   const debouncedSearch = useDebouncedValue(search);
-  const gridPageSize = useCatalogPageSize(12, 30);
+  const debouncedMaxPrice = useDebouncedValue(maxPrice, 180);
 
   useEffect(() => {
     const fromUrl = readSearchQueryFromLocation();
@@ -150,42 +161,38 @@ export function ShopProductsPage() {
 
   useEffect(() => {
     let mounted = true;
-    const hadCache = Boolean(cachedCatalog?.data?.products?.length);
     async function load() {
       try {
         setLoading(true);
+        setLoadMoreError("");
+        if (page === 1) setError("");
         const query = new URLSearchParams({
           page: String(page),
-          limit: String(gridPageSize),
+          limit: String(CATALOG_BATCH_SIZE),
         });
         if (debouncedSearch) query.set("search", debouncedSearch);
         if (category) query.set("category", category);
-        if (highestPrice && maxPrice && Number(maxPrice) < highestPrice) {
-          query.set("maxPrice", maxPrice);
+        if (highestPrice && debouncedMaxPrice && Number(debouncedMaxPrice) < highestPrice) {
+          query.set("maxPrice", debouncedMaxPrice);
         }
         const [productsResponse, categoriesResponse] = await Promise.all([
           apiRequest(`/shop-products/public/products?${query.toString()}`, { cacheTtl: CATALOG_CACHE_TTL_MS }),
-          apiRequest("/shop-products/public/categories", { cacheTtl: CATALOG_CACHE_TTL_MS }),
+          page === 1
+            ? apiRequest("/shop-products/public/categories", { cacheTtl: CATALOG_CACHE_TTL_MS })
+            : Promise.resolve(null),
         ]);
         if (!mounted) return;
         const nextProducts = productsResponse.data?.items || [];
-        const nextCategories = categoriesResponse.data || [];
-        setProducts(nextProducts);
-        setCategories(nextCategories);
+        setProducts((current) => (page === 1 ? nextProducts : mergeCatalogItems(current, nextProducts)));
+        if (categoriesResponse) setCategories(categoriesResponse.data || []);
         setCatalogTotal(productsResponse.data?.total || 0);
         setCatalogPages(productsResponse.data?.pages || 1);
         if (!highestPrice) setHighestPrice(productsResponse.data?.maxPrice || 0);
-        writeCatalogCache(SHOP_CATALOG_CACHE_KEY, {
-          products: nextProducts,
-          categories: nextCategories,
-          page,
-          total: productsResponse.data?.total || 0,
-          pages: productsResponse.data?.pages || 1,
-          maxPrice: productsResponse.data?.maxPrice || highestPrice || 0,
-        });
         setError("");
       } catch (err) {
-        if (mounted && !hadCache) setError(err.message || "Unable to load products.");
+        if (!mounted) return;
+        if (page === 1) setError(err.message || "Unable to load products.");
+        else setLoadMoreError(err.message || "Unable to load more products.");
       } finally {
         if (mounted) setLoading(false);
       }
@@ -194,7 +201,20 @@ export function ShopProductsPage() {
     return () => {
       mounted = false;
     };
-  }, [cachedCatalog, category, debouncedSearch, gridPageSize, highestPrice, maxPrice, page]);
+  }, [cachedCatalog, category, debouncedMaxPrice, debouncedSearch, highestPrice, page, retryKey]);
+
+  useEffect(() => {
+    const priceFiltered = highestPrice && maxPrice && Number(maxPrice) < highestPrice;
+    if (debouncedSearch || category || priceFiltered || !products.length) return;
+    writeCatalogCache(SHOP_CATALOG_CACHE_KEY, {
+      products,
+      categories,
+      page,
+      total: catalogTotal,
+      pages: catalogPages,
+      maxPrice: highestPrice,
+    });
+  }, [catalogPages, catalogTotal, categories, category, debouncedSearch, highestPrice, maxPrice, page, products]);
 
   useEffect(() => {
     if (highestPrice && !maxPrice) setMaxPrice(String(highestPrice));
@@ -209,17 +229,22 @@ export function ShopProductsPage() {
 
   const closeFilters = useCallback(() => setFilterOpen(false), []);
 
+  const restartCatalog = useCallback(() => {
+    setPage(1);
+    setError("");
+    setLoadMoreError("");
+  }, []);
+
   const resetSheetFilters = useCallback(() => {
     setCategory("");
     setMaxPrice(highestPrice ? String(highestPrice) : "");
-    setPage(1);
-  }, [highestPrice]);
+    restartCatalog();
+  }, [highestPrice, restartCatalog]);
 
-  const goToPage = useCallback((nextPage) => {
-    const safePage = Math.min(Math.max(1, Number(nextPage) || 1), Math.max(1, catalogPages));
-    setPage(safePage);
-    document.querySelector(".parts-products")?.scrollIntoView({ block: "start" });
-  }, [catalogPages]);
+  const loadMoreProducts = useCallback(() => {
+    if (loading || page >= catalogPages) return;
+    setPage((current) => current + 1);
+  }, [catalogPages, loading, page]);
 
   useEffect(() => {
     if (!filterOpen) return undefined;
@@ -281,7 +306,7 @@ export function ShopProductsPage() {
               <div className="shop-filter-section-head">
                 <h4>Categories</h4>
               {category ? (
-                  <button type="button" className="shop-filter-clear-link" onClick={() => { setCategory(""); setPage(1); }}>
+                  <button type="button" className="shop-filter-clear-link" onClick={() => { setCategory(""); restartCatalog(); }}>
                     Clear
                   </button>
                 ) : null}
@@ -292,7 +317,7 @@ export function ShopProductsPage() {
                   role="option"
                   aria-selected={!category}
                   className={`shop-filter-category-chip ${!category ? "selected" : ""}`}
-                  onClick={() => { setCategory(""); setPage(1); }}
+                  onClick={() => { setCategory(""); restartCatalog(); }}
                 >
                   All Categories
                 </button>
@@ -303,7 +328,7 @@ export function ShopProductsPage() {
                     role="option"
                     aria-selected={category === item}
                     className={`shop-filter-category-chip ${category === item ? "selected" : ""}`}
-                    onClick={() => { setCategory(item); setPage(1); }}
+                    onClick={() => { setCategory(item); restartCatalog(); }}
                   >
                     {item}
                   </button>
@@ -322,7 +347,7 @@ export function ShopProductsPage() {
                   min="0"
                   max={highestPrice || 1000}
                   value={maxPrice || highestPrice || 0}
-                  onChange={(event) => { setMaxPrice(event.target.value); setPage(1); }}
+                  onChange={(event) => { setMaxPrice(event.target.value); restartCatalog(); }}
                   disabled={!highestPrice}
                 />
               </label>
@@ -334,7 +359,7 @@ export function ShopProductsPage() {
               Reset
             </button>
             <button className="shop-filter-sheet-apply" type="button" onClick={closeFilters}>
-              Show {catalogTotal} products
+              Show {catalogTotal} {catalogTotal === 1 ? "product" : "products"}
             </button>
           </div>
         </div>
@@ -369,9 +394,9 @@ export function ShopProductsPage() {
                 type="search"
                 value={search}
                 placeholder="Search products or #tags (e.g. #speaker)..."
-                onChange={(event) => { setSearch(event.target.value); setPage(1); }}
+                onChange={(event) => { setSearch(event.target.value); restartCatalog(); }}
               />
-              {search && <button type="button" onClick={() => { setSearch(""); setPage(1); }} aria-label="Clear search"><X size={16} /></button>}
+              {search && <button type="button" onClick={() => { setSearch(""); restartCatalog(); }} aria-label="Clear search"><X size={16} /></button>}
             </label>
 
             <button
@@ -388,38 +413,42 @@ export function ShopProductsPage() {
             </button>
           </div>
 
-          {!loading && !error && (
-            <span className="parts-search-count shop-count">{catalogTotal} products</span>
+          {!error && (
+            <span className="parts-search-count shop-count">
+              {loading && products.length ? "Updating results..." : `${catalogTotal} ${catalogTotal === 1 ? "product" : "products"}`}
+            </span>
           )}
           {cartNotice && <div className="cart-stock-notice shop-stock-notice">{cartNotice}</div>}
           {error && <div className="parts-state">{error}</div>}
-          {loading && <CatalogGridSkeleton count={gridPageSize === 12 ? 6 : 8} />}
+          {loading && products.length === 0 && <CatalogGridSkeleton count={8} />}
           {!loading && !error && products.length === 0 && (
-            <EmptyProductsState message="No shop products are published yet." />
-          )}
-          {!loading && !error && catalogTotal > 0 && products.length === 0 && (
-            <EmptyProductsState message="No matching products found." />
+            <EmptyProductsState message={search || category || activeFilterCount ? "No matching products found." : "No shop products are published yet."} />
           )}
 
-          {!loading && !error && products.length > 0 && (
+          {!error && products.length > 0 && (
             <>
-              <div className="parts-grid shop-products-grid">
-                {products.map((product, index) => (
-                  <ProductCard
-                    product={product}
-                    key={`${product.sourceType || "shop"}-${product._id || product.sourceId || product.slug}`}
-                    onAddToCart={addProductToCart}
-                    eager={index < 4}
-                  />
+              <div className="catalog-product-batches">
+                {Array.from({ length: Math.ceil(products.length / CATALOG_BATCH_SIZE) }, (_, batchIndex) => (
+                  <div className="parts-grid shop-products-grid catalog-product-batch" key={`shop-batch-${batchIndex}`}>
+                    {products.slice(batchIndex * CATALOG_BATCH_SIZE, (batchIndex + 1) * CATALOG_BATCH_SIZE).map((product, index) => (
+                      <ProductCard
+                        product={product}
+                        key={`${product.sourceType || "shop"}-${product._id || product.sourceId || product.slug}`}
+                        onAddToCart={addProductToCart}
+                        eager={batchIndex === 0 && index < 4}
+                      />
+                    ))}
+                  </div>
                 ))}
               </div>
-              <CatalogPagination
-                page={page}
-                pages={catalogPages}
+              <CatalogInfiniteLoader
+                hasMore={page < catalogPages}
+                loadedCount={products.length}
                 total={catalogTotal}
-                pageSize={gridPageSize}
                 loading={loading}
-                onPageChange={goToPage}
+                error={loadMoreError}
+                onLoadMore={loadMoreProducts}
+                onRetry={() => setRetryKey((current) => current + 1)}
               />
             </>
           )}
@@ -607,7 +636,6 @@ export function ProductDetailPage() {
                           padding: "3px 12px",
                           margin: 0,
                           letterSpacing: "0.4px",
-                          boxShadow: "0 1px 6px 0 rgba(253,224,102,0.18)",
                           border: "1px solid #fbe08d",
                           userSelect: "none",
                           cursor: "pointer",

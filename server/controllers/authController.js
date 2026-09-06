@@ -4,7 +4,7 @@ const env = require("../config/env");
 const AppError = require("../utils/AppError");
 const asyncHandler = require("../utils/asyncHandler");
 const { setAdminCookie, clearAdminCookie } = require("../utils/cookie");
-const { allPermissions, isSuperAdminEmail } = require("../middleware/auth");
+const { allPermissions, isSuperAdminAccount } = require("../middleware/auth");
 const {
   assertNoOtherDeviceSession,
   createAdminSession,
@@ -18,7 +18,7 @@ const {
 } = require("../services/adminOtpService");
 
 function publicAdmin(admin) {
-  const isSuperAdmin = isSuperAdminEmail(admin.email);
+  const isSuperAdmin = isSuperAdminAccount(admin);
   return {
     id: admin._id,
     name: admin.name || "",

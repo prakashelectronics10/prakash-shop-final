@@ -85,7 +85,7 @@ function AboutReasonCard({ item, active }) {
   const description = item.description || "";
 
   return (
-    <div className="relative h-full w-full overflow-hidden bg-card">
+    <div className="about-reason-card relative h-full w-full overflow-hidden bg-card">
       <div className="absolute inset-0">
         {image ? (
           <OptimizedImage
@@ -94,9 +94,7 @@ function AboutReasonCard({ item, active }) {
             width={720}
             height={480}
             sizes="(min-width: 1024px) 520px, (min-width: 768px) 440px, 90vw"
-            className={`h-full w-full object-cover transition duration-700 ${
-              active ? "scale-105 opacity-100" : "scale-100 opacity-90"
-            }`}
+            className="about-reason-image h-full w-full object-cover"
             loading={active ? "eager" : "lazy"}
             draggable={false}
           />
@@ -113,12 +111,11 @@ function AboutReasonCard({ item, active }) {
         )}
       </div>
 
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-background via-background/55 to-transparent" />
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-primary/20 via-transparent to-accent/10 opacity-70" />
+      <div className="media-card-scrim pointer-events-none absolute inset-0" />
 
       <div className="relative z-10 flex h-full flex-col justify-between p-5 sm:p-6">
         <div className="flex items-start justify-between gap-3">
-          <div className="inline-flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl glass-strong border border-primary/35 shadow-glow sm:h-14 sm:w-14">
+          <div className="media-card-icon inline-flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-white/30 sm:h-14 sm:w-14">
             {item.iconImageSrc ? (
               <OptimizedImage
                 src={item.iconImageSrc}
@@ -136,7 +133,7 @@ function AboutReasonCard({ item, active }) {
           </div>
 
           {item.tag ? (
-            <span className="rounded-full glass-strong px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-accent">
+            <span className="media-card-badge rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-wider">
               {item.tag}
             </span>
           ) : null}

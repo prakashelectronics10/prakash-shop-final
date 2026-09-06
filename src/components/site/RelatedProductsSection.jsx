@@ -19,8 +19,8 @@ function RelatedProductCard({ product }) {
             alt={name}
             loading="lazy"
             decoding="async"
-            width={320}
-            height={320}
+            width={640}
+            height={640}
             sizes="(min-width: 768px) 22vw, 46vw"
             className="related-product-image"
           />

@@ -1,8 +1,9 @@
 import { useRef, useState } from "react";
-import { ArrowUp, Bot, MessageCircle } from "lucide-react";
+import { ArrowUp, Bot } from "lucide-react";
 import { useSiteData } from "../../context/SiteDataContext";
 import { getWhatsappHref } from "../../utils/contactDefaults";
 import { usePageScroll } from "../../hooks/usePageScroll";
+import whatsappImage from "../../assets/whatsapp.png";
 
 export function FloatingUI() {
   const { contact } = useSiteData();
@@ -37,12 +38,16 @@ export function FloatingUI() {
         <a
           href={whatsappUrl}
           target="_blank"
-          rel="noreferrer"
+          rel="noopener noreferrer"
           aria-label="Chat with Prakash Electronics on WhatsApp"
-          className="home-floating-button whatsapp-home-button"
+          className="relative z-10 inline-flex cursor-pointer pointer-events-auto home-floating-button"
         >
-          <MessageCircle className="relative h-6 w-6" />
-          <span>WhatsApp</span>
+          <img
+            src={whatsappImage}
+            alt="whatsapp"
+            aria-hidden="true"
+            className="pointer-events-none h-12 w-12 object-contain"
+          />
         </a>
         )}
         

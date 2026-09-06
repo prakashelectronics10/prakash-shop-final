@@ -62,25 +62,16 @@ export function GalleryPage() {
                       alt={it.label}
                       loading={i < 4 ? "eager" : "lazy"}
                       decoding="async"
-                      width={480}
-                      height={480}
+                      width={960}
+                      height={960}
                       sizes="(min-width: 768px) 25vw, 50vw"
                       className="gallery-tile-image h-full w-full object-cover"
                     />
-                    <div className="absolute inset-0 bg-gradient-to-t from-background via-background/30 to-transparent opacity-90" />
                     <div className="gallery-tile-expand absolute inset-0 flex items-center justify-center opacity-0 transition-opacity duration-300">
                       <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-primary shadow-glow">
                         <Expand className="h-5 w-5 text-primary-foreground" />
                       </div>
                     </div>
-                    <div className="absolute bottom-3 left-3 max-w-[85%] truncate rounded-full bg-background/85 px-3 py-1 text-xs font-medium md:glass-strong md:bg-transparent">
-                      {it.label}
-                    </div>
-                    {it.description ? (
-                      <div className="absolute bottom-12 left-3 right-3 hidden rounded-xl glass-strong px-3 py-2 text-xs text-muted-foreground md:block">
-                        {it.description}
-                      </div>
-                    ) : null}
                   </button>
                 );
               })}

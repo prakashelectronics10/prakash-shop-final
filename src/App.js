@@ -17,6 +17,7 @@ const ProductDetailPage = lazy(() => import('./components/site/ShopProductsPage'
 const CartPage = lazy(() => import('./components/site/CartPage').then((module) => ({ default: module.CartPage })));
 const AdminApp = lazy(() => import('./admin/AdminApp'));
 const Offers = lazy(() => import('./components/site/Offers').then((module) => ({ default: module.Offers })));
+const ShopHighlights = lazy(() => import('./components/site/ShopHighlights').then((module) => ({ default: module.ShopHighlights })));
 const Services = lazy(() => import('./components/site/Services').then((module) => ({ default: module.Services })));
 const TrendingProducts = lazy(() => import('./components/site/TrendingProducts').then((module) => ({ default: module.TrendingProducts })));
 const TopProducts = lazy(() => import('./components/site/TopProducts').then((module) => ({ default: module.TopProducts })));
@@ -148,6 +149,11 @@ function LazyScreen({ children }) {
 }
 
 function PublicShell({ children, siteData = true }) {
+  useEffect(() => {
+    document.body.classList.add('public-light-theme');
+    return () => document.body.classList.remove('public-light-theme');
+  }, []);
+
   const content = (
     <CartProvider>
       {children}
@@ -155,7 +161,8 @@ function PublicShell({ children, siteData = true }) {
     </CartProvider>
   );
 
-  return siteData ? <SiteDataProvider>{content}</SiteDataProvider> : content;
+  const themedContent = <div className="public-site-theme">{content}</div>;
+  return siteData ? <SiteDataProvider>{themedContent}</SiteDataProvider> : themedContent;
 }
 
 function DeferredSectionReady({ onReady, children }) {
@@ -400,6 +407,7 @@ function App() {
         </Suspense>
         <main>
           <DeferredSection eager anchorId="offers" minHeight={420}><Offers sectionId="" /></DeferredSection>
+          <DeferredSection eager anchorId="shop-highlights" minHeight={420}><ShopHighlights sectionId="" /></DeferredSection>
           <DeferredSection eager anchorId="services" minHeight={420}><Services sectionId="" /></DeferredSection>
           <DeferredSection anchorId="trending" minHeight={320}><TrendingProducts sectionId="" /></DeferredSection>
           <DeferredSection anchorId="top-products" minHeight={320}><TopProducts sectionId="" /></DeferredSection>

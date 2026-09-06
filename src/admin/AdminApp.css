@@ -442,6 +442,17 @@
   border-left: 3px solid var(--accent);
 }
 
+.admin-data-warning {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.admin-data-warning .ghost-button {
+  flex: 0 0 auto;
+}
+
 .page-grid,
 .manager-grid {
   display: grid;
@@ -2573,4 +2584,49 @@ button.stat-card:focus-visible {
   border-radius: 10px;
   background: rgba(14, 165, 233, 0.16);
   color: #38bdf8;
+}
+
+.field-hint {
+  display: block;
+  margin-top: -5px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.admin-highlight-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 12px;
+}
+
+.admin-highlight-preview-grid figure {
+  min-width: 0;
+  margin: 0;
+}
+
+.admin-highlight-preview-grid img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 12 / 5;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  object-fit: cover;
+  background: var(--surface-strong);
+}
+
+.admin-highlight-preview-grid figcaption {
+  margin-top: 6px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 620px) {
+  .admin-highlight-preview-grid {
+    grid-template-columns: 1fr;
+  }
 }

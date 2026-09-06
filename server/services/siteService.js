@@ -94,6 +94,36 @@ function normalizeGalleryContent(value = {}) {
   };
 }
 
+function normalizeHighlightLink(value) {
+  const link = String(value || "").trim().slice(0, 1200);
+  if (!link) return "";
+  if ((link.startsWith("/") && !link.startsWith("//")) || link.startsWith("#")) return link;
+  try {
+    const url = new URL(link);
+    return ["http:", "https:"].includes(url.protocol) ? url.toString() : "";
+  } catch (_error) {
+    return "";
+  }
+}
+
+function normalizeShopHighlightsContent(value = {}) {
+  return {
+    eyebrow: value.eyebrow || "Discover",
+    title: value.title || "Shop",
+    highlight: value.highlight || "highlights",
+    items: (Array.isArray(value.items) ? value.items : [])
+      .filter((item = {}) => item.imageUrl || item.src || item.url)
+      .map((item = {}, index) => ({
+        imageUrl: item.imageUrl || item.src || item.url || "",
+        originalUrl: item.originalUrl || "",
+        linkUrl: normalizeHighlightLink(item.linkUrl || item.link || item.href),
+        alt: item.alt || item.label || `Shop highlight ${index + 1}`,
+        displayOrder: Number(item.displayOrder ?? index + 1),
+      }))
+      .sort((a, b) => a.displayOrder - b.displayOrder),
+  };
+}
+
 function normalizeAboutContent(value = {}) {
   return {
     ...value,
@@ -131,6 +161,7 @@ function normalizeFooterContent(value = {}) {
 function normalizeContentPayload(content = {}) {
   return {
     ...content,
+    shopHighlights: normalizeShopHighlightsContent(content.shopHighlights || {}),
     gallery: normalizeGalleryContent(content.gallery || {}),
     about: normalizeAboutContent(content.about || {}),
     testimonials: normalizeTestimonialsContent(content.testimonials || {}),
@@ -146,6 +177,7 @@ function getFallbackSitePayload() {
     categories,
     offers,
     content: normalizeContentPayload(siteContent),
+    contentUpdatedAt: "",
     webSettings: normalizeSettings(null),
     heroSlider: [],
     isFallback: true,
@@ -196,6 +228,10 @@ async function getSitePayload() {
         return acc;
       }, {})
     : siteContent;
+  const contentUpdatedAt = contentDocs.reduce((latest, doc) => {
+    const stamp = doc.updatedAt ? new Date(doc.updatedAt).getTime() : 0;
+    return stamp > latest ? stamp : latest;
+  }, 0);
 
   const payload = {
     hero: heroDoc || hero,
@@ -204,6 +240,7 @@ async function getSitePayload() {
     categories: categoryDocs.length ? categoryDocs : categories,
     offers: offerDocs.length ? offerDocs : offers,
     content: normalizeContentPayload(content),
+    contentUpdatedAt: contentUpdatedAt ? new Date(contentUpdatedAt).toISOString() : "",
     webSettings: normalizeSettings(webSettingsDoc),
     heroSlider: [
       ...bannerDocs.map((banner) => ({

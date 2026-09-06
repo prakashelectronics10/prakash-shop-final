@@ -245,6 +245,12 @@ const contact = {
 };
 
 const siteContent = {
+  shopHighlights: {
+    eyebrow: "Discover",
+    title: "Shop",
+    highlight: "highlights",
+    items: [],
+  },
   navbar: {
     brandName: "Prakash Electronics",
     ctaLabel: "Book Repair",

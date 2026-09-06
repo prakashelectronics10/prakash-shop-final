@@ -1,7 +1,7 @@
 const mongoose = require("mongoose");
 const env = require("./env");
 const { logger } = require("../utils/logger");
-const { ensureAdminSessionIndexes } = require("../services/adminSessionService");
+const { ensureAdminSessionIndexes, revokeAllAdminSessionsOnce } = require("../services/adminSessionService");
 
 function isConnected() {
   return mongoose.connection.readyState === 1;
@@ -27,6 +27,10 @@ async function connectDB() {
   logger.info("mongodb.connected", { host: mongoose.connection.host });
   await ensureAdminSessionIndexes();
   logger.info("mongodb.admin_session_indexes_ready");
+  const cleanup = await revokeAllAdminSessionsOnce();
+  if (!cleanup.skipped) {
+    logger.info("mongodb.admin_sessions_revoked_once", { modifiedCount: cleanup.modifiedCount });
+  }
 }
 
 mongoose.connection.on("disconnected", () => {

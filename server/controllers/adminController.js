@@ -14,7 +14,7 @@ const Notification = require("../models/Notification");
 const AppError = require("../utils/AppError");
 const asyncHandler = require("../utils/asyncHandler");
 const slugify = require("../utils/slugify");
-const { allPermissions, isSuperAdminEmail } = require("../middleware/auth");
+const { allPermissions, isSuperAdminAccount } = require("../middleware/auth");
 const {
   createOtpChallenge,
   maskEmail,
@@ -31,6 +31,7 @@ const {
 
 const allowedContentKeys = new Set([
   "navbar",
+  "shopHighlights",
   "servicesSection",
   "stats",
   "testimonials",
@@ -43,13 +44,14 @@ const allowedContentKeys = new Set([
 
 const contentPermissionByKey = {
   gallery: "gallery",
+  shopHighlights: "shopHighlights",
   testimonials: "testimonials",
   about: "about",
   footer: "footer",
 };
 
 function ensureContentPermission(req, key) {
-  if (isSuperAdminEmail(req.admin?.email)) return;
+  if (isSuperAdminAccount(req.admin)) return;
   const permission = contentPermissionByKey[key];
   if (!permission) return;
   if (!new Set(req.admin?.permissions || []).has(permission)) {
@@ -77,6 +79,15 @@ function normalizeGoogleMapEmbed(value) {
 }
 
 function contentImagePublicIds(key, value = {}) {
+  if (key === "shopHighlights") {
+    return collectPublicIdsFromSources((value.items || []).map((item) => ({
+      publicId: item.publicId,
+      imagePublicId: item.imagePublicId,
+      imageUrl: item.imageUrl || item.src,
+      originalUrl: item.originalUrl,
+    })));
+  }
+
   if (key === "gallery") {
     return collectPublicIdsFromSources((value.items || []).map((item) => ({
       publicId: item.publicId,
@@ -140,6 +151,37 @@ function normalizeTestimonialsContent(value = {}) {
         rating: Number(item.rating || 5),
       };
     }),
+  };
+}
+
+function normalizeHighlightLink(value) {
+  const link = String(value || "").trim().slice(0, 1200);
+  if (!link) return "";
+  if ((link.startsWith("/") && !link.startsWith("//")) || link.startsWith("#")) return link;
+  try {
+    const url = new URL(link);
+    return ["http:", "https:"].includes(url.protocol) ? url.toString() : "";
+  } catch (_error) {
+    return "";
+  }
+}
+
+function normalizeShopHighlightsContent(value = {}) {
+  return {
+    eyebrow: String(value.eyebrow || "Discover").trim().slice(0, 80),
+    title: String(value.title || "Shop").trim().slice(0, 120),
+    highlight: String(value.highlight || "highlights").trim().slice(0, 120),
+    items: (Array.isArray(value.items) ? value.items : [])
+      .map((item = {}, index) => ({
+        imageUrl: String(item.imageUrl || item.src || item.url || "").trim().slice(0, 1600),
+        imagePublicId: String(item.imagePublicId || item.publicId || "").trim().slice(0, 500),
+        originalUrl: String(item.originalUrl || "").trim().slice(0, 1600),
+        linkUrl: normalizeHighlightLink(item.linkUrl || item.link || item.href),
+        alt: String(item.alt || item.label || `Shop highlight ${index + 1}`).trim().slice(0, 180),
+        displayOrder: index + 1,
+      }))
+      .filter((item) => item.imageUrl)
+      .slice(0, 20),
   };
 }
 
@@ -233,6 +275,7 @@ function normalizeFooterContent(value = {}) {
 }
 
 function normalizeContentValue(key, value = {}) {
+  if (key === "shopHighlights") return normalizeShopHighlightsContent(value);
   if (key === "gallery") return normalizeGalleryContent(value);
   if (key === "about") return normalizeAboutContent(value);
   if (key === "testimonials") return normalizeTestimonialsContent(value);
@@ -276,7 +319,7 @@ const dashboard = asyncHandler(async (_req, res) => {
     Admin.countDocuments({ isActive: true }),
     NotificationEmail.countDocuments({ isEnabled: true }),
     Notification.countDocuments({ isRead: false }),
-    SiteContent.find({ key: { $in: ["about", "gallery", "testimonials"] } }).lean(),
+    SiteContent.find({ key: { $in: ["about", "gallery", "shopHighlights", "testimonials"] } }).lean(),
     Invoice.countDocuments(),
     Invoice.countDocuments({ paymentStatus: { $ne: "paid" } }),
   ]);
@@ -305,6 +348,7 @@ const dashboard = asyncHandler(async (_req, res) => {
       pendingInvoices,
       aboutCards: content.about?.reasons?.length || 0,
       galleryImages: content.gallery?.items?.length || 0,
+      shopHighlights: content.shopHighlights?.items?.length || 0,
       testimonials: content.testimonials?.items?.length || 0,
     },
   });
@@ -320,9 +364,9 @@ const listAdmins = asyncHandler(async (_req, res) => {
     success: true,
     data: admins.map((admin) => ({
       ...admin,
-      tag: isSuperAdminEmail(admin.email) ? "main owner" : admin.tag || "admin",
-      permissions: isSuperAdminEmail(admin.email) ? allPermissions : admin.permissions || [],
-      adminAndroidAppAccess: isSuperAdminEmail(admin.email) ? true : Boolean(admin.adminAndroidAppAccess),
+      tag: isSuperAdminAccount(admin) ? "main owner" : admin.tag || "admin",
+      permissions: isSuperAdminAccount(admin) ? allPermissions : admin.permissions || [],
+      adminAndroidAppAccess: isSuperAdminAccount(admin) ? true : Boolean(admin.adminAndroidAppAccess),
       lastMobileLogin: admin.lastMobileLogin || null,
       mobileAccessRequestedAt: admin.mobileAccessRequestedAt || null,
       avatarUrl: admin.avatarUrl || "",
@@ -330,7 +374,7 @@ const listAdmins = asyncHandler(async (_req, res) => {
       imageUrl: admin.avatarUrl || "",
       profileImage: admin.avatarUrl || "",
       photoUrl: admin.avatarUrl || "",
-      isSuperAdmin: isSuperAdminEmail(admin.email),
+      isSuperAdmin: isSuperAdminAccount(admin),
     })),
   });
 });
@@ -452,7 +496,7 @@ const createAdmin = asyncHandler(async (req, res) => {
 const updateAdmin = asyncHandler(async (req, res) => {
   const admin = await Admin.findById(req.params.id).select("+passwordHash");
   if (!admin) throw new AppError("Admin not found", 404);
-  if (isSuperAdminEmail(admin.email)) {
+  if (isSuperAdminAccount(admin)) {
     throw new AppError("Main owner account cannot be edited here", 400);
   }
 
@@ -490,7 +534,7 @@ const updateAdmin = asyncHandler(async (req, res) => {
 const deleteAdmin = asyncHandler(async (req, res) => {
   const admin = await Admin.findById(req.params.id);
   if (!admin) throw new AppError("Admin not found", 404);
-  if (isSuperAdminEmail(admin.email)) {
+  if (isSuperAdminAccount(admin)) {
     throw new AppError("Main owner account cannot be deleted", 400);
   }
   await revokeAdminSessions(admin._id, "admin-deleted");

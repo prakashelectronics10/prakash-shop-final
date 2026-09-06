@@ -19,14 +19,14 @@ function ServiceFanCard({ card, loadImages = true, priority = false }) {
     : [];
 
   return (
-    <div className="relative h-full w-full overflow-hidden bg-card">
+    <div className="service-fan-card relative h-full w-full overflow-hidden bg-card">
       <div className="absolute inset-0">
         {card.imgUrl && loadImages ? (
           <OptimizedImage
             src={card.imgUrl}
             alt={card.alt || card.title}
-            width={360}
-            height={560}
+            width={720}
+            height={1120}
             sizes="(min-width: 1024px) 264px, (min-width: 768px) 224px, 78vw"
             className="h-full w-full object-cover"
             loading={priority ? "eager" : "lazy"}
@@ -44,12 +44,11 @@ function ServiceFanCard({ card, loadImages = true, priority = false }) {
         )}
       </div>
 
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-background via-background/70 to-background/10" />
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-primary/25 via-transparent to-accent/15 opacity-80" />
+      <div className="media-card-scrim pointer-events-none absolute inset-0" />
 
       <div className="relative z-10 flex h-full flex-col justify-between p-3.5 sm:p-4 md:p-5">
         <div className="flex items-start justify-between gap-2">
-          <div className="inline-flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-xl glass-strong border border-primary/35 shadow-glow sm:h-12 sm:w-12 sm:rounded-2xl">
+          <div className="media-card-icon inline-flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/30 sm:h-12 sm:w-12 sm:rounded-2xl">
             {card.iconImageUrl && loadImages ? (
               <OptimizedImage
                 src={card.iconImageUrl}
@@ -67,13 +66,13 @@ function ServiceFanCard({ card, loadImages = true, priority = false }) {
           </div>
 
           {card.badge ? (
-            <span className="max-w-[58%] truncate rounded-full glass-strong px-2 py-1 text-[9px] font-semibold uppercase tracking-wider text-accent sm:px-2.5 sm:text-[10px]">
+            <span className="media-card-badge max-w-[58%] truncate rounded-full px-2 py-1 text-[9px] font-semibold uppercase tracking-wider sm:px-2.5 sm:text-[10px]">
               {card.badge}
             </span>
           ) : null}
         </div>
 
-        <div className="min-w-0">
+        <div className="service-card-copy min-w-0">
           {card.categoryName ? (
             <p className="mb-1 truncate text-[10px] font-medium uppercase tracking-wide text-accent/90 sm:text-[11px]">
               {card.categoryName}
@@ -92,9 +91,9 @@ function ServiceFanCard({ card, loadImages = true, priority = false }) {
 
           {highlights.length ? (
             <div className="mt-2 hidden flex-wrap gap-1.5 sm:flex">
-              {highlights.map((item) => (
+              {highlights.map((item, index) => (
                 <span
-                  key={item}
+                  key={`${item}-${index}`}
                   className="rounded-full border border-white/15 bg-white/10 px-2 py-0.5 text-[10px] text-white/85"
                 >
                   {item}
@@ -191,11 +190,7 @@ export function Services({ sectionId = "services" }) {
             loop
           >
             {cards.map((card, index) => {
-              const wrapDist = Math.min(
-                Math.abs(index - activeIndex),
-                cards.length - Math.abs(index - activeIndex),
-              );
-              const loadImages = wrapDist <= 1;
+              const loadImages = true;
               const priority = index === activeIndex;
               const cardNode = (
                 <ServiceFanCard card={card} loadImages={loadImages} priority={priority} />

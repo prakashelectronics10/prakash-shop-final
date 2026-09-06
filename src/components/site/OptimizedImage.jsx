@@ -28,7 +28,7 @@ export function OptimizedImage({
       sizes={sources ? sizes : undefined}
       loading={isPriority ? "eager" : loading}
       decoding={decoding}
-      fetchPriority={fetchPriority}
+      fetchpriority={fetchPriority}
       className={className}
       {...props}
     />

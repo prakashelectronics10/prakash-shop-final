@@ -25,7 +25,7 @@ const SEED_AVIF_WIDTHS = {
   "hero-technician": [360, 480, 720, 960, 1080, 1254],
 };
 
-const RESPONSIVE_IMAGE_WIDTHS = [240, 360, 480, 720, 960, 1200, 1600];
+const RESPONSIVE_IMAGE_WIDTHS = [240, 360, 480, 720, 960, 1200, 1600, 1920];
 
 function normalizeLocalSeedPath(url) {
   if (/^https?:\/\/(?:localhost|127\.0\.0\.1):\d+\/seed-assets\//i.test(url)) {
@@ -65,8 +65,8 @@ function seedImageUrl(base, width, format = "webp") {
 }
 
 function qualityForWidth(width) {
-  if (width <= 360) return "q_auto:eco";
-  if (width <= 720) return "q_auto:eco";
+  if (width <= 360) return "q_auto:good";
+  if (width <= 720) return "q_auto:good";
   if (width <= 1200) return "q_auto:good";
   return "q_auto:good";
 }

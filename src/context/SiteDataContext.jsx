@@ -72,7 +72,7 @@ function siteDataFingerprint(payload) {
   const products = payload.products?.length || 0;
   const offers = payload.offers?.length || 0;
   const updated = payload.webSettings?.updatedAt || payload.contact?.updatedAt || "";
-  return `${updated}|${hero}|${products}|${offers}|${payload.content?.updatedAt || ""}`;
+  return `${updated}|${hero}|${products}|${offers}|${payload.contentUpdatedAt || payload.content?.updatedAt || ""}`;
 }
 
 export function SiteDataProvider({ children }) {

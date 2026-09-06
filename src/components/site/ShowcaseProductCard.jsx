@@ -31,8 +31,8 @@ export const ShowcaseProductCard = memo(function ShowcaseProductCard({
             loading={eager ? "eager" : "lazy"}
             decoding="async"
             fetchPriority={eager ? "high" : "low"}
-            width={240}
-            height={240}
+            width={640}
+            height={640}
             sizes="(min-width: 1024px) 160px, (min-width: 768px) 30vw, 46vw"
             className="showcase-product-image"
           />

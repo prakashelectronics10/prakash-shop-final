@@ -28,6 +28,27 @@ const ADMIN_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "ima
 const ADMIN_IMAGE_SIZE_LIMIT = 5 * 1024 * 1024;
 const ADMIN_ROUTE = "/prakash-control-panel@1999";
 
+function createEmptyAdminData() {
+  return {
+    dashboard: null,
+    products: [],
+    categories: [],
+    hero: null,
+    contact: null,
+    offers: [],
+    bookings: [],
+    admins: [],
+    notificationEmails: [],
+    content: [],
+    projectParts: [],
+    shopProducts: [],
+    projectSliders: [],
+    brandsSlider: [],
+    autoSlider: { banners: [], products: [] },
+    webSettings: null,
+  };
+}
+
 function syncAdminPricingForm(prev, patch) {
   const next = { ...prev, ...patch };
   const pricing = buildPricingPayload({
@@ -58,6 +79,7 @@ const sectionCards = [
   { key: "bookings", label: "Bookings", note: "Repair requests and status" },
   { key: "invoice", permission: "invoices", label: "Invoice", note: "Create invoices, PDFs, and billing history" },
   { key: "offers", label: "Offers", note: "Image and short offer cards" },
+  { key: "shopHighlights", label: "Shop Highlights", note: "Sticky linked image cards" },
   { key: "services", label: "Our Services", note: "Service/product cards" },
   { key: "gallery", label: "Gallery", note: "Website gallery photos" },
   { key: "testimonials", label: "Testimonials", note: "Customer reviews" },
@@ -90,6 +112,7 @@ function visibleSections(admin) {
 
 const contentKeys = [
   "navbar",
+  "shopHighlights",
   "servicesSection",
   "stats",
   "testimonials",
@@ -160,19 +183,20 @@ async function apiFetch(path, options = {}) {
   const isFormData = options.body instanceof FormData;
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), options.timeout || 25000);
+  const { suppressAuthInvalidEvent = false, timeout: _timeout, ...fetchOptions } = options;
 
   let response;
   try {
     response = await fetch(`${API_BASE}${path}`, {
       credentials: "include",
       headers: isFormData
-        ? options.headers
+        ? fetchOptions.headers
         : {
             "Content-Type": "application/json",
-            ...(options.headers || {}),
+            ...(fetchOptions.headers || {}),
           },
-      ...options,
-      signal: options.signal || controller.signal,
+      ...fetchOptions,
+      signal: fetchOptions.signal || controller.signal,
     });
   } catch (error) {
     if (error.name === "AbortError") {
@@ -187,12 +211,17 @@ async function apiFetch(path, options = {}) {
   if (!response.ok) {
     const error = new Error(payload.message || "Request failed");
     error.status = response.status;
-    if (response.status === 401) {
+    if (response.status === 401 && !suppressAuthInvalidEvent) {
       window.dispatchEvent(new CustomEvent("admin-auth-invalid", { detail: { message: error.message } }));
     }
     throw error;
   }
   return payload;
+}
+
+function isTemporaryAdminRequestError(error) {
+  if (!error?.status) return true;
+  return error.status === 408 || error.status === 429 || error.status >= 500;
 }
 
 function linesToArray(value) {
@@ -341,26 +370,12 @@ function App() {
   });
   const [navOpen, setNavOpen] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [authRestoreError, setAuthRestoreError] = useState("");
+  const [dataLoadWarning, setDataLoadWarning] = useState("");
+  const [authRetryKey, setAuthRetryKey] = useState(0);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
-  const [data, setData] = useState({
-    dashboard: null,
-    products: [],
-    categories: [],
-    hero: null,
-    contact: null,
-    offers: [],
-    bookings: [],
-    admins: [],
-    notificationEmails: [],
-    content: [],
-    projectParts: [],
-    shopProducts: [],
-    projectSliders: [],
-    brandsSlider: [],
-    autoSlider: { banners: [], products: [] },
-    webSettings: null,
-  });
+  const [data, setData] = useState(createEmptyAdminData);
 
   const navigateAdmin = (key, options = {}) => {
     const safeKey = protectedRouteKeys.has(key) ? key : "dashboard";
@@ -391,7 +406,7 @@ function App() {
 
   const refresh = async (currentAdmin = admin) => {
     const canProducts = canAccessSection(currentAdmin, "services") || canAccessSection(currentAdmin, "featuredRepairs");
-    const canContent = ["gallery", "testimonials", "about", "footer"].some((key) => canAccessSection(currentAdmin, key));
+    const canContent = ["gallery", "shopHighlights", "testimonials", "about", "footer"].some((key) => canAccessSection(currentAdmin, key));
     const canProjectParts = canAccessSection(currentAdmin, "projectParts") || canAccessSection(currentAdmin, "featuredRepairs");
     const canProjectSliders = canAccessSection(currentAdmin, "projectSliders") || canAccessSection(currentAdmin, "featuredRepairs");
     const canBrandsSlider = canAccessSection(currentAdmin, "brandsSlider");
@@ -400,57 +415,47 @@ function App() {
     const canAutoSlider = canAccessSection(currentAdmin, "autoSliderBanners") || canShopProducts;
     const canNotificationEmails = canAccessSection(currentAdmin, "notificationEmails");
 
-    const [
-      dashboard,
-      admins,
-      notificationEmails,
-      products,
-      categories,
-      contact,
-      offers,
-      bookings,
-      content,
-      projectParts,
-      shopProducts,
-      projectSliders,
-      brandsSlider,
-      webSettings,
-      autoSlider,
-    ] = await Promise.all([
-      apiFetch("/admin/dashboard"),
-      canAccessSection(currentAdmin, "admins") ? apiFetch("/admin/admins") : Promise.resolve({ data: [] }),
-      canNotificationEmails ? apiFetch("/admin/notification-emails") : Promise.resolve({ data: [] }),
-      canProducts ? apiFetch("/admin/products?limit=100") : Promise.resolve({ data: { items: [] } }),
-      canProducts ? apiFetch("/admin/categories") : Promise.resolve({ data: [] }),
-      canAccessSection(currentAdmin, "footer") ? apiFetch("/admin/contact") : Promise.resolve({ data: null }),
-      canAccessSection(currentAdmin, "offers") ? apiFetch("/admin/offers") : Promise.resolve({ data: [] }),
-      canAccessSection(currentAdmin, "bookings") ? apiFetch("/admin/bookings") : Promise.resolve({ data: [] }),
-      canContent ? apiFetch("/admin/site-content") : Promise.resolve({ data: [] }),
-      canProjectParts ? apiFetch("/project-parts/admin/project-parts?limit=200") : Promise.resolve({ data: { items: [] } }),
-      canShopProducts ? apiFetch("/shop-products/admin/products?limit=200") : Promise.resolve({ data: { items: [] } }),
-      canProjectSliders ? apiFetch("/project-parts/admin/project-part-sliders") : Promise.resolve({ data: [] }),
-      canBrandsSlider ? apiFetch("/brand-sliders/admin") : Promise.resolve({ data: [] }),
-      canWebSettings ? apiFetch("/admin/web-settings") : Promise.resolve({ data: null }),
-      canAutoSlider ? apiFetch("/admin/auto-slider-banners") : Promise.resolve({ data: { banners: [], products: [] } }),
-    ]);
+    const requests = [
+      { key: "dashboard", label: "dashboard", enabled: true, load: () => apiFetch("/admin/dashboard"), read: (result) => result.data, empty: null },
+      { key: "admins", label: "admins", enabled: canAccessSection(currentAdmin, "admins"), load: () => apiFetch("/admin/admins"), read: (result) => result.data || [], empty: [] },
+      { key: "notificationEmails", label: "booking notifications", enabled: canNotificationEmails, load: () => apiFetch("/admin/notification-emails"), read: (result) => result.data || [], empty: [] },
+      { key: "products", label: "services", enabled: canProducts, load: () => apiFetch("/admin/products?limit=100"), read: (result) => result.data?.items || [], empty: [] },
+      { key: "categories", label: "categories", enabled: canProducts, load: () => apiFetch("/admin/categories"), read: (result) => result.data || [], empty: [] },
+      { key: "contact", label: "footer contact", enabled: canAccessSection(currentAdmin, "footer"), load: () => apiFetch("/admin/contact"), read: (result) => result.data, empty: null },
+      { key: "offers", label: "offers", enabled: canAccessSection(currentAdmin, "offers"), load: () => apiFetch("/admin/offers"), read: (result) => result.data || [], empty: [] },
+      { key: "bookings", label: "bookings", enabled: canAccessSection(currentAdmin, "bookings"), load: () => apiFetch("/admin/bookings"), read: (result) => result.data || [], empty: [] },
+      { key: "content", label: "site content", enabled: canContent, load: () => apiFetch("/admin/site-content"), read: (result) => result.data || [], empty: [] },
+      { key: "projectParts", label: "wiring accessories", enabled: canProjectParts, load: () => apiFetch("/project-parts/admin/project-parts?limit=200"), read: (result) => result.data?.items || [], empty: [] },
+      { key: "shopProducts", label: "shop products", enabled: canShopProducts, load: () => apiFetch("/shop-products/admin/products?limit=200"), read: (result) => result.data?.items || [], empty: [] },
+      { key: "projectSliders", label: "wiring sliders", enabled: canProjectSliders, load: () => apiFetch("/project-parts/admin/project-part-sliders"), read: (result) => result.data || [], empty: [] },
+      { key: "brandsSlider", label: "brand slider", enabled: canBrandsSlider, load: () => apiFetch("/brand-sliders/admin"), read: (result) => result.data || [], empty: [] },
+      { key: "webSettings", label: "web settings", enabled: canWebSettings, load: () => apiFetch("/admin/web-settings"), read: (result) => result.data, empty: null },
+      { key: "autoSlider", label: "auto slider", enabled: canAutoSlider, load: () => apiFetch("/admin/auto-slider-banners"), read: (result) => result.data || { banners: [], products: [] }, empty: { banners: [], products: [] } },
+    ];
 
-    setData({
-      dashboard: dashboard.data,
-      admins: admins.data || [],
-      notificationEmails: notificationEmails.data || [],
-      products: products.data.items || [],
-      categories: categories.data || [],
-      contact: contact.data,
-      offers: offers.data || [],
-      bookings: bookings.data || [],
-      content: content.data || [],
-      projectParts: projectParts.data.items || [],
-      shopProducts: shopProducts.data.items || [],
-      projectSliders: projectSliders.data || [],
-      brandsSlider: brandsSlider.data || [],
-      webSettings: webSettings.data,
-      autoSlider: autoSlider.data || { banners: [], products: [] },
+    const results = await Promise.all(requests.map(async (request) => {
+      if (!request.enabled) return { ...request, skipped: true };
+      try {
+        const response = await request.load();
+        return { ...request, value: request.read(response) };
+      } catch (error) {
+        return { ...request, error };
+      }
+    }));
+
+    setData((current) => {
+      const next = { ...current };
+      results.forEach((result) => {
+        if (result.skipped) next[result.key] = result.empty;
+        else if (!result.error) next[result.key] = result.value;
+      });
+      return next;
     });
+
+    const failed = results.filter((result) => result.error);
+    setDataLoadWarning(failed.length
+      ? `Could not refresh ${failed.map((result) => result.label).join(", ")}. Other admin sections remain available.`
+      : "");
   };
 
   useEffect(() => {
@@ -463,15 +468,22 @@ function App() {
       try {
         const me = await apiFetch("/auth/me");
         if (!mounted) return;
+        setAuthRestoreError("");
         setAdmin(me.admin);
         if (routeSection === "login") {
           navigateAdmin("dashboard", { replace: true });
         }
         await refresh(me.admin);
-      } catch (_error) {
+      } catch (error) {
         if (mounted) {
-          setAdmin(null);
-          replaceAdminRoute(`${ADMIN_ROUTE}/login`);
+          if (isTemporaryAdminRequestError(error)) {
+            setAuthRestoreError(error.message || "Unable to restore admin session. Check the connection and try again.");
+          } else {
+            setAuthRestoreError("");
+            setAdmin(null);
+            setData(createEmptyAdminData());
+            replaceAdminRoute(`${ADMIN_ROUTE}/login`);
+          }
         }
       } finally {
         if (mounted) setLoading(false);
@@ -482,7 +494,7 @@ function App() {
       mounted = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [authRetryKey]);
 
   useEffect(() => {
     if (admin && active !== "dashboard" && !canAccessSection(admin, active)) {
@@ -493,7 +505,9 @@ function App() {
 
   useEffect(() => {
     const handleInvalidSession = (event) => {
+      setAuthRestoreError("");
       setAdmin(null);
+      setData(createEmptyAdminData());
       setActiveState("dashboard");
       setMessage(event.detail?.message || "Session expired. Please login again.");
       replaceAdminRoute(`${ADMIN_ROUTE}/login`);
@@ -509,6 +523,10 @@ function App() {
         if (admin) navigateAdmin("dashboard", { replace: true });
         return;
       }
+      if (!admin) {
+        replaceAdminRoute(`${ADMIN_ROUTE}/login`);
+        return;
+      }
       setActiveState(routeSection);
     };
     window.addEventListener("popstate", handlePopState);
@@ -517,8 +535,11 @@ function App() {
   }, [admin]);
 
   const logout = async () => {
-    await apiFetch("/auth/logout", { method: "POST", body: JSON.stringify({}) }).catch(() => undefined);
+    await apiFetch("/auth/logout", { method: "POST", body: JSON.stringify({}), suppressAuthInvalidEvent: true }).catch(() => undefined);
+    setAuthRestoreError("");
+    setDataLoadWarning("");
     setAdmin(null);
+    setData(createEmptyAdminData());
     setActiveState("dashboard");
     replaceAdminRoute(`${ADMIN_ROUTE}/login`);
   };
@@ -545,12 +566,26 @@ function App() {
     return <div className={`admin-shell ${theme}`}><div className="loader-card">Loading admin...</div></div>;
   }
 
+  if (!admin && authRestoreError) {
+    return (
+      <div className={`admin-shell ${theme}`}>
+        <div className="loader-card">
+          <p>{authRestoreError}</p>
+          <button type="button" className="primary-button" onClick={() => { setLoading(true); setAuthRetryKey((value) => value + 1); }}>
+            Retry session restore
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (!admin) {
     return (
       <div className={`admin-shell ${theme}`}>
         <LoginScreen
           onAuthenticated={async (nextAdmin) => {
             setMessage("");
+            setAuthRestoreError("");
             setAdmin(nextAdmin);
             navigateAdmin("dashboard", { replace: true });
             await refresh(nextAdmin);
@@ -657,6 +692,14 @@ function App() {
         </header>
 
         {message && <div className="notice glass-panel">{message}</div>}
+        {dataLoadWarning && (
+          <div className="notice glass-panel admin-data-warning" role="status">
+            <span>{dataLoadWarning}</span>
+            <button type="button" className="ghost-button" disabled={busy} onClick={() => refresh(admin)}>
+              Retry
+            </button>
+          </div>
+        )}
 
         {active === "dashboard" && (
           <DashboardPage dashboard={data.dashboard} admin={admin} setActive={setActive} />
@@ -709,6 +752,9 @@ function App() {
         )}
         {active === "gallery" && (
           <GalleryManager content={data.content} runAction={runAction} busy={busy} />
+        )}
+        {active === "shopHighlights" && (
+          <ShopHighlightsManager content={data.content} runAction={runAction} busy={busy} />
         )}
         {active === "offers" && (
           <OfferManager offers={data.offers} runAction={runAction} busy={busy} />
@@ -763,6 +809,7 @@ function LoginScreen({ onAuthenticated, message }) {
       const response = await apiFetch("/auth/login", {
         method: "POST",
         body: JSON.stringify(form),
+        suppressAuthInvalidEvent: true,
       });
       setChallenge(response);
       setOtp("");
@@ -782,6 +829,7 @@ function LoginScreen({ onAuthenticated, message }) {
       const response = await apiFetch("/auth/otp/verify", {
         method: "POST",
         body: JSON.stringify({ challengeId: challenge.challengeId, otp }),
+        suppressAuthInvalidEvent: true,
       });
       await onAuthenticated(response.admin);
     } catch (otpError) {
@@ -799,6 +847,7 @@ function LoginScreen({ onAuthenticated, message }) {
       const response = await apiFetch("/auth/otp/resend", {
         method: "POST",
         body: JSON.stringify({ challengeId: challenge.challengeId }),
+        suppressAuthInvalidEvent: true,
       });
       setChallenge(response);
       setOtp("");
@@ -879,6 +928,7 @@ function DashboardPage({ dashboard, admin, setActive }) {
     canAccessSection(admin, "shopProducts") && { label: "Shop products", value: dashboard?.shopProducts || 0, key: "shopProducts" },
     canAccessSection(admin, "about") && { label: "About Prakash Electronics cards", value: dashboard?.aboutCards || 0, key: "about" },
     canAccessSection(admin, "gallery") && { label: "Gallery images", value: dashboard?.galleryImages || 0, key: "gallery" },
+    canAccessSection(admin, "shopHighlights") && { label: "Shop Highlights cards", value: dashboard?.shopHighlights || 0, key: "shopHighlights" },
     canAccessSection(admin, "testimonials") && { label: "Testimonials cards", value: dashboard?.testimonials || 0, key: "testimonials" },
     canAccessSection(admin, "services") && { label: "Our Services cards", value: dashboard?.products || 0, key: "services" },
     canAccessSection(admin, "offers") && { label: "Offers cards", value: dashboard?.offers || 0, key: "offers" },
@@ -1750,6 +1800,115 @@ function GalleryManager({ content, runAction, busy }) {
   );
 }
 
+function ShopHighlightsManager({ content, runAction, busy }) {
+  const contentMap = useMemo(
+    () => Object.fromEntries(content.map((doc) => [doc.key, doc.value])),
+    [content],
+  );
+  const [form, setForm] = useState(() => ({
+    eyebrow: "Discover",
+    title: "Shop",
+    highlight: "highlights",
+    ...contentToForm("shopHighlights", contentMap.shopHighlights),
+  }));
+
+  useEffect(() => {
+    setForm({
+      eyebrow: "Discover",
+      title: "Shop",
+      highlight: "highlights",
+      ...contentToForm("shopHighlights", contentMap.shopHighlights),
+    });
+  }, [contentMap]);
+
+  const save = () => runAction(async () => {
+    await apiFetch("/admin/site-content/shopHighlights", {
+      method: "PUT",
+      body: JSON.stringify({ value: formToContent("shopHighlights", form) }),
+    });
+  }, "Shop Highlights saved");
+
+  const addUploadedImages = (images = []) => {
+    const uploadedItems = images
+      .filter((image) => image?.url)
+      .map((image, index) => ({
+        imageUrl: image.url,
+        originalUrl: image.originalUrl || "",
+        imagePublicId: image.publicId || "",
+        alt: image.originalName
+          ? image.originalName.replace(/\.[^.]+$/, "")
+          : `Shop highlight ${(form.items || []).length + index + 1}`,
+        linkUrl: "",
+      }));
+    if (!uploadedItems.length) return;
+    setForm((current) => ({ ...current, items: [...(current.items || []), ...uploadedItems] }));
+  };
+
+  const items = Array.isArray(form.items) ? form.items : [];
+
+  return (
+    <section className="editor glass-panel single shop-highlights-admin">
+      <div>
+        <p className="eyebrow">Homepage content</p>
+        <h2>Shop Highlights</h2>
+        <p className="muted">Image-only cards stack while visitors scroll. Each card can open an optional internal or external link.</p>
+      </div>
+      <SectionHeadingFields form={form} setForm={setForm} includeDescription={false} />
+      <ImageField
+        label="Bulk highlight image upload"
+        hint="Recommended aspect ratio: 12:5 (1440 x 600 px or larger). Upload up to 8 JPG, PNG, WebP, or AVIF images at once; maximum 5 MB each."
+        value=""
+        onChange={() => undefined}
+        multiple
+        onMultipleUpload={addUploadedImages}
+      />
+
+      {items.length ? (
+        <div className="admin-highlight-preview-grid" aria-label="Published highlight previews">
+          {items.map((item, index) => (
+            <figure key={`${item.imageUrl || index}-${index}`}>
+              <img src={item.imageUrl || item.src} alt={item.alt || `Shop highlight ${index + 1}`} />
+              <figcaption>{item.linkUrl || "No destination link"}</figcaption>
+            </figure>
+          ))}
+        </div>
+      ) : null}
+
+      <RepeatableRows
+        title="Highlight Cards"
+        items={items}
+        emptyItem={{ imageUrl: "", imagePublicId: "", originalUrl: "", alt: "", linkUrl: "" }}
+        onChange={(nextItems) => setForm({ ...form, items: nextItems })}
+        enableBatchDelete
+        getItemTitle={(item, index) => item.alt || `Shop highlight ${index + 1}`}
+        getItemMeta={(item) => item.linkUrl || "No destination link"}
+        renderItem={(item, update) => (
+          <>
+            <ImageField
+              label="Card image"
+              hint="Recommended aspect ratio: 12:5 (1440 x 600 px or larger)."
+              value={item.imageUrl || item.src}
+              onChange={(imageUrl) => update({ imageUrl })}
+            />
+            <div className="two-col">
+              <Input label="Image alt text" value={item.alt} onChange={(alt) => update({ alt })} />
+              <Input
+                label="Destination URL (optional)"
+                value={item.linkUrl}
+                placeholder="https://example.com or /products"
+                onChange={(linkUrl) => update({ linkUrl })}
+              />
+            </div>
+          </>
+        )}
+      />
+      <button className="primary-button" disabled={busy} onClick={save}>
+        {busy ? "Saving..." : "Save Shop Highlights"}
+      </button>
+    </section>
+  );
+}
+
 function contactToForm(contact) {
   return {
     phone: contact?.phone || "",
@@ -2534,6 +2693,7 @@ function ShopProductsManager({ products, runAction, busy }) {
   const [form, setForm] = useState(empty);
   const [editingId, setEditingId] = useState("");
   const [openId, setOpenId] = useState("");
+  const [imageUploading, setImageUploading] = useState(false);
   const batch = useBatchSelection(products);
 
   const reset = () => {
@@ -2658,7 +2818,11 @@ function ShopProductsManager({ products, runAction, busy }) {
         </div>
         <Textarea label="Short Description" value={form.shortDescription} onChange={(shortDescription) => setForm({ ...form, shortDescription })} />
         <Textarea label="Full Description" value={form.description} onChange={(description) => setForm({ ...form, description })} />
-        <ImageField value={form.imageUrl} onChange={(imageUrl) => setForm({ ...form, imageUrl })} />
+        <ImageField
+          value={form.imageUrl}
+          onChange={(imageUrl) => setForm((current) => ({ ...current, imageUrl }))}
+          onUploadingChange={setImageUploading}
+        />
         <div className="two-col">
           <Textarea label="Tags / Keywords (comma or line separated)" rows={3} value={form.tags} onChange={(tags) => setForm({ ...form, tags })} />
           <Textarea label="Specifications (Label: Value per line)" rows={3} value={form.specifications} onChange={(specifications) => setForm({ ...form, specifications })} />
@@ -2673,8 +2837,8 @@ function ShopProductsManager({ products, runAction, busy }) {
           onChange={(isTopProduct) => setForm({ ...form, isTopProduct })}
         />
         <div className="button-row">
-          <button className="primary-button" disabled={busy || !form.name} onClick={save}>
-            {busy ? "Saving..." : editingId ? "Update Product" : "Add Product"}
+          <button className="primary-button" disabled={busy || imageUploading || !form.name} onClick={save}>
+            {imageUploading ? "Uploading image..." : busy ? "Saving..." : editingId ? "Update Product" : "Add Product"}
           </button>
           {editingId && <button className="ghost-button" type="button" onClick={reset}>Cancel</button>}
         </div>
@@ -3625,6 +3789,15 @@ function formToContent(key, form) {
     };
   }
 
+  if (key === "shopHighlights") {
+    return {
+      eyebrow: form.eyebrow || "Discover",
+      title: form.title || "Shop",
+      highlight: form.highlight || "highlights",
+      items: (form.items || []).filter((item) => item.imageUrl || item.src),
+    };
+  }
+
   if (key === "about") {
     return {
       eyebrow: form.eyebrow || "",
@@ -3776,7 +3949,7 @@ function AccordionCard({
   );
 }
 
-function ImageField({ value, onChange, label = "Image URL", multiple = false, onMultipleUpload, accept = "image/*" }) {
+function ImageField({ value, onChange, label = "Image URL", hint = "", multiple = false, onMultipleUpload, onUploadingChange, accept = "image/*" }) {
   const [uploading, setUploading] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [localPreview, setLocalPreview] = useState("");
@@ -3820,6 +3993,11 @@ function ImageField({ value, onChange, label = "Image URL", multiple = false, on
     return () => window.clearInterval(timer);
   }, [uploading]);
 
+  useEffect(() => {
+    onUploadingChange?.(uploading);
+    return () => onUploadingChange?.(false);
+  }, [onUploadingChange, uploading]);
+
   const setPreviewFromFile = (file) => {
     if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
     const objectUrl = URL.createObjectURL(file);
@@ -3858,7 +4036,7 @@ function ImageField({ value, onChange, label = "Image URL", multiple = false, on
         onMultipleUpload?.(uploaded);
       } else {
         formData.append("image", filesToUpload[0]);
-        const response = await apiFetch("/admin/upload/image", { method: "POST", body: formData });
+        const response = await apiFetch("/admin/upload/image", { method: "POST", body: formData, timeout: 45000 });
         onChange(response.data.url);
         setLocalPreview(response.data.url);
         setUploadedPublicId(response.data.publicId || "");
@@ -3912,6 +4090,7 @@ function ImageField({ value, onChange, label = "Image URL", multiple = false, on
   return (
     <div className="field">
       <label>{label}</label>
+      {hint ? <small className="field-hint">{hint}</small> : null}
       <div className="image-field">
         <input value={value || ""} onChange={(event) => onChange(event.target.value)} />
       </div>

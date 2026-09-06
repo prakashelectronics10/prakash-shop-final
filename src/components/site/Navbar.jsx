@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Menu, X } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { useSiteData } from "../../context/SiteDataContext";
 import { CANONICAL_WIRING_PARTS_PATH } from "../../utils/routes";
 import { usePageScroll } from "../../hooks/usePageScroll";
+import { MenuVertical } from "../ui/MenuVertical";
 
 const exactNavRoutes = {
   home: "/#home",
@@ -83,12 +84,31 @@ function mergeRouteLinks(links = []) {
   return merged;
 }
 
+function isCurrentRoute(href) {
+  if (typeof window === "undefined") return false;
+  const currentPath = window.location.pathname.replace(/\/$/, "") || "/";
+  const currentHash = window.location.hash || "#home";
+  const [pathPart, hashPart] = String(href || "").split("#");
+  const targetPath = (pathPart || "/").replace(/\/$/, "") || "/";
+
+  if (targetPath !== currentPath) return false;
+  return hashPart ? currentHash === `#${hashPart}` : true;
+}
+
 export function Navbar() {
   const [scrolled, setScrolled] = useState(false);
   const [open, setOpen] = useState(false);
+  const [, setLocationKey] = useState("");
+  const menuButtonRef = useRef(null);
+  const drawerRef = useRef(null);
   const { content } = useSiteData();
   const nav = content.navbar || {};
   const links = mergeRouteLinks(nav.links || []);
+  const normalizedLinks = links.map((link) => ({
+    ...link,
+    href: normalizeNavHref(link),
+    active: isCurrentRoute(normalizeNavHref(link)),
+  }));
   const [brandFirst, ...brandRest] = String(nav.brandName || "").split(" ");
   const brandTail = brandRest.join(" ");
 
@@ -97,26 +117,67 @@ export function Navbar() {
     setScrolled((prev) => (prev === next ? prev : next));
   });
 
+  useEffect(() => {
+    const syncLocation = () => setLocationKey(`${window.location.pathname}${window.location.hash}`);
+    window.addEventListener("hashchange", syncLocation);
+    window.addEventListener("popstate", syncLocation);
+    return () => {
+      window.removeEventListener("hashchange", syncLocation);
+      window.removeEventListener("popstate", syncLocation);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") {
+        setOpen(false);
+        menuButtonRef.current?.focus();
+        return;
+      }
+      if (event.key === "Tab") {
+        const drawerLinks = Array.from(drawerRef.current?.querySelectorAll("a[href]") || []);
+        const focusable = [menuButtonRef.current, ...drawerLinks].filter(Boolean);
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last?.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first?.focus();
+        }
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    const focusTimer = window.setTimeout(() => {
+      drawerRef.current?.querySelector("a")?.focus();
+    }, 180);
+
+    return () => {
+      window.clearTimeout(focusTimer);
+      document.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [open]);
+
+  const closeMenu = () => setOpen(false);
+
   return (
     <header
       className={cn(
-        "fixed inset-x-0 top-0 z-50 py-4"
+        "site-navbar-header fixed inset-x-0 top-0 z-50 py-4",
+        open ? "is-menu-open" : "",
       )}
     >
       <div className="mx-auto max-w-7xl px-4">
         <nav
           className={cn(
-            "flex items-center justify-between rounded-2xl px-4 py-3 transition-colors duration-200 ease-out",
-            "backdrop-blur-md bg-[rgba(255,255,255,0.23)] shadow-lg border border-[rgba(255,255,255,0.13)]", // glassmorphism style
-            scrolled ? "shadow-elegant" : ""
+            "site-navbar-shell relative z-20 flex items-center justify-between rounded-2xl px-4 py-3",
+            scrolled ? "is-scrolled" : ""
           )}
-          style={{
-            // fallback for browsers that do not support tailwind's backdrop utilities
-            WebkitBackdropFilter: 'blur(18px)',
-            backdropFilter: 'blur(55px)',
-            background: 'rgba(86, 81, 81, 0.12)',
-            border: '1px solid rgba(58, 95, 218, 0.23)'
-          }}
         >
           <a href="/#home" className="flex items-center gap-2">
             <img 
@@ -127,7 +188,7 @@ export function Navbar() {
               className="h-9 w-9 rounded-xl shadow-glow"
               loading="eager"
               decoding="async"
-              fetchPriority="high"
+              fetchpriority="high"
             />
             <span className="font-display text-lg font-bold tracking-tight">
               {brandFirst || "Prakash"} <span className="text-gradient">{brandTail || "Electronics"}</span>
@@ -135,23 +196,18 @@ export function Navbar() {
           </a>
 
           <ul className="hidden items-center gap-1 xl:flex">
-            {links.map((l) => (
+            {normalizedLinks.map((l) => (
               <li
                 key={`${l.label}-${l.href}`}
-                className="p-1 rounded-3xl"
-                style={{
-                  background: 'transparent',
-                  border: 'none'
-                }}
+                className="p-1"
               >
                 <a
-                  href={normalizeNavHref(l)}
+                  href={l.href}
+                  aria-current={l.active ? "page" : undefined}
                   className={cn(
-                    "relative rounded-lg px-3 py-2 text-sm font-medium transition-colors duration-200",
-                    "text-white hover:text-[#7897ff] focus:text-[#7897ff]",
-                    
+                    "site-nav-link relative px-3 py-2 text-sm font-medium",
+                    l.active ? "is-active" : ""
                   )}
-                  
                 >
                   {l.label}
                 </a>
@@ -170,52 +226,47 @@ export function Navbar() {
           </div>
 
           <button
+            ref={menuButtonRef}
+            type="button"
             aria-label="Toggle menu"
+            aria-expanded={open}
+            aria-controls="mobile-navigation-drawer"
             onClick={() => setOpen((o) => !o)}
-            className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-foreground xl:hidden"
+            className="site-menu-toggle inline-flex h-11 w-11 items-center justify-center rounded-lg xl:hidden"
           >
             {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </button>
         </nav>
 
         {open && (
-          <div
-            className="mt-2 rounded-2xl xl:hidden flex flex-col gap-1"
-            // Style copied from main nav bar for glassmorphism background
-            style={{
-              WebkitBackdropFilter: 'blur(18px)',
-              backdropFilter: 'blur(55px)',
-              background: 'rgba(86, 81, 81, 0.12)',
-              border: '1px solid rgba(81, 112, 214, 0.49)',
-              boxShadow: '0 8px 32px 0 rgba(31, 38, 135, 0.13)'
-            }}
-          >
-            <div className="p-4">
-              <ul className="flex flex-col gap-1">
-                {links.map((l) => (
-                  <li key={`${l.label}-${l.href}`}>
-                    <a
-                      onClick={() => setOpen(false)}
-                      href={normalizeNavHref(l)}
-                      className="block rounded-lg px-4 py-3 text-sm text-white hover:text-[#7897ff] hover:bg-secondary"
-                    >
-                      {l.label}
-                    </a>
-                  </li>
-             
-                ))}
-                <li className="pt-2">
-                  <a
-                    onClick={() => setOpen(false)}
-                    href="/booking"
-                    className="block rounded-xl bg-gradient-primary px-5 py-3 text-center text-sm font-semibold text-primary-foreground shadow-glow"
-                  >
-                    {nav.ctaLabel || "Book Repair"}
-                  </a>
-                </li>
-              </ul>
+            <div
+              className="mobile-nav-overlay xl:hidden"
+            >
+              <button
+                type="button"
+                className="mobile-nav-backdrop"
+                aria-label="Close navigation menu"
+                tabIndex={-1}
+                onClick={closeMenu}
+              />
+              <aside
+                id="mobile-navigation-drawer"
+                ref={drawerRef}
+                role="dialog"
+                aria-modal="true"
+                aria-label="Mobile navigation"
+                className="mobile-nav-drawer"
+              >
+                <div className="mobile-nav-drawer-head">
+                  <span>Navigate</span>
+                  <p>Prakash Electronics</p>
+                </div>
+                <MenuVertical menuItems={normalizedLinks} onNavigate={closeMenu} />
+                <a onClick={closeMenu} href="/booking" className="mobile-nav-cta">
+                  {nav.ctaLabel || "Book Repair"}
+                </a>
+              </aside>
             </div>
-          </div>
         )}
       </div>
     </header>

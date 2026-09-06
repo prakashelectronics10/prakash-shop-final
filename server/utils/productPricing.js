@@ -1,18 +1,18 @@
 /** Shared MRP / discount / selling-price helpers for shop + wiring products. */
 
-export function toNumberOrNull(value) {
+function toNumberOrNull(value) {
   if (value === "" || value === null || value === undefined) return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-export function clampDiscountPercent(value) {
+function clampDiscountPercent(value) {
   const parsed = toNumberOrNull(value);
   if (parsed === null) return null;
   return Math.min(100, Math.max(0, parsed));
 }
 
-export function calculateSellingPrice(mrp, discountPercent) {
+function calculateSellingPrice(mrp, discountPercent) {
   const base = toNumberOrNull(mrp);
   if (base === null || base < 0) return null;
   const discount = clampDiscountPercent(discountPercent);
@@ -24,7 +24,7 @@ export function calculateSellingPrice(mrp, discountPercent) {
  * Normalize pricing payload for admin/API save.
  * Selling price is derived from MRP + % discount when discount is set.
  */
-export function buildPricingPayload({ mrp, discountPercent, price } = {}) {
+function buildPricingPayload({ mrp, discountPercent, price } = {}) {
   const nextMrp = toNumberOrNull(mrp);
   const nextDiscount = clampDiscountPercent(discountPercent);
   let nextPrice = toNumberOrNull(price);
@@ -40,7 +40,7 @@ export function buildPricingPayload({ mrp, discountPercent, price } = {}) {
   };
 }
 
-export function resolveProductPricing(product = {}) {
+function resolveProductPricing(product = {}) {
   const mrp = toNumberOrNull(product.mrp);
   const storedDiscount = clampDiscountPercent(product.discountPercent);
   let price = toNumberOrNull(product.price);
@@ -64,7 +64,17 @@ export function resolveProductPricing(product = {}) {
   };
 }
 
-export function formatINR(amount) {
+function formatINR(amount) {
   if (amount === null || amount === undefined || amount === "") return "Price on request";
   return `₹ ${Number(amount).toLocaleString("en-IN")}`;
 }
+
+module.exports = {
+  applyPricingFields: buildPricingPayload,
+  buildPricingPayload,
+  calculateSellingPrice,
+  clampDiscountPercent,
+  formatINR,
+  resolveProductPricing,
+  toNumberOrNull,
+};

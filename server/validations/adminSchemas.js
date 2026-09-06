@@ -42,6 +42,7 @@ const otpResendSchema = z.object({
 const adminPermission = z.enum([
   "bookings",
   "offers",
+  "shopHighlights",
   "services",
   "gallery",
   "testimonials",

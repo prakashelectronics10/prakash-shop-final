@@ -1,7 +1,10 @@
 const crypto = require("crypto");
 const AdminSession = require("../models/AdminSession");
+const MaintenanceMarker = require("../models/MaintenanceMarker");
 const env = require("../config/env");
 const AppError = require("../utils/AppError");
+
+const ADMIN_SESSION_CLEANUP_MARKER = "admin-session-cleanup-2026-09-06";
 
 function hashValue(value) {
   return crypto.createHash("sha256").update(String(value || "")).digest("hex");
@@ -152,6 +155,48 @@ async function revokeAdminSessions(adminId, reason = "admin-updated") {
   );
 }
 
+async function revokeAllAdminSessionsOnce(reason = ADMIN_SESSION_CLEANUP_MARKER) {
+  let marker;
+  try {
+    marker = await MaintenanceMarker.create({
+      key: ADMIN_SESSION_CLEANUP_MARKER,
+      details: {
+        reason,
+        status: "started",
+      },
+    });
+  } catch (error) {
+    if (error.code === 11000) return { skipped: true, modifiedCount: 0 };
+    throw error;
+  }
+
+  try {
+    const result = await AdminSession.updateMany(
+      { isActive: true },
+      {
+        $set: {
+          isActive: false,
+          revokedAt: new Date(),
+          revokeReason: reason,
+        },
+      },
+    );
+
+    marker.completedAt = new Date();
+    marker.details = {
+      reason,
+      status: "completed",
+      modifiedCount: result.modifiedCount || 0,
+    };
+    await marker.save();
+
+    return { skipped: false, modifiedCount: result.modifiedCount || 0 };
+  } catch (error) {
+    await MaintenanceMarker.deleteOne({ key: ADMIN_SESSION_CLEANUP_MARKER }).catch(() => undefined);
+    throw error;
+  }
+}
+
 async function ensureAdminSessionIndexes() {
   try {
     await AdminSession.updateMany(
@@ -185,6 +230,13 @@ async function ensureAdminSessionIndexes() {
         name: "admin_1_clientType_1_isActive_1",
       },
     );
+    await MaintenanceMarker.collection.createIndex(
+      { key: 1 },
+      {
+        unique: true,
+        name: "maintenance_marker_key_1",
+      },
+    );
   } catch (error) {
     if (error.codeName !== "IndexNotFound") throw error;
   }
@@ -201,6 +253,7 @@ module.exports = {
   isSameDeviceSession,
   normalizeClientType,
   revokeAdminSessions,
+  revokeAllAdminSessionsOnce,
   revokeSession,
   validateAdminSession,
 };

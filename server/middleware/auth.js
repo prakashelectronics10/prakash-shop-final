@@ -15,6 +15,7 @@ const allPermissions = [
   "admins",
   "bookings",
   "offers",
+  "shopHighlights",
   "services",
   "gallery",
   "testimonials",
@@ -33,6 +34,14 @@ const allPermissions = [
 
 const normalizeEmail = (email) => String(email || "").trim().toLowerCase();
 const isSuperAdminEmail = (email) => normalizeEmail(email) === normalizeEmail(env.adminEmail);
+const isSuperAdminAccount = (admin) => (
+  Boolean(admin)
+  && (
+    isSuperAdminEmail(admin.email)
+    || admin.role === "owner"
+    || admin.role === "mainAdmin"
+  )
+);
 
 function getRequestToken(req) {
   const authorization = String(req.headers.authorization || "");
@@ -79,7 +88,7 @@ const requireAdmin = asyncHandler(async (req, res, next) => {
     throw new AppError("Admin account is not active", 401);
   }
 
-  admin._doc.isSuperAdmin = isSuperAdminEmail(admin.email);
+  admin._doc.isSuperAdmin = isSuperAdminAccount(admin);
   if (admin._doc.isSuperAdmin) {
     admin._doc.permissions = allPermissions;
   }
@@ -92,17 +101,24 @@ const requireAdmin = asyncHandler(async (req, res, next) => {
 });
 
 const requireSuperAdmin = (req, _res, next) => {
-  if (!isSuperAdminEmail(req.admin?.email)) {
+  if (!isSuperAdminAccount(req.admin)) {
     return next(new AppError("Only main owner can manage admins", 403));
   }
   return next();
 };
 
 const requirePermission = (...permissions) => (req, _res, next) => {
-  if (isSuperAdminEmail(req.admin?.email)) return next();
+  if (isSuperAdminAccount(req.admin)) return next();
   const granted = new Set(req.admin?.permissions || []);
   if (permissions.some((permission) => granted.has(permission))) return next();
   return next(new AppError("You do not have permission for this section", 403));
 };
 
-module.exports = { allPermissions, isSuperAdminEmail, requireAdmin, requireSuperAdmin, requirePermission };
+module.exports = {
+  allPermissions,
+  isSuperAdminAccount,
+  isSuperAdminEmail,
+  requireAdmin,
+  requireSuperAdmin,
+  requirePermission,
+};

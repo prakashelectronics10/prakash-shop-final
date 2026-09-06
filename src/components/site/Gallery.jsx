@@ -18,19 +18,15 @@ function GalleryMarqueeCard({ item, index, onOpen, eager = false }) {
         alt={item.label}
         loading={eager ? "eager" : "lazy"}
         decoding="async"
-        width={360}
-        height={420}
+        width={720}
+        height={840}
         sizes="(min-width: 768px) 240px, 70vw"
         className="gallery-tile-image h-full w-full object-cover"
       />
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-background via-background/25 to-transparent opacity-90" />
       <div className="gallery-tile-expand absolute inset-0 flex items-center justify-center opacity-0 transition-opacity duration-300">
         <div className="flex h-11 w-11 items-center justify-center rounded-full bg-gradient-primary shadow-glow">
           <Expand className="h-5 w-5 text-primary-foreground" />
         </div>
-      </div>
-      <div className="absolute bottom-3 left-3 rounded-full bg-background/85 px-3 py-1 text-xs font-medium md:glass-strong md:bg-transparent">
-        {item.label}
       </div>
     </button>
   );

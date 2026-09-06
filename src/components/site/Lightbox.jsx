@@ -78,6 +78,9 @@ export function Lightbox({ items, index, onClose, onIndexChange }) {
   useEffect(() => reset(), [index, reset]);
 
   const current = index !== null ? items[index] : null;
+  const imageWidth = typeof window === "undefined"
+    ? 1600
+    : Math.min(1920, Math.max(960, Math.ceil(window.innerWidth * Math.min(window.devicePixelRatio || 1, 2))));
 
   const onPointerDown = (e) => {
     if (zoom <= 1) return;
@@ -106,21 +109,20 @@ export function Lightbox({ items, index, onClose, onIndexChange }) {
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.25 }}
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-background/90 backdrop-blur-xl"
+          className="lightbox-dialog fixed inset-0 z-[100] flex items-center justify-center"
           onClick={onClose}
           role="dialog"
           aria-modal="true"
           aria-label={current.label}
         >
-          {/* Top toolbar */}
           <div
-            className="absolute inset-x-0 top-0 z-20 flex items-center justify-between p-4 sm:p-6"
+            className="lightbox-toolbar absolute inset-x-0 top-0 z-20 flex items-center justify-between"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="rounded-full glass-strong px-4 py-2 text-xs font-medium text-foreground">
+            <div className="lightbox-counter">
               {(index ?? 0) + 1} / {items.length} - {Math.round(zoom * 100)}%
             </div>
-            <div className="flex items-center gap-2">
+            <div className="lightbox-controls">
               <button
                 type="button"
                 aria-label="Previous"
@@ -128,7 +130,7 @@ export function Lightbox({ items, index, onClose, onIndexChange }) {
                   e.stopPropagation();
                   prev();
                 }}
-                className="flex h-10 w-10 items-center justify-center rounded-full text-primary-foreground shadow-glow border-glow transition-transform hover:scale-110"
+                className="lightbox-control"
               >
                 <ChevronLeft className="h-6 w-6" />
               </button>
@@ -139,7 +141,7 @@ export function Lightbox({ items, index, onClose, onIndexChange }) {
                   e.stopPropagation();
                   next();
                 }}
-                className="flex h-10 w-10 items-center justify-center rounded-full text-primary-foreground shadow-glow border-glow transition-transform hover:scale-110"
+                className="lightbox-control"
               >
                 <ChevronRight className="h-6 w-6" />
               </button>
@@ -147,27 +149,25 @@ export function Lightbox({ items, index, onClose, onIndexChange }) {
                 type="button"
                 aria-label="Close"
                 onClick={onClose}
-                className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-primary text-primary-foreground shadow-glow transition-transform hover:scale-110"
+                className="lightbox-control lightbox-close"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
           </div>
 
-          {/* Prev / Next */}
-
-
-          {/* Image */}
           <div
             ref={imgWrapRef}
-            className="relative flex h-full w-full items-center justify-center overflow-hidden px-4 sm:px-20"
+            className="lightbox-image-stage relative flex h-full w-full items-center justify-center overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
             <AnimatePresence mode="wait">
               <motion.img
                 key={current.src}
-                src={getOptimizedImageUrl(current.src, { width: 1200 })}
+                src={getOptimizedImageUrl(current.src, { width: imageWidth })}
                 alt={current.label}
+                decoding="async"
+                fetchpriority="high"
                 initial={{ opacity: 0, scale: 0.96 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.96 }}
@@ -187,28 +187,11 @@ export function Lightbox({ items, index, onClose, onIndexChange }) {
                 onPointerMove={onPointerMove}
                 onPointerUp={onPointerUp}
                 onPointerCancel={onPointerUp}
-                className="max-h-[80vh] max-w-full select-none rounded-2xl shadow-elegant"
+                className="lightbox-image select-none"
                 draggable={false}
               />
             </AnimatePresence>
           </div>
-
-          {/* Caption */}
-          <motion.div
-            key={current.label}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.15 }}
-            className="absolute inset-x-0 bottom-0 z-10 px-4 pb-6 sm:pb-10"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="mx-auto max-w-2xl rounded-2xl glass-strong border-glow px-5 py-4 text-center">
-              <h3 className="font-display text-lg font-semibold">{current.label}</h3>
-              {current.caption && (
-                <p className="mt-1 text-sm text-muted-foreground">{current.caption}</p>
-              )}
-            </div>
-          </motion.div>
         </motion.div>
       )}
     </AnimatePresence>

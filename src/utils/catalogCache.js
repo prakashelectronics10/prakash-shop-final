@@ -45,5 +45,5 @@ export function writeCatalogCache(key, data) {
 }
 
 export const CATALOG_CACHE_TTL_MS = DEFAULT_TTL_MS;
-export const SHOP_CATALOG_CACHE_KEY = "prakash:shop-catalog:v1";
-export const WIRING_CATALOG_CACHE_KEY = "prakash:wiring-catalog:v1";
+export const SHOP_CATALOG_CACHE_KEY = "prakash:shop-catalog:v2";
+export const WIRING_CATALOG_CACHE_KEY = "prakash:wiring-catalog:v2";

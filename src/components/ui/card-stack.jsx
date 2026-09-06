@@ -185,7 +185,7 @@ export function CardStack({
         };
 
   return (
-    <div className={cn("w-full", className)}>
+    <div className={cn("card-stack-shell w-full", className)}>
       <div
         className="relative w-full outline-none"
         style={{ height: Math.max(320, cardHeight + 80) }}
@@ -256,11 +256,11 @@ export function CardStack({
                 <motion.div
                   key={item.id}
                   className={cn(
-                    "absolute bottom-0 overflow-hidden rounded-2xl border-4 border-black/10 shadow-xl dark:border-white/10",
+                    "card-stack-card absolute bottom-0 overflow-hidden rounded-2xl border-4 border-black/10 shadow-xl dark:border-white/10",
                     "will-change-transform select-none",
                     isActive
-                      ? "cursor-grab active:cursor-grabbing"
-                      : "cursor-pointer",
+                      ? "is-active cursor-grab active:cursor-grabbing"
+                      : "is-side cursor-pointer",
                   )}
                   style={{
                     width: cardWidth,

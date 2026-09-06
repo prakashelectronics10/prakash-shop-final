@@ -118,9 +118,9 @@ router.delete("/auto-slider-banners/:id", requirePermission("autoSliderBanners")
 router.get("/contact", requirePermission("footer"), getContact);
 router.put("/contact", requirePermission("footer"), validateBody(contactSchema), upsertContact);
 
-router.get("/site-content", requirePermission("gallery", "testimonials", "about", "footer"), listContent);
-router.get("/site-content/:key", requirePermission("gallery", "testimonials", "about", "footer"), getContent);
-router.put("/site-content/:key", requirePermission("gallery", "testimonials", "about", "footer"), validateBody(siteContentSchema), upsertContent);
+router.get("/site-content", requirePermission("gallery", "shopHighlights", "testimonials", "about", "footer"), listContent);
+router.get("/site-content/:key", requirePermission("gallery", "shopHighlights", "testimonials", "about", "footer"), getContent);
+router.put("/site-content/:key", requirePermission("gallery", "shopHighlights", "testimonials", "about", "footer"), validateBody(siteContentSchema), upsertContent);
 
 router.get("/web-settings", requirePermission("webSettings"), getWebSettings);
 router.post("/web-settings/og-image", requirePermission("webSettings"), upload.single("image"), uploadOgImage);
@@ -129,8 +129,8 @@ router.post("/web-settings/favicon", requirePermission("webSettings"), upload.si
 router.delete("/web-settings/favicon", requirePermission("webSettings"), deleteFavicon);
 
 router.post("/profile-image", upload.single("image"), updateProfileImage);
-router.post("/upload/image", requirePermission("offers", "services", "featuredRepairs", "gallery", "testimonials", "about", "footer", "projectParts", "projectSliders", "brandsSlider", "shopProducts", "autoSliderBanners", "webSettings", "invoices"), upload.single("image"), uploadImage);
-router.post("/upload/images", requirePermission("offers", "services", "featuredRepairs", "gallery", "testimonials", "about", "footer", "projectParts", "projectSliders", "brandsSlider", "shopProducts", "autoSliderBanners", "webSettings", "invoices"), upload.array("images", 8), uploadImages);
-router.delete("/upload/image", requirePermission("offers", "services", "featuredRepairs", "gallery", "testimonials", "about", "footer", "projectParts", "projectSliders", "brandsSlider", "shopProducts", "autoSliderBanners", "webSettings", "invoices"), deleteUploadedImage);
+router.post("/upload/image", requirePermission("offers", "shopHighlights", "services", "featuredRepairs", "gallery", "testimonials", "about", "footer", "projectParts", "projectSliders", "brandsSlider", "shopProducts", "autoSliderBanners", "webSettings", "invoices"), upload.single("image"), uploadImage);
+router.post("/upload/images", requirePermission("offers", "shopHighlights", "services", "featuredRepairs", "gallery", "testimonials", "about", "footer", "projectParts", "projectSliders", "brandsSlider", "shopProducts", "autoSliderBanners", "webSettings", "invoices"), upload.array("images", 8), uploadImages);
+router.delete("/upload/image", requirePermission("offers", "shopHighlights", "services", "featuredRepairs", "gallery", "testimonials", "about", "footer", "projectParts", "projectSliders", "brandsSlider", "shopProducts", "autoSliderBanners", "webSettings", "invoices"), deleteUploadedImage);
 
 module.exports = router;
