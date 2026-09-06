@@ -18,6 +18,10 @@ function normalizeAvailability(value) {
   return "In Stock";
 }
 
+function escapeRegex(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 async function deleteCloudinaryImages(publicIds) {
   const ids = [...new Set((publicIds || []).filter(Boolean))];
   if (!ids.length) return;
@@ -51,6 +55,7 @@ async function normalizeDisplayOrders(targetPart) {
 exports.getProjectParts = catchAsync(async (req, res) => {
   const { category, subCategory, search, isActive = "true", sort = "displayOrder" } = req.query;
   const limit = Math.min(positiveInt(req.query.limit, 50), 200);
+  const page = positiveInt(req.query.page, 1);
   const sortField = ["displayOrder", "name", "createdAt", "price"].includes(sort) ? sort : "displayOrder";
 
   const query = { isActive: String(isActive) === "true" };
@@ -64,20 +69,43 @@ exports.getProjectParts = catchAsync(async (req, res) => {
   }
 
   if (search) {
-    query.$text = { $search: search };
+    const cleanedSearch = String(search).trim().replace(/^#+/, "");
+    const searchRegex = { $regex: escapeRegex(cleanedSearch), $options: "i" };
+    query.$or = [
+      { name: searchRegex },
+      { shortDescription: searchRegex },
+      { description: searchRegex },
+      { category: searchRegex },
+      { subCategory: searchRegex },
+      { tags: searchRegex },
+    ];
   }
 
-  const parts = await ProjectPart.find(query)
-    .select("name slug shortDescription category subCategory mrp discountPercent price stock availability imageUrl tags isActive isFeatured displayOrder createdAt")
-    .sort({ [sortField]: 1, displayOrder: 1, name: 1 })
-    .limit(limit)
-    .maxTimeMS(5000)
-    .lean();
+  const [parts, total, priceStats] = await Promise.all([
+    ProjectPart.find(query)
+      .select("name slug shortDescription category subCategory mrp discountPercent price stock availability imageUrl tags isActive isFeatured isTopProduct displayOrder viewCount createdAt")
+      .sort({ [sortField]: 1, displayOrder: 1, name: 1, _id: 1 })
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .maxTimeMS(5000)
+      .lean(),
+    ProjectPart.countDocuments(query).maxTimeMS(5000),
+    ProjectPart.aggregate([
+      { $match: query },
+      { $group: { _id: null, maxPrice: { $max: "$price" } } },
+    ]).option({ maxTimeMS: 5000 }),
+  ]);
 
   res.set("Cache-Control", "public, max-age=120, stale-while-revalidate=600");
   res.json({
     success: true,
-    data: { items: parts, total: parts.length },
+    data: {
+      items: parts,
+      total,
+      page,
+      pages: Math.ceil(total / limit),
+      maxPrice: priceStats[0]?.maxPrice || 0,
+    },
   });
 });
 
