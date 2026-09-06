@@ -2,13 +2,14 @@ import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { ArrowLeft, Bot, Check, Filter, PackageSearch, Search, ShoppingBag, ShoppingCart, Tag, X } from "lucide-react";
 import { apiRequest } from "../../api/client";
-import { SCIENCE_PROJECTS_CATEGORY, isWiringAccessoriesCategory, cartStockMessage, getCartStockLimit, useCart } from "../../context/CartContext";
+import { SCIENCE_PROJECTS_CATEGORY, isWiringAccessoriesCategory, cartStockMessage, getCartStockLimit, useCart, useCartActions, useCartQuantity } from "../../context/CartContext";
 import { Navbar } from "./Navbar";
 import { CANONICAL_WIRING_PARTS_PATH } from "../../utils/routes";
 import { Footer } from "./Footer";
 import { OptimizedImage } from "./OptimizedImage";
 import { ProductShareButton } from "./ProductShareButton";
 import { ProductPriceDisplay } from "./ProductPriceDisplay";
+import { CatalogPagination } from "./CatalogPagination";
 import { RelatedProductsSection } from "./RelatedProductsSection";
 import { CatalogGridSkeleton, EmptyProductsState, LoadingState } from "./StateLottie";
 import { applyProductPageMeta, getProductSharePath } from "../../utils/productShare";
@@ -17,11 +18,10 @@ import {
   formatTagQuery,
   getTagSearchHref,
   normalizeTag,
-  productMatchesSearch,
   readSearchQueryFromLocation,
 } from "../../utils/productSearch";
 import { formatINR } from "../../utils/productPricing";
-import { useCatalogPageSize, useWindowedItems } from "../../hooks/useWindowedItems";
+import { useCatalogPageSize } from "../../hooks/useWindowedItems";
 import {
   CATALOG_CACHE_TTL_MS,
   SHOP_CATALOG_CACHE_KEY,
@@ -40,7 +40,9 @@ function useDebouncedValue(value, delay = 220) {
   return debounced;
 }
 
-const ProductCard = memo(function ProductCard({ product, onAddToCart, cartQuantity, eager = false }) {
+const ProductCard = memo(function ProductCard({ product, onAddToCart, eager = false }) {
+  const sourceType = product.sourceType || (isWiringAccessoriesCategory(product.category) ? "project-part" : "shop-product");
+  const cartQuantity = useCartQuantity(product, { sourceType });
   const detailUrl = getProductSharePath(product);
   const category = product.category || "Electronics";
   const stockLimit = getCartStockLimit(product);
@@ -120,13 +122,17 @@ function ExpandableDescription({ text }) {
 }
 
 export function ShopProductsPage() {
-  const { addItem, getQuantity } = useCart();
+  const { addItem } = useCartActions();
   const cachedCatalog = useMemo(
     () => readCatalogCache(SHOP_CATALOG_CACHE_KEY, { ttlMs: CATALOG_CACHE_TTL_MS, allowStale: true }),
     [],
   );
   const [products, setProducts] = useState(() => cachedCatalog?.data?.products || []);
   const [categories, setCategories] = useState(() => cachedCatalog?.data?.categories || []);
+  const [page, setPage] = useState(() => cachedCatalog?.data?.page || 1);
+  const [catalogTotal, setCatalogTotal] = useState(() => cachedCatalog?.data?.total || cachedCatalog?.data?.products?.length || 0);
+  const [catalogPages, setCatalogPages] = useState(() => cachedCatalog?.data?.pages || 1);
+  const [highestPrice, setHighestPrice] = useState(() => cachedCatalog?.data?.maxPrice || 0);
   const [loading, setLoading] = useState(() => !(cachedCatalog?.data?.products?.length));
   const [error, setError] = useState("");
   const [search, setSearch] = useState(() => readSearchQueryFromLocation());
@@ -147,8 +153,18 @@ export function ShopProductsPage() {
     const hadCache = Boolean(cachedCatalog?.data?.products?.length);
     async function load() {
       try {
+        setLoading(true);
+        const query = new URLSearchParams({
+          page: String(page),
+          limit: String(gridPageSize),
+        });
+        if (debouncedSearch) query.set("search", debouncedSearch);
+        if (category) query.set("category", category);
+        if (highestPrice && maxPrice && Number(maxPrice) < highestPrice) {
+          query.set("maxPrice", maxPrice);
+        }
         const [productsResponse, categoriesResponse] = await Promise.all([
-          apiRequest("/shop-products/public/products?limit=150", { cacheTtl: CATALOG_CACHE_TTL_MS }),
+          apiRequest(`/shop-products/public/products?${query.toString()}`, { cacheTtl: CATALOG_CACHE_TTL_MS }),
           apiRequest("/shop-products/public/categories", { cacheTtl: CATALOG_CACHE_TTL_MS }),
         ]);
         if (!mounted) return;
@@ -156,9 +172,16 @@ export function ShopProductsPage() {
         const nextCategories = categoriesResponse.data || [];
         setProducts(nextProducts);
         setCategories(nextCategories);
+        setCatalogTotal(productsResponse.data?.total || 0);
+        setCatalogPages(productsResponse.data?.pages || 1);
+        if (!highestPrice) setHighestPrice(productsResponse.data?.maxPrice || 0);
         writeCatalogCache(SHOP_CATALOG_CACHE_KEY, {
           products: nextProducts,
           categories: nextCategories,
+          page,
+          total: productsResponse.data?.total || 0,
+          pages: productsResponse.data?.pages || 1,
+          maxPrice: productsResponse.data?.maxPrice || highestPrice || 0,
         });
         setError("");
       } catch (err) {
@@ -171,32 +194,11 @@ export function ShopProductsPage() {
     return () => {
       mounted = false;
     };
-  }, [cachedCatalog]);
-
-  const highestPrice = useMemo(() => {
-    const prices = products.map((item) => Number(item.price)).filter((price) => Number.isFinite(price));
-    return prices.length ? Math.max(...prices) : 0;
-  }, [products]);
+  }, [cachedCatalog, category, debouncedSearch, gridPageSize, highestPrice, maxPrice, page]);
 
   useEffect(() => {
     if (highestPrice && !maxPrice) setMaxPrice(String(highestPrice));
   }, [highestPrice, maxPrice]);
-
-  const filteredProducts = useMemo(() => {
-    const ceiling = Number(maxPrice);
-    return products.filter((product) => {
-      const matchesSearch = productMatchesSearch(product, debouncedSearch);
-      const matchesCategory = !category || product.category === category;
-      const productPrice = Number(product.price);
-      const matchesPrice = !Number.isFinite(ceiling) || !Number.isFinite(productPrice) || productPrice <= ceiling;
-      return matchesSearch && matchesCategory && matchesPrice;
-    });
-  }, [category, debouncedSearch, maxPrice, products]);
-
-  const { visibleItems: visibleProducts, hasMore: hasMoreProducts, sentinelRef: productGridSentinelRef } = useWindowedItems(
-    filteredProducts,
-    { pageSize: gridPageSize, rootMargin: "200px 0px" },
-  );
 
   const activeFilterCount = useMemo(() => {
     let count = 0;
@@ -210,7 +212,14 @@ export function ShopProductsPage() {
   const resetSheetFilters = useCallback(() => {
     setCategory("");
     setMaxPrice(highestPrice ? String(highestPrice) : "");
+    setPage(1);
   }, [highestPrice]);
+
+  const goToPage = useCallback((nextPage) => {
+    const safePage = Math.min(Math.max(1, Number(nextPage) || 1), Math.max(1, catalogPages));
+    setPage(safePage);
+    document.querySelector(".parts-products")?.scrollIntoView({ block: "start" });
+  }, [catalogPages]);
 
   useEffect(() => {
     if (!filterOpen) return undefined;
@@ -271,8 +280,8 @@ export function ShopProductsPage() {
             <section className="shop-filter-section">
               <div className="shop-filter-section-head">
                 <h4>Categories</h4>
-                {category ? (
-                  <button type="button" className="shop-filter-clear-link" onClick={() => setCategory("")}>
+              {category ? (
+                  <button type="button" className="shop-filter-clear-link" onClick={() => { setCategory(""); setPage(1); }}>
                     Clear
                   </button>
                 ) : null}
@@ -283,7 +292,7 @@ export function ShopProductsPage() {
                   role="option"
                   aria-selected={!category}
                   className={`shop-filter-category-chip ${!category ? "selected" : ""}`}
-                  onClick={() => setCategory("")}
+                  onClick={() => { setCategory(""); setPage(1); }}
                 >
                   All Categories
                 </button>
@@ -294,7 +303,7 @@ export function ShopProductsPage() {
                     role="option"
                     aria-selected={category === item}
                     className={`shop-filter-category-chip ${category === item ? "selected" : ""}`}
-                    onClick={() => setCategory(item)}
+                    onClick={() => { setCategory(item); setPage(1); }}
                   >
                     {item}
                   </button>
@@ -313,7 +322,7 @@ export function ShopProductsPage() {
                   min="0"
                   max={highestPrice || 1000}
                   value={maxPrice || highestPrice || 0}
-                  onChange={(event) => setMaxPrice(event.target.value)}
+                  onChange={(event) => { setMaxPrice(event.target.value); setPage(1); }}
                   disabled={!highestPrice}
                 />
               </label>
@@ -325,7 +334,7 @@ export function ShopProductsPage() {
               Reset
             </button>
             <button className="shop-filter-sheet-apply" type="button" onClick={closeFilters}>
-              Show {filteredProducts.length} products
+              Show {catalogTotal} products
             </button>
           </div>
         </div>
@@ -360,9 +369,9 @@ export function ShopProductsPage() {
                 type="search"
                 value={search}
                 placeholder="Search products or #tags (e.g. #speaker)..."
-                onChange={(event) => setSearch(event.target.value)}
+                onChange={(event) => { setSearch(event.target.value); setPage(1); }}
               />
-              {search && <button type="button" onClick={() => setSearch("")} aria-label="Clear search"><X size={16} /></button>}
+              {search && <button type="button" onClick={() => { setSearch(""); setPage(1); }} aria-label="Clear search"><X size={16} /></button>}
             </label>
 
             <button
@@ -380,7 +389,7 @@ export function ShopProductsPage() {
           </div>
 
           {!loading && !error && (
-            <span className="parts-search-count shop-count">{filteredProducts.length} of {products.length} products</span>
+            <span className="parts-search-count shop-count">{catalogTotal} products</span>
           )}
           {cartNotice && <div className="cart-stock-notice shop-stock-notice">{cartNotice}</div>}
           {error && <div className="parts-state">{error}</div>}
@@ -388,26 +397,30 @@ export function ShopProductsPage() {
           {!loading && !error && products.length === 0 && (
             <EmptyProductsState message="No shop products are published yet." />
           )}
-          {!loading && !error && products.length > 0 && filteredProducts.length === 0 && (
+          {!loading && !error && catalogTotal > 0 && products.length === 0 && (
             <EmptyProductsState message="No matching products found." />
           )}
 
-          {!loading && !error && filteredProducts.length > 0 && (
+          {!loading && !error && products.length > 0 && (
             <>
               <div className="parts-grid shop-products-grid">
-                {visibleProducts.map((product, index) => (
+                {products.map((product, index) => (
                   <ProductCard
                     product={product}
                     key={`${product.sourceType || "shop"}-${product._id || product.sourceId || product.slug}`}
                     onAddToCart={addProductToCart}
                     eager={index < 4}
-                    cartQuantity={getQuantity(product, {
-                      sourceType: product.sourceType || (isWiringAccessoriesCategory(product.category) ? "project-part" : "shop-product"),
-                    })}
                   />
                 ))}
               </div>
-              {hasMoreProducts ? <div ref={productGridSentinelRef} aria-hidden="true" style={{ height: 1 }} /> : null}
+              <CatalogPagination
+                page={page}
+                pages={catalogPages}
+                total={catalogTotal}
+                pageSize={gridPageSize}
+                loading={loading}
+                onPageChange={goToPage}
+              />
             </>
           )}
         </section>
