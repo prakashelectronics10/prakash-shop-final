@@ -2351,20 +2351,25 @@ html {
   padding-right: 0.35rem;
   scroll-behavior: smooth;
   scrollbar-width: thin;
-  scrollbar-color: rgba(103, 232, 249, 0.55) transparent;
+  scrollbar-color: #3b82f6 #edf5fd;
 }
 
 .booking-products-preview-list::-webkit-scrollbar {
-  width: 6px;
+  width: 11px;
 }
 
 .booking-products-preview-list::-webkit-scrollbar-track {
-  background: transparent;
+  border-left: 1px solid #dbeafe;
+  background: linear-gradient(180deg, #f8fbff 0%, #eaf3fc 100%);
 }
 
 .booking-products-preview-list::-webkit-scrollbar-thumb {
+  min-height: 44px;
+  border: 3px solid #edf5fd;
   border-radius: 999px;
-  background: linear-gradient(180deg, rgba(103, 232, 249, 0.7), rgba(20, 184, 166, 0.52));
+  background: linear-gradient(180deg, #60a5fa 0%, #2563eb 62%, #0ea5e9 100%);
+  background-clip: padding-box;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.32);
 }
 
 .booking-products-preview-list::-webkit-scrollbar-button {
@@ -4826,12 +4831,35 @@ html {
 
 .science-ai-page *,
 .science-ai-page {
-  scrollbar-width: none;
-  -ms-overflow-style: none;
+  scrollbar-width: thin;
+  scrollbar-color: #3b82f6 #edf5fd;
+  -ms-overflow-style: auto;
 }
 
 .science-ai-page *::-webkit-scrollbar,
 .science-ai-page::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+}
+
+.science-ai-page *::-webkit-scrollbar-track,
+.science-ai-page::-webkit-scrollbar-track {
+  border-left: 1px solid #dbeafe;
+  background: linear-gradient(180deg, #f8fbff 0%, #eaf3fc 100%);
+}
+
+.science-ai-page *::-webkit-scrollbar-thumb,
+.science-ai-page::-webkit-scrollbar-thumb {
+  min-height: 44px;
+  border: 3px solid #edf5fd;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #60a5fa 0%, #2563eb 62%, #0ea5e9 100%);
+  background-clip: padding-box;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.32);
+}
+
+.science-ai-page *::-webkit-scrollbar-button,
+.science-ai-page::-webkit-scrollbar-button {
   display: none;
   width: 0;
   height: 0;
