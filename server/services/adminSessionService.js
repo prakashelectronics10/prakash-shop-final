@@ -230,13 +230,28 @@ async function ensureAdminSessionIndexes() {
         name: "admin_1_clientType_1_isActive_1",
       },
     );
-    await MaintenanceMarker.collection.createIndex(
-      { key: 1 },
-      {
-        unique: true,
-        name: "maintenance_marker_key_1",
-      },
-    );
+    // Mongoose creates this schema index as `key_1` in development. Creating
+    // the same key/options here under a different custom name makes MongoDB
+    // reject startup with IndexKeySpecsConflict. Reuse any equivalent unique
+    // index and only create the canonical index when the collection is new.
+    const markerIndexes = await MaintenanceMarker.collection.indexes().catch((indexError) => {
+      if (indexError.code === 26 || indexError.codeName === "NamespaceNotFound") return [];
+      throw indexError;
+    });
+    const markerKeyIndex = markerIndexes.find((index) => {
+      const keys = Object.entries(index.key || {});
+      return keys.length === 1 && keys[0][0] === "key" && keys[0][1] === 1;
+    });
+
+    if (markerKeyIndex && !markerKeyIndex.unique) {
+      throw new Error(`Maintenance marker index ${markerKeyIndex.name} must be unique`);
+    }
+    if (!markerKeyIndex) {
+      await MaintenanceMarker.collection.createIndex(
+        { key: 1 },
+        { unique: true, name: "key_1" },
+      );
+    }
   } catch (error) {
     if (error.codeName !== "IndexNotFound") throw error;
   }

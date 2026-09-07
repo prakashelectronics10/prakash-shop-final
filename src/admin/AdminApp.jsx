@@ -19,6 +19,7 @@ import { applyDynamicWebSettings } from "../context/SiteDataContext";
 import { getIcon } from "../components/site/iconMap";
 import { buildPricingPayload, formatINR, resolveProductPricing } from "../utils/productPricing";
 import InvoiceModule from "./InvoiceModule";
+import OrdersModule from "./OrdersModule";
 import "./AdminApp.css";
 
 const API_BASE = process.env.REACT_APP_API_URL || process.env.VITE_API_URL || "/api";
@@ -77,6 +78,7 @@ const sectionCards = [
   { key: "admins", label: "Admins", note: "Manage admin accounts", superOnly: true },
   { key: "notificationEmails", label: "Booking Notifications", note: "Email recipients and delivery health", superOnly: true },
   { key: "bookings", label: "Bookings", note: "Repair requests and status" },
+  { key: "orders", label: "Orders", note: "Paid orders, delivery details and status" },
   { key: "invoice", permission: "invoices", label: "Invoice", note: "Create invoices, PDFs, and billing history" },
   { key: "offers", label: "Offers", note: "Image and short offer cards" },
   { key: "shopHighlights", label: "Shop Highlights", note: "Sticky linked image cards" },
@@ -89,14 +91,21 @@ const sectionCards = [
   { key: "projectParts", label: "Wiring Accessories", note: "Wiring products catalog with brands" },
   { key: "projectSliders", label: "Wiring Accessories Slider", note: "Public page carousel images" },
   { key: "brandsSlider", label: "Brands Slider", note: "Homepage brand logo marquee" },
-  { key: "about", label: "About Cards", note: "Prakash Electronics cards" },
+  { key: "about", label: "About Page", note: "Prakash Electronics reasons cards" },
+  { key: "aboutShowcase", permission: "about", label: "About Stories", note: "Desktop circular story cards" },
   { key: "footer", label: "Footer Management", note: "Footer links and map URLs" },
   { key: "webSettings", label: "Web Settings", note: "OG image, favicon, and meta assets" },
 ];
 
 const editablePermissions = sectionCards
   .filter((item) => !item.superOnly)
-  .map((item) => ({ key: item.permission || item.key, label: item.label }));
+  .reduce((permissions, item) => {
+    const key = item.permission || item.key;
+    if (!permissions.some((permission) => permission.key === key)) {
+      permissions.push({ key, label: item.label });
+    }
+    return permissions;
+  }, []);
 
 function canAccessSection(admin, key) {
   if (!admin) return false;
@@ -118,6 +127,7 @@ const contentKeys = [
   "testimonials",
   "gallery",
   "about",
+  "aboutShowcase",
   "contactSection",
   "footer",
   "featuredCarousel",
@@ -713,6 +723,9 @@ function App() {
         {active === "bookings" && (
           <BookingsManager bookings={data.bookings} runAction={runAction} busy={busy} />
         )}
+        {active === "orders" && (
+          <OrdersModule apiFetch={apiFetch} />
+        )}
         {active === "invoice" && (
           <InvoiceModule apiFetch={apiFetch} />
         )}
@@ -764,6 +777,9 @@ function App() {
         )}
         {active === "about" && (
           <AboutManager content={data.content} runAction={runAction} busy={busy} />
+        )}
+        {active === "aboutShowcase" && (
+          <AboutShowcaseManager content={data.content} runAction={runAction} busy={busy} />
         )}
         {active === "footer" && (
           <FooterManager content={data.content} contact={data.contact} runAction={runAction} busy={busy} />
@@ -922,11 +938,13 @@ function DashboardPage({ dashboard, admin, setActive }) {
   const cards = visibleSections(admin);
   const visibleStats = [
     canAccessSection(admin, "bookings") && { label: "Booking orders", value: dashboard?.bookings || 0, key: "bookings" },
+    canAccessSection(admin, "orders") && { label: "Paid customer orders", value: dashboard?.orders || 0, key: "orders" },
     canAccessSection(admin, "admins") && { label: "Admin accounts", value: dashboard?.admins || 0, key: "admins" },
     canAccessSection(admin, "notificationEmails") && { label: "Notification emails", value: dashboard?.notificationEmails || 0, key: "notificationEmails" },
     canAccessSection(admin, "featuredRepairs") && { label: "Featured Repairs cards", value: dashboard?.featuredRepairs || 0, key: "featuredRepairs" },
     canAccessSection(admin, "shopProducts") && { label: "Shop products", value: dashboard?.shopProducts || 0, key: "shopProducts" },
     canAccessSection(admin, "about") && { label: "About Prakash Electronics cards", value: dashboard?.aboutCards || 0, key: "about" },
+    canAccessSection(admin, "aboutShowcase") && { label: "About story cards", value: dashboard?.aboutStories || 0, key: "aboutShowcase" },
     canAccessSection(admin, "gallery") && { label: "Gallery images", value: dashboard?.galleryImages || 0, key: "gallery" },
     canAccessSection(admin, "shopHighlights") && { label: "Shop Highlights cards", value: dashboard?.shopHighlights || 0, key: "shopHighlights" },
     canAccessSection(admin, "testimonials") && { label: "Testimonials cards", value: dashboard?.testimonials || 0, key: "testimonials" },
@@ -2316,6 +2334,55 @@ function AboutManager({ content, runAction, busy }) {
         )}
       />
       <button className="primary-button" disabled={busy} onClick={save}>Save About Cards</button>
+    </section>
+  );
+}
+
+function AboutShowcaseManager({ content, runAction, busy }) {
+  const contentMap = useMemo(() => Object.fromEntries(content.map((doc) => [doc.key, doc.value])), [content]);
+  const [form, setForm] = useState(() => contentToForm("aboutShowcase", contentMap.aboutShowcase));
+
+  useEffect(() => {
+    setForm(contentToForm("aboutShowcase", contentMap.aboutShowcase));
+  }, [contentMap]);
+
+  const save = () => runAction(() => apiFetch("/admin/site-content/aboutShowcase", {
+    method: "PUT",
+    body: JSON.stringify({ value: formToContent("aboutShowcase", form) }),
+  }), "About stories saved");
+
+  return (
+    <section className="editor glass-panel single">
+      <h2>About Stories</h2>
+      <p className="muted">These animated cards appear only on the desktop About page.</p>
+      <SectionHeadingFields form={form} setForm={setForm} />
+      <Toggle label="Autoplay stories" checked={form.autoplay !== false} onChange={(autoplay) => setForm({ ...form, autoplay })} />
+      <RepeatableRows
+        title="Story Cards"
+        items={form.items}
+        emptyItem={{ name: "", designation: "", quote: "", imageUrl: "", isActive: true }}
+        onChange={(items) => setForm({ ...form, items })}
+        getItemTitle={(item) => item.name || "New story"}
+        getItemMeta={(item) => item.designation || "Desktop About page card"}
+        enableBatchDelete
+        renderItem={(item, update) => (
+          <>
+            <div className="two-col">
+              <Input label="Name / Title" value={item.name} onChange={(name) => update({ name })} />
+              <Input label="Designation / Subtitle" value={item.designation} onChange={(designation) => update({ designation })} />
+            </div>
+            <Textarea label="Story / Quote" value={item.quote} onChange={(quote) => update({ quote })} />
+            <ImageField
+              label="Portrait image"
+              hint="Recommended: square image, at least 1200 x 1200 px. Use a clear, high-quality JPG, PNG, WebP, or AVIF."
+              value={item.imageUrl || ""}
+              onChange={(imageUrl) => update({ imageUrl })}
+            />
+            <Toggle label="Show this story" checked={item.isActive !== false} onChange={(isActive) => update({ isActive })} />
+          </>
+        )}
+      />
+      <button className="primary-button" disabled={busy} onClick={save}>Save About Stories</button>
     </section>
   );
 }
@@ -3725,6 +3792,23 @@ function contentToForm(key, value = {}) {
       })),
     };
   }
+  if (key === "aboutShowcase") {
+    return {
+      eyebrow: value.eyebrow || "Our story",
+      title: value.title || "Experience built around",
+      highlight: value.highlight || "real service",
+      description: value.description || "",
+      autoplay: value.autoplay !== false,
+      items: (value.items || []).map((item) => ({
+        ...item,
+        name: item.name || item.title || "",
+        designation: item.designation || item.role || "",
+        quote: item.quote || item.text || item.description || "",
+        imageUrl: item.imageUrl || item.src || item.url || "",
+        isActive: item.isActive !== false,
+      })),
+    };
+  }
   return {
     ...value,
     links: value.links || [],
@@ -3777,6 +3861,27 @@ function formToContent(key, form) {
             rating: Number(item.rating || 5),
           };
         }),
+    };
+  }
+
+  if (key === "aboutShowcase") {
+    return {
+      eyebrow: form.eyebrow || "Our story",
+      title: form.title || "Experience built around",
+      highlight: form.highlight || "real service",
+      description: form.description || "",
+      autoplay: form.autoplay !== false,
+      items: (form.items || [])
+        .filter((item) => item.imageUrl && (item.name || item.quote))
+        .map((item, index) => ({
+          name: item.name || "Prakash Electronics",
+          designation: item.designation || "Customer story",
+          quote: item.quote || "",
+          imageUrl: item.imageUrl || "",
+          imagePublicId: item.imagePublicId || "",
+          isActive: item.isActive !== false,
+          displayOrder: index + 1,
+        })),
     };
   }
 

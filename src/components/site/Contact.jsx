@@ -1,4 +1,5 @@
 import { useState } from "react";
+import toast from "react-hot-toast";
 import { Phone, MessageCircle, MapPin, Mail, Send, Star } from "lucide-react";
 import { useSiteData } from "../../context/SiteDataContext";
 import { apiRequest } from "../../api/client";
@@ -7,8 +8,9 @@ import { getPhoneHref, getWhatsappHref } from "../../utils/contactDefaults";
 
 const FORMSPREE_ENDPOINT = "https://formspree.io/f/xykobjne";
 
-export function Contact({ sectionId = "contact" }) {
+export function Contact({ sectionId = "contact", showHeading = true, requireRating = true }) {
   const { contact, content } = useSiteData("contact");
+  const section = content.contactSection || {};
   const [status, setStatus] = useState("");
   const [reviewRating, setReviewRating] = useState(0);
   const [hoverRating, setHoverRating] = useState(0);
@@ -19,8 +21,9 @@ export function Contact({ sectionId = "contact" }) {
 
   const handleSubmit = async (event) => {
     event.preventDefault();
-    if (!reviewRating) {
+    if (requireRating && !reviewRating) {
       setStatus("Please select a star rating.");
+      toast.error("Please select a star rating.", { id: "contact-rating" });
       return;
     }
     const form = event.currentTarget;
@@ -42,6 +45,7 @@ export function Contact({ sectionId = "contact" }) {
       setReviewRating(0);
       setHoverRating(0);
       setStatus("Request sent successfully.");
+      toast.success("Request sent successfully.", { id: "contact-submit" });
     } catch (_error) {
       try {
         const fallbackResponse = await fetch(formspreeEndpoint, {
@@ -61,8 +65,10 @@ export function Contact({ sectionId = "contact" }) {
         setReviewRating(0);
         setHoverRating(0);
         setStatus("Request sent successfully.");
+        toast.success("Request sent successfully.", { id: "contact-submit" });
       } catch (_fallbackError) {
         setStatus("Unable to submit right now. Please call or WhatsApp us.");
+        toast.error("Unable to submit right now. Please call or WhatsApp us.", { id: "contact-submit" });
       }
     }
   };
@@ -70,17 +76,19 @@ export function Contact({ sectionId = "contact" }) {
   return (
     <section id={sectionId || undefined} className="site-section relative overflow-hidden">
       <div className="mx-auto max-w-7xl px-4">
-        <div className="mx-auto max-w-2xl text-center">
-          <span className="inline-flex rounded-full glass px-4 py-1.5 text-xs font-medium text-accent">
-            Review section
-          </span>
-          <h2 className="mt-4 font-display text-3xl font-bold sm:text-4xl md:text-5xl">
-            Give your personal <br /><span className="text-gradient"> Review</span> & <span className="text-gradient">Any Queries</span>
-          </h2>
-          <p className="mt-4 text-muted-foreground">Don't Forget to give your review</p>
-        </div>
+        {showHeading ? (
+          <div className="mx-auto max-w-2xl text-center">
+            <span className="inline-flex rounded-full glass px-4 py-1.5 text-xs font-medium text-accent">
+              {section.eyebrow || "Get in touch"}
+            </span>
+            <h2 className="mt-4 font-display text-3xl font-bold sm:text-4xl md:text-5xl">
+              {section.title || "Book a repair in"} <span className="text-gradient">{section.highlight || "60 seconds"}</span>
+            </h2>
+            <p className="mt-4 text-muted-foreground">{section.description || "Tell us what you need and our team will help."}</p>
+          </div>
+        ) : null}
 
-        <div className="mt-14 grid min-w-0 gap-6 lg:grid-cols-5">
+        <div className={`${showHeading ? "mt-14" : "mt-0"} grid min-w-0 gap-6 lg:grid-cols-5`}>
           <div className="min-w-0 lg:col-span-3">
             <form
               action={formspreeEndpoint}
@@ -98,6 +106,7 @@ export function Contact({ sectionId = "contact" }) {
                   hoverRating={hoverRating}
                   onChange={setReviewRating}
                   onHover={setHoverRating}
+                  required={requireRating}
                 />
               </div>
               <div className="mt-4">
@@ -117,7 +126,7 @@ export function Contact({ sectionId = "contact" }) {
                 className="mt-6 inline-flex w-full min-w-0 items-center justify-center gap-2 rounded-xl bg-gradient-primary px-6 py-3.5 text-sm font-semibold text-primary-foreground shadow-glow transition-transform duration-300 hover:scale-[1.02]"
               >
                 <Send className="h-4 w-4" />
-                <span className="min-w-0 break-words">{content?.submitButtonText || "Submit Review"}</span>
+                <span className="min-w-0 break-words">{section.submitLabel || "Send Request"}</span>
               </button>
               {status && <p className="mt-4 text-center text-sm text-muted-foreground">{status}</p>}
             </form>
@@ -169,13 +178,15 @@ function Field({
 }
 
 function StarRatingField({
-  rating, hoverRating, onChange, onHover,
+  rating, hoverRating, onChange, onHover, required,
 }) {
   const activeRating = hoverRating || rating;
 
   return (
     <div className="min-w-0">
-      <label className="mb-2 block text-sm font-medium text-muted-foreground">Review Rating</label>
+      <label className="mb-2 block text-sm font-medium text-muted-foreground">
+        Review Rating{required ? "" : " (optional)"}
+      </label>
       <input type="hidden" name="reviewRating" value={rating} />
       <input type="hidden" name="reviewRatingText" value={rating ? `${rating} out of 5 stars` : ""} />
       <div

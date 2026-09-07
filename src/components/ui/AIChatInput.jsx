@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Globe, Lightbulb, Mic, Paperclip, Send, X } from "lucide-react";
+import { Mic, Paperclip, Send, X } from "lucide-react";
 import "./AIChatInput.css";
 
 const PLACEHOLDERS = [
@@ -21,7 +21,7 @@ const TEXTAREA_MIN_PX = 44;
 /** ~4 lines at 1rem / 1.45 line-height + vertical padding */
 const TEXTAREA_MAX_PX = 110;
 const COLLAPSED_HEIGHT = 68;
-const EXPANDED_BASE_HEIGHT = 128;
+const EXPANDED_BASE_HEIGHT = 68;
 const LISTENING_WAVE_EXTRA = 34;
 
 function getWaveBarCount() {
@@ -62,10 +62,6 @@ export function AIChatInput({
   hasAttachments = false,
   disabled = false,
   busy = false,
-  thinkActive = false,
-  deepSearchActive = false,
-  onThinkChange,
-  onDeepSearchChange,
   className = "",
 }) {
   const [placeholderIndex, setPlaceholderIndex] = useState(0);
@@ -98,8 +94,7 @@ export function AIChatInput({
   const hasText = Boolean(String(value || "").trim());
   const hasSpokenDraft = Boolean(String(interimText || "").trim()) || hasText;
   const canSubmit = hasText || hasAttachments || (listening && hasSpokenDraft);
-  const modesOn = thinkActive || deepSearchActive;
-  const expanded = isActive || hasText || hasAttachments || listening || modesOn;
+  const expanded = isActive || hasText || hasAttachments || listening;
 
   const stopAudioMeters = () => {
     if (rafRef.current) {
@@ -291,7 +286,7 @@ export function AIChatInput({
   }, [listening, waveBarCount]);
 
   useEffect(() => {
-    if (isActive || hasText || listening || modesOn) return undefined;
+    if (isActive || hasText || listening) return undefined;
 
     const interval = window.setInterval(() => {
       setShowPlaceholder(false);
@@ -302,18 +297,18 @@ export function AIChatInput({
     }, 3000);
 
     return () => window.clearInterval(interval);
-  }, [isActive, hasText, listening, modesOn]);
+  }, [isActive, hasText, listening]);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (wrapperRef.current && !wrapperRef.current.contains(event.target)) {
-        if (!hasText && !listening && !modesOn) setIsActive(false);
+        if (!hasText && !listening) setIsActive(false);
       }
     };
 
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [hasText, listening, modesOn]);
+  }, [hasText, listening]);
 
   useEffect(() => () => {
     wantListeningRef.current = false;
@@ -569,7 +564,7 @@ export function AIChatInput({
   return (
     <motion.div
       ref={wrapperRef}
-      className={`pulse-ai-input ${expanded ? "expanded" : "collapsed"} ${listening ? "listening" : ""} ${modesOn ? "modes-on" : ""} ${className}`}
+      className={`pulse-ai-input ${expanded ? "expanded" : "collapsed"} ${listening ? "listening" : ""} ${className}`}
       animate={{ height: composerHeight }}
       initial={{ height: COLLAPSED_HEIGHT }}
       transition={heightTransition}
@@ -697,56 +692,6 @@ export function AIChatInput({
             <Send size={18} />
           </button>
         </div>
-
-        <motion.div
-          className="pulse-ai-modes"
-          variants={{
-            hidden: { opacity: 0, y: 16, pointerEvents: "none", transition: { duration: 0.18 } },
-            visible: { opacity: 1, y: 0, pointerEvents: "auto", transition: { duration: 0.24, delay: 0.04 } },
-          }}
-          initial="hidden"
-          animate={expanded ? "visible" : "hidden"}
-        >
-          <button
-            className={`pulse-ai-mode-chip ${thinkActive ? "on" : ""}`}
-            title="Think: step-by-step reasoning before the final answer"
-            type="button"
-            aria-pressed={thinkActive}
-            onClick={(event) => {
-              event.stopPropagation();
-              setIsActive(true);
-              onThinkChange?.(!thinkActive);
-            }}
-          >
-            <Lightbulb size={16} />
-            Think
-          </button>
-
-          <button
-            className={`pulse-ai-mode-chip deep ${deepSearchActive ? "on" : ""}`}
-            title="Deep Research: compare more products, services, and offers"
-            type="button"
-            aria-pressed={deepSearchActive}
-            onClick={(event) => {
-              event.stopPropagation();
-              setIsActive(true);
-              onDeepSearchChange?.(!deepSearchActive);
-            }}
-          >
-            <Globe size={16} />
-            Deep Research
-          </button>
-
-          {(thinkActive || deepSearchActive) && (
-            <span className="pulse-ai-mode-hint">
-              {thinkActive && deepSearchActive
-                ? "Step-by-step + deeper catalog match"
-                : thinkActive
-                  ? "Step-by-step reasoning on"
-                  : "Deep catalog & service research on"}
-            </span>
-          )}
-        </motion.div>
 
         {voiceError ? <div className="pulse-ai-voice-error">{voiceError}</div> : null}
       </div>

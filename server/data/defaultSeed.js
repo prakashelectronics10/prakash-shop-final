@@ -225,10 +225,10 @@ const hero = {
 };
 
 const contact = {
-  phone: "+916200267880",
-  whatsappNumber: "919006608566",
+  phone: "+91 6200267880",
+  whatsappNumber: "916200267880",
   whatsappMessage: "Hello Prakash Electronics, I need assistance with a repair of home appliances or buy products.",
-  email: "prakashelectronics10@gmail.com",
+  email: "support@prakashshop.in",
   address: "Chitarpur, main road - 825101",
   shortAddress: "Chitarpur - 825101",
   formspreeEndpoint: "https://formspree.io/f/xeeooogp",
@@ -403,6 +403,14 @@ const siteContent = {
       { iconName: "Cog", title: "Genuine Parts", desc: "Quality components with practical assurance." },
       { iconName: "ShieldCheck", title: "Secured service", desc: "Safe repair practices and tested work." },
     ],
+  },
+  aboutShowcase: {
+    eyebrow: "Our story",
+    title: "Experience built around",
+    highlight: "real service",
+    description: "A closer look at the people, work, and practical support behind Prakash Electronics.",
+    autoplay: true,
+    items: [],
   },
   contactSection: {
     eyebrow: "Get In Touch",

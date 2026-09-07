@@ -60,5 +60,17 @@ export const ShowcaseProductCard = memo(function ShowcaseProductCard({
 });
 
 export function ShowcaseProductSkeleton() {
-  return <div className="showcase-product-skeleton" aria-hidden="true" />;
+  return (
+    <div className="showcase-product-skeleton" aria-hidden="true">
+      <div className="showcase-product-skeleton-media product-skeleton-shimmer" />
+      <div className="showcase-product-skeleton-body">
+        <span className="showcase-product-skeleton-line is-title product-skeleton-shimmer" />
+        <span className="showcase-product-skeleton-line is-short product-skeleton-shimmer" />
+        <div className="showcase-product-skeleton-price">
+          <span className="product-skeleton-shimmer" />
+          <span className="product-skeleton-shimmer" />
+        </div>
+      </div>
+    </div>
+  );
 }

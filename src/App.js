@@ -15,6 +15,8 @@ const ScienceAIPage = lazy(() => import('./components/site/ScienceAIPage').then(
 const ShopProductsPage = lazy(() => import('./components/site/ShopProductsPage').then((module) => ({ default: module.ShopProductsPage })));
 const ProductDetailPage = lazy(() => import('./components/site/ShopProductsPage').then((module) => ({ default: module.ProductDetailPage })));
 const CartPage = lazy(() => import('./components/site/CartPage').then((module) => ({ default: module.CartPage })));
+const CheckoutPage = lazy(() => import('./components/site/CheckoutPage').then((module) => ({ default: module.CheckoutPage })));
+const OrderTrackingPage = lazy(() => import('./components/site/OrderTrackingPage').then((module) => ({ default: module.OrderTrackingPage })));
 const AdminApp = lazy(() => import('./admin/AdminApp'));
 const Offers = lazy(() => import('./components/site/Offers').then((module) => ({ default: module.Offers })));
 const ShopHighlights = lazy(() => import('./components/site/ShopHighlights').then((module) => ({ default: module.ShopHighlights })));
@@ -31,6 +33,10 @@ const Contact = lazy(() => import('./components/site/Contact').then((module) => 
 const FloatingUI = lazy(() => import('./components/site/FloatingUI').then((module) => ({ default: module.FloatingUI })));
 const Footer = lazy(() => import('./components/site/Footer').then((module) => ({ default: module.Footer })));
 const BrandsMarquee = lazy(() => import('./components/site/BrandsMarquee').then((module) => ({ default: module.BrandsMarquee })));
+const AboutPage = lazy(() => import('./components/site/AboutPage').then((module) => ({ default: module.AboutPage })));
+const ContactPage = lazy(() => import('./components/site/ContactPage').then((module) => ({ default: module.ContactPage })));
+const PrivacyPolicyPage = lazy(() => import('./components/site/LegalPages').then((module) => ({ default: module.PrivacyPolicyPage })));
+const TermsConditionsPage = lazy(() => import('./components/site/LegalPages').then((module) => ({ default: module.TermsConditionsPage })));
 
 const SITE_URL = 'https://www.prakashshop.in';
 const ADMIN_ROUTE = '/prakash-control-panel@1999';
@@ -73,10 +79,55 @@ const routeMeta = [
     keywords: 'Prakash Electronics gallery, repair photos, electronics shop gallery Chitarpur, workshop photos',
   },
   {
+    match: (path) => path === '/about',
+    title: 'About Prakash Electronics | Trusted Since 2000',
+    description: 'Learn about Prakash Electronics and Electricals, serving Chitarpur with electronics sales, practical diagnostics, genuine parts, and dependable repair service since 2000.',
+    keywords: 'about Prakash Electronics, electronics repair Chitarpur, electronics shop since 2000, appliance repair Ramgarh',
+  },
+  {
+    match: (path) => path === '/contact',
+    title: 'Contact Prakash Electronics | Chitarpur, Jharkhand',
+    description: 'Call, WhatsApp, email, or visit Prakash Electronics and Electricals in Chitarpur for electronics products, wiring accessories, and repair support.',
+    keywords: 'contact Prakash Electronics, electronics shop Chitarpur, repair contact Ramgarh, WhatsApp electronics repair',
+  },
+  {
+    match: (path) => path === '/privacy-policy',
+    title: 'Privacy Policy | Prakash Electronics',
+    description: 'Read how Prakash Electronics collects, uses, protects, and manages information for orders, repair bookings, payments, and website services.',
+    keywords: 'Prakash Electronics privacy policy, customer data, order privacy, Razorpay payment privacy',
+  },
+  {
+    match: (path) => path === '/terms-and-conditions',
+    title: 'Terms & Conditions | Prakash Electronics',
+    description: 'Read the terms for using the Prakash Electronics website, ordering products, making payments, arranging delivery, and booking repairs.',
+    keywords: 'Prakash Electronics terms and conditions, product order terms, repair booking terms, delivery terms',
+  },
+  {
+    match: (path) => path === '/learn-more',
+    title: 'Electronics Repair Services | Prakash Electronics Chitarpur',
+    description: 'Explore electronics and home-appliance repair services from Prakash Electronics in Chitarpur, including TV, fan, cooler, AC, and speaker repairs.',
+    keywords: 'electronics repair services Chitarpur, TV repair, fan repair, cooler repair, AC repair, speaker repair',
+  },
+  {
     match: (path) => path === '/cart',
     title: 'Cart | Prakash Electronics and Electricals',
     description: 'Review selected electronics products and wiring accessories before booking with Prakash Electronics and Electricals.',
     keywords: 'electronics shop cart, wiring accessories, electronics parts',
+    robots: 'noindex, nofollow',
+  },
+  {
+    match: (path) => path === '/checkout',
+    title: 'Secure Checkout | Prakash Electronics',
+    description: 'Complete delivery details and pay securely for your Prakash Electronics order.',
+    keywords: 'Prakash Electronics checkout, secure Razorpay payment',
+    robots: 'noindex, nofollow',
+  },
+  {
+    match: (path) => path === '/orders',
+    title: 'Track Order | Prakash Electronics',
+    description: 'Track a Prakash Electronics order using your secure Order ID.',
+    keywords: 'track order, Prakash Electronics order status',
+    robots: 'noindex, nofollow',
   },
   {
     match: (path) => path.startsWith('/product-detail/'),
@@ -128,6 +179,7 @@ function updateRouteMeta(pathname) {
   upsertMeta('meta[name="description"]', 'name', 'description', meta.description);
   upsertMeta('meta[name="keywords"]', 'name', 'keywords', keywords);
   upsertMeta('meta[name="robots"]', 'name', 'robots', meta.robots || defaultMeta.robots);
+  upsertMeta('meta[name="googlebot"]', 'name', 'googlebot', meta.robots || defaultMeta.robots);
   upsertMeta('meta[property="og:type"]', 'property', 'og:type', 'website');
   upsertMeta('meta[property="og:title"]', 'property', 'og:title', meta.title);
   upsertMeta('meta[property="og:description"]', 'property', 'og:description', meta.description);
@@ -148,7 +200,7 @@ function LazyScreen({ children }) {
   return <Suspense fallback={<SectionFallback />}>{children}</Suspense>;
 }
 
-function PublicShell({ children, siteData = true }) {
+function PublicShell({ children, siteData = true, showFloatingActions = true }) {
   useEffect(() => {
     document.body.classList.add('public-light-theme');
     return () => document.body.classList.remove('public-light-theme');
@@ -157,7 +209,12 @@ function PublicShell({ children, siteData = true }) {
   const content = (
     <CartProvider>
       {children}
-      <CartFloatingButton />
+      {showFloatingActions ? (
+        <Suspense fallback={null}>
+          <FloatingUI />
+        </Suspense>
+      ) : null}
+      {showFloatingActions ? <CartFloatingButton /> : null}
     </CartProvider>
   );
 
@@ -332,11 +389,71 @@ function App() {
     );
   }
 
+  if (window.location.pathname === '/about' || params.get('page') === 'about') {
+    return (
+      <PublicShell>
+        <LazyScreen>
+          <AboutPage />
+        </LazyScreen>
+      </PublicShell>
+    );
+  }
+
+  if (window.location.pathname === '/contact' || params.get('page') === 'contact') {
+    return (
+      <PublicShell>
+        <LazyScreen>
+          <ContactPage />
+        </LazyScreen>
+      </PublicShell>
+    );
+  }
+
+  if (window.location.pathname === '/privacy-policy') {
+    return (
+      <PublicShell>
+        <LazyScreen>
+          <PrivacyPolicyPage />
+        </LazyScreen>
+      </PublicShell>
+    );
+  }
+
+  if (window.location.pathname === '/terms-and-conditions') {
+    return (
+      <PublicShell>
+        <LazyScreen>
+          <TermsConditionsPage />
+        </LazyScreen>
+      </PublicShell>
+    );
+  }
+
   if (window.location.pathname === '/cart' || params.get('page') === 'cart') {
     return (
       <PublicShell>
         <LazyScreen>
           <CartPage />
+        </LazyScreen>
+      </PublicShell>
+    );
+  }
+
+  if (window.location.pathname === '/checkout') {
+    return (
+      <PublicShell>
+        <LazyScreen>
+          <CheckoutPage />
+        </LazyScreen>
+      </PublicShell>
+    );
+  }
+
+  if (window.location.pathname === '/orders') {
+    return (
+      <PublicShell>
+        <LazyScreen>
+          <OrderTrackingPage />
         </LazyScreen>
       </PublicShell>
     );
@@ -389,7 +506,7 @@ function App() {
     || params.get('page') === 'science-ai'
   ) {
     return (
-      <PublicShell siteData={false}>
+      <PublicShell siteData={false} showFloatingActions={false}>
         <LazyScreen>
           <ScienceAIPage />
         </LazyScreen>
@@ -418,9 +535,6 @@ function App() {
           <DeferredSection anchorId="testimonials" minHeight={420}><Testimonials sectionId="" /></DeferredSection>
           <DeferredSection anchorId="contact" minHeight={420}><Contact sectionId="" /></DeferredSection>
         </main>
-        <Suspense fallback={null}>
-          <FloatingUI />
-        </Suspense>
         <DeferredSection minHeight={280}><Footer /></DeferredSection>
       </div>
     </PublicShell>

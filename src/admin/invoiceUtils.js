@@ -74,7 +74,7 @@ export function defaultInvoiceForm(invoiceNumber = "Auto generated") {
       address: "Chitarpur, Ramgarh, Jharkhand",
       gstNumber: "",
       contactNumber: "",
-      email: "prakash@example.com",
+      email: "support@prakashshop.in",
       websiteUrl: "https://www.prakashshop.in",
     },
     customer: {

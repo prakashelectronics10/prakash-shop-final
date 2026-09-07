@@ -461,6 +461,14 @@ function stripCatalogMatchLine(text) {
   return stripAiMetaLines(text);
 }
 
+function isGeneralProductDiscoveryRequest(text) {
+  const normalized = normalize(text);
+  if (!normalized) return false;
+  const mentionsCatalog = /\b(product|products|item|items|catalog|shop)\b/.test(normalized);
+  const asksForSuggestions = /\b(suggest|suggestion|suggestions|recommend|recommendation|recommendations|dikhao|dikhai|batao|chahiye|kharid)\b/.test(normalized);
+  return mentionsCatalog && asksForSuggestions;
+}
+
 function formatProductMemoryLine(product) {
   const colors = extractColors(productSearchText(product));
   const tags = (product.tags || []).slice(0, 6).join(", ");
@@ -525,6 +533,14 @@ function rankProductsForDemand(promptText, aiText, products, deepSearch = false,
   });
 
   const limit = deepSearch ? 10 : 6;
+  const hasSpecificDemand = intent.families.length || intent.colors.length || intent.wantedComponents.length;
+  if (!candidates.length && !hasImages && !hasSpecificDemand && isGeneralProductDiscoveryRequest(promptText)) {
+    return (products || []).slice(0, limit).map((product, index) => ({
+      product,
+      score: limit - index,
+      component: "Popular shop pick",
+    }));
+  }
   return candidates
     .sort((a, b) => b.score - a.score)
     .slice(0, limit);
@@ -542,4 +558,5 @@ module.exports = {
   formatProductMemoryLine,
   rankProductsForDemand,
   isRetailCoolingProduct,
+  isGeneralProductDiscoveryRequest,
 };

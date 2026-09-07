@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { ArrowUpRight, Bot, Camera, Check, ImagePlus, Images, Moon, PackageSearch, PanelLeftClose, PanelLeftOpen, Plus, ShoppingCart, Sun, Trash2, Wrench } from "lucide-react";
 import { apiRequest } from "../../api/client";
 import { SCIENCE_PROJECTS_CATEGORY, getCartStockLimit, useCart } from "../../context/CartContext";
+import { notifyCartResult } from "../../utils/cartToast";
 import { AIChatInput } from "../ui/AIChatInput";
 import { LottieSvgAnimation } from "./LottieSvgAnimation";
 import { OptimizedImage } from "./OptimizedImage";
@@ -13,21 +14,6 @@ const welcomeMessage = {
 };
 
 const SCIENCE_AI_SESSION_KEY = "prakash:pulse-ai-session:v1";
-const SCIENCE_AI_MODES_KEY = "prakash:pulse-ai-modes:v1";
-
-function loadPulseAiModes() {
-  if (typeof window === "undefined") return { thinkActive: false, deepSearchActive: false };
-  try {
-    const parsed = JSON.parse(window.sessionStorage.getItem(SCIENCE_AI_MODES_KEY) || "null");
-    if (!parsed || typeof parsed !== "object") return { thinkActive: false, deepSearchActive: false };
-    return {
-      thinkActive: Boolean(parsed.thinkActive),
-      deepSearchActive: Boolean(parsed.deepSearchActive),
-    };
-  } catch (_error) {
-    return { thinkActive: false, deepSearchActive: false };
-  }
-}
 
 function useScienceAIHeroAnimationData(enabled) {
   const [animationData, setAnimationData] = useState(null);
@@ -270,9 +256,11 @@ export function ScienceAIPage() {
   const [theme, setTheme] = useState(() => localStorage.getItem("pulse-ai-theme") || "dark");
   const [error, setError] = useState("");
   const [dragging, setDragging] = useState(false);
-  const [thinkActive, setThinkActive] = useState(() => loadPulseAiModes().thinkActive);
-  const [deepSearchActive, setDeepSearchActive] = useState(() => loadPulseAiModes().deepSearchActive);
   const [navOpen, setNavOpen] = useState(() => (typeof window === "undefined" ? true : window.innerWidth > 860));
+  const [visualViewport, setVisualViewport] = useState(() => ({
+    height: typeof window === "undefined" ? 0 : (window.visualViewport?.height || window.innerHeight),
+    top: typeof window === "undefined" ? 0 : (window.visualViewport?.offsetTop || 0),
+  }));
   const [mediaMenuOpen, setMediaMenuOpen] = useState(false);
   const [mediaMenuPosition, setMediaMenuPosition] = useState({ left: -9999, top: -9999 });
   const endRef = useRef(null);
@@ -326,15 +314,28 @@ export function ScienceAIPage() {
   }, [theme]);
 
   useEffect(() => {
-    try {
-      window.sessionStorage.setItem(
-        SCIENCE_AI_MODES_KEY,
-        JSON.stringify({ thinkActive, deepSearchActive }),
-      );
-    } catch (_error) {
-      // Session storage may be unavailable; modes still work in memory.
-    }
-  }, [thinkActive, deepSearchActive]);
+    const viewport = window.visualViewport;
+    let frame = 0;
+    const syncViewport = () => {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => setVisualViewport({
+        height: viewport?.height || window.innerHeight,
+        top: viewport?.offsetTop || 0,
+      }));
+    };
+    document.body.classList.add("pulse-ai-route-active");
+    syncViewport();
+    viewport?.addEventListener("resize", syncViewport);
+    viewport?.addEventListener("scroll", syncViewport);
+    window.addEventListener("resize", syncViewport);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      document.body.classList.remove("pulse-ai-route-active");
+      viewport?.removeEventListener("resize", syncViewport);
+      viewport?.removeEventListener("scroll", syncViewport);
+      window.removeEventListener("resize", syncViewport);
+    };
+  }, []);
 
   useEffect(() => {
     if (!mediaMenuOpen) return undefined;
@@ -523,8 +524,6 @@ export function ScienceAIPage() {
           message: text,
           images: images.map((image) => ({ base64: image.base64, mimeType: image.mimeType })),
           conversationHistory,
-          thinkMode: thinkActive,
-          deepSearch: deepSearchActive,
         }),
       });
       const answer = response.data?.response || "I could not generate a response. Please try again.";
@@ -597,6 +596,10 @@ export function ScienceAIPage() {
     <>
       <div
         className={`science-ai-page ${theme} ${navOpen ? "nav-open" : "nav-closed"} ${dragging ? "dragging" : ""}`}
+        style={{
+          "--ai-viewport-height": `${Math.round(visualViewport.height)}px`,
+          "--ai-viewport-top": `${Math.round(visualViewport.top)}px`,
+        }}
         onDragEnter={onDragEnter}
         onDragOver={(event) => event.preventDefault()}
         onDragLeave={onDragLeave}
@@ -625,8 +628,8 @@ export function ScienceAIPage() {
           </div>
         </div>
         <div className="ai-sidebar-card">
-          <span>Smart modes</span>
-          <strong>Turn on Think for step-by-step reasoning, or Deep Research to compare more products and services before you buy.</strong>
+          <span>Product help</span>
+          <strong>Ask naturally to compare products, find available shop items, or get practical repair guidance.</strong>
         </div>
       </aside>
 
@@ -782,10 +785,6 @@ export function ScienceAIPage() {
             hasAttachments={images.length > 0}
             disabled={busy || uploading}
             busy={busy || uploading}
-            thinkActive={thinkActive}
-            deepSearchActive={deepSearchActive}
-            onThinkChange={setThinkActive}
-            onDeepSearchChange={setDeepSearchActive}
             className="pulse-ai-composer-shell"
           />
 
@@ -881,7 +880,8 @@ function SuggestionCards({ suggestions }) {
   };
 
   const addSuggestionToCart = (item) => {
-    addItem(item, cartOverrides(item));
+    const result = addItem(item, cartOverrides(item));
+    notifyCartResult(result, item.name);
   };
 
   return (

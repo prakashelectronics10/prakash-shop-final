@@ -250,6 +250,34 @@
     0 0 28px rgba(34, 211, 238, 0.12);
 }
 
+@media (min-width: 1024px) {
+  .services-carousel-bleed .snap-carousel--services {
+    max-width: none;
+  }
+
+  .services-carousel-bleed .snap-carousel--services .snap-carousel-nav {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+  }
+
+  .services-carousel-bleed .snap-carousel--services .snap-carousel-nav-prev {
+    left: 1.5rem;
+  }
+
+  .services-carousel-bleed .snap-carousel--services .snap-carousel-nav-next {
+    right: 1.5rem;
+  }
+
+  .services-carousel-bleed .snap-carousel--services .snap-carousel-nav:hover {
+    transform: translateY(-50%) scale(1.06);
+  }
+
+  .services-carousel-bleed .snap-carousel--services .snap-carousel-nav:active {
+    transform: translateY(-50%) scale(0.96);
+  }
+}
+
 .snap-carousel--featured .snap-carousel-slide {
   flex-basis: min(20rem, 88vw);
 }

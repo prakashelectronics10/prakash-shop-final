@@ -113,11 +113,9 @@ export function ShopHighlights({ sectionId = "shop-highlights" }) {
               key={`${item.imageUrl || item.src}-${index}`}
               role="listitem"
               style={{
-                "--highlight-offset": `${Math.min(index, 8) * 10}px`,
-                "--highlight-mobile-offset": `${Math.min(index, 8) * 7}px`,
-                "--highlight-small-offset": `${Math.min(index, 8) * 6}px`,
-                "--highlight-tilt": `${HIGHLIGHT_TILTS[index % HIGHLIGHT_TILTS.length]}deg`,
                 zIndex: index + 1,
+                "--highlight-tilt": `${HIGHLIGHT_TILTS[index % HIGHLIGHT_TILTS.length]}deg`,
+                "--highlight-mobile-tilt": `${HIGHLIGHT_TILTS[index % HIGHLIGHT_TILTS.length]}deg`,
               }}
             >
               <HighlightMedia item={item} index={index} />

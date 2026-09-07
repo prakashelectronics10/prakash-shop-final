@@ -119,7 +119,19 @@ export function CatalogGridSkeleton({ count = 6, className = "" }) {
       aria-label="Loading products"
     >
       {Array.from({ length: count }, (_, index) => (
-        <div key={`catalog-skeleton-${index}`} className="catalog-product-skeleton" aria-hidden="true" />
+        <article key={`catalog-skeleton-${index}`} className="catalog-product-skeleton" aria-hidden="true">
+          <div className="catalog-product-skeleton-media product-skeleton-shimmer" />
+          <div className="catalog-product-skeleton-body">
+            <span className="catalog-product-skeleton-line is-label product-skeleton-shimmer" />
+            <span className="catalog-product-skeleton-line is-title product-skeleton-shimmer" />
+            <span className="catalog-product-skeleton-line product-skeleton-shimmer" />
+            <span className="catalog-product-skeleton-line is-short product-skeleton-shimmer" />
+          </div>
+          <div className="catalog-product-skeleton-foot">
+            <span className="product-skeleton-shimmer" />
+            <span className="product-skeleton-shimmer" />
+          </div>
+        </article>
       ))}
     </div>
   );

@@ -1,4 +1,5 @@
 const PRODUCT_DETAIL_BASE = "/product-detail";
+const SITE_NAME = "Prakash Electronics";
 
 function productIdentifier(product = {}) {
   return String(product.slug || product._id || product.sourceId || product.id || "").trim();
@@ -34,12 +35,81 @@ function setMeta(selector, attributeName, attributeValue, content) {
   element.setAttribute("content", content);
 }
 
+function absoluteProductImage(product = {}) {
+  const imageValue = product.imageUrl || product.images?.find((item) => item?.url)?.url;
+  return imageValue
+    ? new URL(imageValue, window.location.origin).toString()
+    : `${window.location.origin}/og-image.jpg`;
+}
+
+function productAvailability(product = {}) {
+  const unavailable = /out of stock|not available/i.test(String(product.availability || ""));
+  return unavailable ? "https://schema.org/OutOfStock" : "https://schema.org/InStock";
+}
+
+function productPrice(product = {}) {
+  const numeric = (value) => (value === "" || value === null || value === undefined ? null : Number(value));
+  const mrp = numeric(product.mrp);
+  const discount = numeric(product.discountPercent);
+  const storedPrice = numeric(product.price);
+  if (Number.isFinite(mrp) && mrp >= 0 && Number.isFinite(discount) && discount > 0) {
+    return Math.max(0, Math.round(mrp * (1 - Math.min(100, discount) / 100)));
+  }
+  return Number.isFinite(storedPrice) && storedPrice >= 0 ? storedPrice : null;
+}
+
+function applyProductStructuredData(product, { description, image, url }) {
+  const price = productPrice(product);
+  const productSchema = {
+    "@type": "Product",
+    name: product.name,
+    description,
+    image: [image],
+    url,
+    sku: String(product._id || product.id || product.slug || ""),
+    category: product.category || undefined,
+    brand: { "@type": "Brand", name: SITE_NAME },
+    offers: price === null ? undefined : {
+      "@type": "Offer",
+      url,
+      priceCurrency: "INR",
+      price: String(price),
+      availability: productAvailability(product),
+      itemCondition: "https://schema.org/NewCondition",
+      seller: { "@type": "Organization", name: SITE_NAME },
+    },
+  };
+  const schema = {
+    "@context": "https://schema.org",
+    "@graph": [
+      productSchema,
+      {
+        "@type": "BreadcrumbList",
+        itemListElement: [
+          { "@type": "ListItem", position: 1, name: "Home", item: `${window.location.origin}/` },
+          { "@type": "ListItem", position: 2, name: product.category || "Products", item: `${window.location.origin}/products` },
+          { "@type": "ListItem", position: 3, name: product.name, item: url },
+        ],
+      },
+    ],
+  };
+  let script = document.head.querySelector("script[data-product-share]");
+  if (!script) {
+    script = document.createElement("script");
+    script.type = "application/ld+json";
+    script.dataset.productShare = "true";
+    document.head.appendChild(script);
+  }
+  script.textContent = JSON.stringify(schema).replace(/</g, "\\u003c");
+}
+
 export function applyProductPageMeta(product = {}) {
   if (typeof document === "undefined" || !product?.name) return;
   const title = `${product.name} | Prakash Electronics`;
   const description = getProductShareText(product);
   const url = getProductShareUrl(product);
-  const image = product.imageUrl ? new URL(product.imageUrl, window.location.origin).toString() : `${window.location.origin}/og-image.jpg`;
+  const image = absoluteProductImage(product);
+  const price = productPrice(product);
   let canonical = document.head.querySelector('link[rel="canonical"]');
   if (!canonical) {
     canonical = document.createElement("link");
@@ -50,6 +120,8 @@ export function applyProductPageMeta(product = {}) {
   document.title = title;
   canonical.setAttribute("href", url);
   setMeta('meta[name="description"]', "name", "description", description);
+  setMeta('meta[name="robots"]', "name", "robots", "index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1");
+  setMeta('meta[name="googlebot"]', "name", "googlebot", "index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1");
   setMeta(
     'meta[name="keywords"]',
     "name",
@@ -57,6 +129,7 @@ export function applyProductPageMeta(product = {}) {
     [
       product.name,
       product.category,
+      ...(Array.isArray(product.tags) ? product.tags : []),
       "electronics shop",
       "wiring accessories",
       "home appliances repairing",
@@ -74,8 +147,15 @@ export function applyProductPageMeta(product = {}) {
   setMeta('meta[property="og:image"]', "property", "og:image", image);
   setMeta('meta[property="og:image:secure_url"]', "property", "og:image:secure_url", image);
   setMeta('meta[property="og:image:alt"]', "property", "og:image:alt", product.name);
+  setMeta('meta[property="og:image:width"]', "property", "og:image:width", "1200");
+  setMeta('meta[property="og:image:height"]', "property", "og:image:height", "630");
+  if (price !== null) {
+    setMeta('meta[property="product:price:amount"]', "property", "product:price:amount", String(price));
+    setMeta('meta[property="product:price:currency"]', "property", "product:price:currency", "INR");
+  }
   setMeta('meta[name="twitter:card"]', "name", "twitter:card", "summary_large_image");
   setMeta('meta[name="twitter:title"]', "name", "twitter:title", title);
   setMeta('meta[name="twitter:description"]', "name", "twitter:description", description);
   setMeta('meta[name="twitter:image"]', "name", "twitter:image", image);
+  applyProductStructuredData(product, { description, image, url });
 }

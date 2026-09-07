@@ -14,6 +14,9 @@ function validateRuntimeConfig() {
     ...missingWhen(!env.cloudinary.cloudName, "CLOUDINARY_CLOUD_NAME"),
     ...missingWhen(!env.cloudinary.apiKey, "CLOUDINARY_API_KEY"),
     ...missingWhen(!env.cloudinary.apiSecret, "CLOUDINARY_API_SECRET"),
+    ...missingWhen(!env.razorpay.keyId, "RAZORPAY_KEY_ID"),
+    ...missingWhen(!env.razorpay.keySecret, "RAZORPAY_KEY_SECRET"),
+    ...missingWhen(!env.razorpay.webhookSecret, "RAZORPAY_WEBHOOK_SECRET"),
   ];
 
   if (env.nodeEnv === "production") {

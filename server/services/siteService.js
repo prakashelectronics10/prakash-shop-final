@@ -139,6 +139,28 @@ function normalizeAboutContent(value = {}) {
   };
 }
 
+function normalizeAboutShowcaseContent(value = {}) {
+  return {
+    eyebrow: value.eyebrow || "Our story",
+    title: value.title || "Experience built around",
+    highlight: value.highlight || "real service",
+    description: value.description || "",
+    autoplay: value.autoplay !== false,
+    items: (Array.isArray(value.items) ? value.items : [])
+      .filter((item = {}) => item.isActive !== false)
+      .map((item = {}, index) => ({
+        ...item,
+        name: item.name || item.title || "Prakash Electronics",
+        designation: item.designation || item.role || "Customer story",
+        quote: item.quote || item.text || item.description || "",
+        imageUrl: item.imageUrl || item.src || item.url || "",
+        displayOrder: Number(item.displayOrder ?? index + 1),
+      }))
+      .filter((item) => item.imageUrl && (item.name || item.quote))
+      .sort((a, b) => a.displayOrder - b.displayOrder),
+  };
+}
+
 function normalizeFooterContent(value = {}) {
   return {
     ...value,
@@ -164,6 +186,7 @@ function normalizeContentPayload(content = {}) {
     shopHighlights: normalizeShopHighlightsContent(content.shopHighlights || {}),
     gallery: normalizeGalleryContent(content.gallery || {}),
     about: normalizeAboutContent(content.about || {}),
+    aboutShowcase: normalizeAboutShowcaseContent(content.aboutShowcase || {}),
     testimonials: normalizeTestimonialsContent(content.testimonials || {}),
     footer: normalizeFooterContent(content.footer || {}),
   };
@@ -226,7 +249,7 @@ async function getSitePayload() {
     ? contentDocs.reduce((acc, doc) => {
         acc[doc.key] = doc.value;
         return acc;
-      }, {})
+      }, { ...siteContent })
     : siteContent;
   const contentUpdatedAt = contentDocs.reduce((latest, doc) => {
     const stamp = doc.updatedAt ? new Date(doc.updatedAt).getTime() : 0;

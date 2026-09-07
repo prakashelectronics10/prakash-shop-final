@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { Menu, X } from "lucide-react";
+import { Menu, PackageCheck, X } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { useSiteData } from "../../context/SiteDataContext";
 import { CANONICAL_WIRING_PARTS_PATH } from "../../utils/routes";
 import { usePageScroll } from "../../hooks/usePageScroll";
 import { MenuVertical } from "../ui/MenuVertical";
+import { useCart } from "../../context/CartContext";
+import cartImage from "../../assets/Cart.png";
 
 const exactNavRoutes = {
   home: "/#home",
@@ -26,16 +28,19 @@ const exactNavRoutes = {
   "trending products": "/#trending",
   "top products": "/#top-products",
   top: "/#top-products",
-  about: "/#about",
-  "about us": "/#about",
-  contact: "/#contact",
-  "contact us": "/#contact",
+  about: "/about",
+  "about us": "/about",
+  contact: "/contact",
+  "contact us": "/contact",
   booking: "/booking",
   "book repair": "/booking",
   products: "/products",
   product: "/products",
   shop: "/products",
   "shop products": "/products",
+  orders: "/orders",
+  order: "/orders",
+  "track order": "/orders",
   "project parts": CANONICAL_WIRING_PARTS_PATH,
   "projects parts": CANONICAL_WIRING_PARTS_PATH,
   "science project parts": CANONICAL_WIRING_PARTS_PATH,
@@ -48,9 +53,14 @@ const exactNavRoutes = {
 };
 
 const primaryRouteLinks = [
+  { href: "/about", label: "About" },
   { href: "/products", label: "Products" },
-  { href: CANONICAL_WIRING_PARTS_PATH, label: "Wiring Accessories" }
+  { href: CANONICAL_WIRING_PARTS_PATH, label: "Wiring Accessories" },
+  { href: "/contact", label: "Contact" },
+  { href: "/orders", label: "Orders" },
 ];
+
+const excludedRoutes = new Set(["/#services", "/#testimonials"]);
 
 function normalizeNavHref(link = {}) {
   const labelKey = String(link.label || "").trim().toLowerCase();
@@ -91,6 +101,11 @@ function isCurrentRoute(href) {
   const [pathPart, hashPart] = String(href || "").split("#");
   const targetPath = (pathPart || "/").replace(/\/$/, "") || "/";
 
+  if (targetPath === "/products" && currentPath.startsWith("/product-detail/")) return true;
+  if (
+    targetPath === CANONICAL_WIRING_PARTS_PATH
+    && currentPath.startsWith(`${CANONICAL_WIRING_PARTS_PATH}/`)
+  ) return true;
   if (targetPath !== currentPath) return false;
   return hashPart ? currentHash === `#${hashPart}` : true;
 }
@@ -102,6 +117,7 @@ export function Navbar() {
   const menuButtonRef = useRef(null);
   const drawerRef = useRef(null);
   const { content } = useSiteData();
+  const { totals } = useCart();
   const nav = content.navbar || {};
   const links = mergeRouteLinks(nav.links || []);
   const normalizedLinks = links.map((link) => ({
@@ -109,6 +125,8 @@ export function Navbar() {
     href: normalizeNavHref(link),
     active: isCurrentRoute(normalizeNavHref(link)),
   }));
+  const visibleLinks = normalizedLinks.filter((link) => !excludedRoutes.has(link.href));
+  const mobileLinks = visibleLinks;
   const [brandFirst, ...brandRest] = String(nav.brandName || "").split(" ");
   const brandTail = brandRest.join(" ");
 
@@ -153,7 +171,8 @@ export function Navbar() {
     };
     document.addEventListener("keydown", onKeyDown);
     const focusTimer = window.setTimeout(() => {
-      drawerRef.current?.querySelector("a")?.focus();
+      const activeLink = drawerRef.current?.querySelector(".mobile-nav-menu-item.is-active a");
+      (activeLink || drawerRef.current?.querySelector("a"))?.focus();
     }, 180);
 
     return () => {
@@ -196,7 +215,7 @@ export function Navbar() {
           </a>
 
           <ul className="hidden items-center gap-1 xl:flex">
-            {normalizedLinks.map((l) => (
+            {visibleLinks.map((l) => (
               <li
                 key={`${l.label}-${l.href}`}
                 className="p-1"
@@ -216,7 +235,12 @@ export function Navbar() {
             ))}
           </ul>
 
-          <div className="hidden xl:block">
+          <div className="hidden items-center gap-2 xl:flex">
+            <a className="desktop-cart-link" href="/cart" aria-label={`Open cart with ${totals.quantity} items`}>
+              <img src={cartImage} alt="" aria-hidden="true" />
+              <span>Cart</span>
+              {totals.quantity > 0 && <small>{totals.quantity}</small>}
+            </a>
             <a
               href="/booking"
               className="group relative inline-flex items-center justify-center rounded-xl bg-gradient-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-glow transition-transform duration-300 hover:scale-105"
@@ -257,11 +281,22 @@ export function Navbar() {
                 aria-label="Mobile navigation"
                 className="mobile-nav-drawer"
               >
+                <a className="mobile-nav-cart" href="/cart" onClick={closeMenu}>
+                  <span className="mobile-nav-cart-art">
+                    <img src={cartImage} alt="" aria-hidden="true" />
+                    {totals.quantity > 0 && <small>{totals.quantity}</small>}
+                  </span>
+                  <span>
+                    <strong>Your cart</strong>
+                    <small>{totals.quantity ? `${totals.quantity} item${totals.quantity === 1 ? "" : "s"} ready` : "Start shopping"}</small>
+                  </span>
+                  <PackageCheck size={20} />
+                </a>
                 <div className="mobile-nav-drawer-head">
                   <span>Navigate</span>
                   <p>Prakash Electronics</p>
                 </div>
-                <MenuVertical menuItems={normalizedLinks} onNavigate={closeMenu} />
+                <MenuVertical menuItems={mobileLinks} onNavigate={closeMenu} />
                 <a onClick={closeMenu} href="/booking" className="mobile-nav-cta">
                   {nav.ctaLabel || "Book Repair"}
                 </a>

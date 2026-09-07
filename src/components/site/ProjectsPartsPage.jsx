@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowLeft, Bot, Check, Filter, PackageSearch, Search, ShoppingBag, ShoppingCart, Tag, X, Zap } from "lucide-react";
+import { ArrowLeft, Check, Filter, PackageSearch, Search, ShoppingBag, ShoppingCart, Tag, X, Zap } from "lucide-react";
 import { apiRequest } from "../../api/client";
 import { SCIENCE_PROJECTS_CATEGORY, cartStockMessage, getCartStockLimit, useCart, useCartActions, useCartQuantity } from "../../context/CartContext";
 import { useSwipeNavigation } from "../../hooks/useSwipeNavigation";
@@ -28,6 +28,7 @@ import {
   readCatalogCache,
   writeCatalogCache,
 } from "../../utils/catalogCache";
+import { notifyCartResult } from "../../utils/cartToast";
 
 const fallbackSlides = [
   {
@@ -146,7 +147,6 @@ export function ProjectsPartsPage() {
   const [category, setCategory] = useState("");
   const [subCategory, setSubCategory] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
-  const [cartNotice, setCartNotice] = useState("");
   const [sliderInView, setSliderInView] = useState(true);
   const sliderSectionRef = useRef(null);
   const debouncedSearch = useDebouncedValue(searchQuery);
@@ -321,10 +321,7 @@ export function ProjectsPartsPage() {
       productCategory: SCIENCE_PROJECTS_CATEGORY,
       originalCategory: part.category || "Wiring Products",
     });
-    if (result?.message) {
-      setCartNotice(result.message);
-      window.setTimeout(() => setCartNotice(""), 3200);
-    }
+    notifyCartResult(result, part.name);
   }, [addItem]);
 
   const filterSheet = filterOpen
@@ -556,7 +553,6 @@ export function ProjectsPartsPage() {
             </span>
           )}
           {error && <div className="parts-state">{error}</div>}
-          {cartNotice && <div className="cart-stock-notice shop-stock-notice">{cartNotice}</div>}
           {loading && parts.length === 0 && <CatalogGridSkeleton count={8} />}
           {!loading && !error && parts.length === 0 && (
             <EmptyProductsState message={searchQuery || category || subCategory ? "No matching wiring products found." : "No wiring accessories are published yet."} />
@@ -591,10 +587,6 @@ export function ProjectsPartsPage() {
         </section>
       </main>
       {filterSheet}
-      <a className="science-ai-float" href="/pulse-ai" aria-label="Open Pulse AI">
-        <Bot size={24} />
-        <span>Pulse AI</span>
-      </a>
       <Footer />
     </div>
   );
@@ -672,7 +664,7 @@ export function ProjectPartDetailPage() {
       productCategory: SCIENCE_PROJECTS_CATEGORY,
       originalCategory: part.category || "Wiring Products",
     });
-    if (result?.message) setError(result.message);
+    notifyCartResult(result, part.name);
   };
 
   const detailCartQuantity = part ? getQuantity(part, { sourceType: "project-part" }) : 0;
@@ -766,10 +758,6 @@ export function ProjectPartDetailPage() {
           <RelatedProductsSection product={part} sourceType="project-part" limit={8} />
         ) : null}
       </main>
-      <a className="science-ai-float" href="/pulse-ai" aria-label="Open Pulse AI">
-        <Bot size={24} />
-        <span>Pulse AI</span>
-      </a>
       <Footer />
     </div>
   );

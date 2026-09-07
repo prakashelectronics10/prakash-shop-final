@@ -1,13 +1,14 @@
 export const DEFAULT_PUBLIC_CONTACT = {
-  phone: "+916200267880",
-  whatsappNumber: "919006608566",
+  phone: "+91 6200267880",
+  whatsappNumber: "916200267880",
   whatsappMessage: "Hello Prakash Electronics, I need assistance with a repair of home appliances or buy products.",
-  email: "prakashelectronics10@gmail.com",
+  email: "support@prakashshop.in",
   address: "Chitarpur, main road - 825101",
   shortAddress: "Chitarpur - 825101",
 };
 
 const LEGACY_PHONE_DIGITS = new Set(["9006608566", "919006608566"]);
+const LEGACY_EMAILS = new Set(["", "prakashelectronics10@gmail.com"]);
 const LEGACY_WHATSAPP_MESSAGES = new Set([
   "",
   "Hello Prakash Electronics, I need assistance with a repair.",
@@ -30,12 +31,20 @@ export function normalizePublicContact(contact = {}) {
     ...(contact || {}),
   };
 
-  if (!merged.phone || LEGACY_PHONE_DIGITS.has(contactDigits(merged.phone))) {
+  if (
+    !merged.phone
+    || LEGACY_PHONE_DIGITS.has(contactDigits(merged.phone))
+    || contactDigits(merged.phone) === contactDigits(DEFAULT_PUBLIC_CONTACT.phone)
+  ) {
     merged.phone = DEFAULT_PUBLIC_CONTACT.phone;
   }
 
-  if (!merged.whatsappNumber) {
+  if (!merged.whatsappNumber || LEGACY_PHONE_DIGITS.has(contactDigits(merged.whatsappNumber))) {
     merged.whatsappNumber = DEFAULT_PUBLIC_CONTACT.whatsappNumber;
+  }
+
+  if (LEGACY_EMAILS.has(String(merged.email || "").trim().toLowerCase())) {
+    merged.email = DEFAULT_PUBLIC_CONTACT.email;
   }
 
   if (LEGACY_WHATSAPP_MESSAGES.has(String(merged.whatsappMessage || "").trim())) {

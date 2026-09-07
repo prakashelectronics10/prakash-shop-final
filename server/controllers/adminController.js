@@ -11,6 +11,7 @@ const ShopProduct = require("../models/ShopProduct");
 const SiteContent = require("../models/SiteContent");
 const NotificationEmail = require("../models/NotificationEmail");
 const Notification = require("../models/Notification");
+const Order = require("../models/Order");
 const AppError = require("../utils/AppError");
 const asyncHandler = require("../utils/asyncHandler");
 const slugify = require("../utils/slugify");
@@ -37,6 +38,7 @@ const allowedContentKeys = new Set([
   "testimonials",
   "gallery",
   "about",
+  "aboutShowcase",
   "contactSection",
   "footer",
   "featuredCarousel",
@@ -47,6 +49,7 @@ const contentPermissionByKey = {
   shopHighlights: "shopHighlights",
   testimonials: "testimonials",
   about: "about",
+  aboutShowcase: "about",
   footer: "footer",
 };
 
@@ -114,6 +117,15 @@ function contentImagePublicIds(key, value = {}) {
       url: item.url,
       iconImagePublicId: item.iconImagePublicId,
       iconImageUrl: item.iconImageUrl,
+    })));
+  }
+
+  if (key === "aboutShowcase") {
+    return collectPublicIdsFromSources((value.items || []).map((item) => ({
+      publicId: item.publicId,
+      imagePublicId: item.imagePublicId,
+      imageUrl: item.imageUrl || item.src,
+      url: item.url,
     })));
   }
 
@@ -255,6 +267,29 @@ function normalizeAboutContent(value = {}) {
   };
 }
 
+function normalizeAboutShowcaseContent(value = {}) {
+  return {
+    eyebrow: String(value.eyebrow || "Our story").trim().slice(0, 80),
+    title: String(value.title || "Experience built around").trim().slice(0, 120),
+    highlight: String(value.highlight || "real service").trim().slice(0, 120),
+    description: String(value.description || "").trim().slice(0, 500),
+    autoplay: value.autoplay !== false,
+    items: assignDisplayOrders(Array.isArray(value.items) ? value.items : [])
+      .map((item = {}, index) => ({
+        id: item.id || item._id || `about-story-${Date.now()}-${index}`,
+        name: String(item.name || item.title || "Prakash Electronics").trim().slice(0, 120),
+        designation: String(item.designation || item.role || "Customer story").trim().slice(0, 160),
+        quote: String(item.quote || item.text || item.description || "").trim().slice(0, 1200),
+        imageUrl: String(item.imageUrl || item.src || item.url || "").trim().slice(0, 1600),
+        imagePublicId: String(item.imagePublicId || item.publicId || "").trim().slice(0, 500),
+        isActive: item.isActive !== false,
+        displayOrder: Number(item.displayOrder || index + 1),
+      }))
+      .filter((item) => item.imageUrl && (item.name || item.quote))
+      .slice(0, 12),
+  };
+}
+
 function normalizeFooterContent(value = {}) {
   return {
     ...value,
@@ -278,6 +313,7 @@ function normalizeContentValue(key, value = {}) {
   if (key === "shopHighlights") return normalizeShopHighlightsContent(value);
   if (key === "gallery") return normalizeGalleryContent(value);
   if (key === "about") return normalizeAboutContent(value);
+  if (key === "aboutShowcase") return normalizeAboutShowcaseContent(value);
   if (key === "testimonials") return normalizeTestimonialsContent(value);
   if (key === "footer") return normalizeFooterContent(value);
   return value;
@@ -306,6 +342,7 @@ const dashboard = asyncHandler(async (_req, res) => {
     contentDocs,
     invoices,
     pendingInvoices,
+    orders,
   ] = await Promise.all([
     Analytics.findOne({ key: "global" }).lean(),
     Product.countDocuments(),
@@ -319,9 +356,10 @@ const dashboard = asyncHandler(async (_req, res) => {
     Admin.countDocuments({ isActive: true }),
     NotificationEmail.countDocuments({ isEnabled: true }),
     Notification.countDocuments({ isRead: false }),
-    SiteContent.find({ key: { $in: ["about", "gallery", "shopHighlights", "testimonials"] } }).lean(),
+    SiteContent.find({ key: { $in: ["about", "aboutShowcase", "gallery", "shopHighlights", "testimonials"] } }).lean(),
     Invoice.countDocuments(),
     Invoice.countDocuments({ paymentStatus: { $ne: "paid" } }),
+    Order.countDocuments({ paymentStatus: "paid" }),
   ]);
 
   const content = contentDocs.reduce((acc, doc) => {
@@ -346,7 +384,9 @@ const dashboard = asyncHandler(async (_req, res) => {
       unreadNotifications,
       invoices,
       pendingInvoices,
+      orders,
       aboutCards: content.about?.reasons?.length || 0,
+      aboutStories: content.aboutShowcase?.items?.length || 0,
       galleryImages: content.gallery?.items?.length || 0,
       shopHighlights: content.shopHighlights?.items?.length || 0,
       testimonials: content.testimonials?.items?.length || 0,

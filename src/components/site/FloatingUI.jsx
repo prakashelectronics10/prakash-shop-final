@@ -23,6 +23,7 @@ export function FloatingUI() {
   });
 
   const whatsappUrl = getWhatsappHref(contact);
+  const isCartPage = window.location.pathname.replace(/\/+$/, "") === "/cart";
 
   return (
     <>
@@ -32,7 +33,7 @@ export function FloatingUI() {
         className="fixed inset-x-0 top-0 z-[60] h-[3px] origin-left bg-gradient-primary shadow-glow"
       />
 
-      <div className="home-floating-actions" data-floating-actions>
+      <div className={`home-floating-actions ${isCartPage ? "home-floating-actions--above-cart" : ""}`} data-floating-actions>
 
         {whatsappUrl && (
         <a
@@ -40,13 +41,13 @@ export function FloatingUI() {
           target="_blank"
           rel="noopener noreferrer"
           aria-label="Chat with Prakash Electronics on WhatsApp"
-          className="relative z-10 inline-flex cursor-pointer pointer-events-auto home-floating-button"
+          className="relative z-10 inline-flex cursor-pointer pointer-events-auto home-floating-button whatsapp-home-button"
         >
           <img
             src={whatsappImage}
-            alt="whatsapp"
+            alt=""
             aria-hidden="true"
-            className="pointer-events-none h-12 w-12 object-contain"
+            className="pointer-events-none h-9 w-9 object-contain"
           />
         </a>
         )}

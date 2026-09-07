@@ -51,7 +51,12 @@ CLOUDINARY_API_KEY=<cloudinary-key>
 CLOUDINARY_API_SECRET=<cloudinary-secret>
 CLOUDINARY_FOLDER=prakash-electronics
 GOOGLE_MAPS_API_KEY=<optional-google-maps-key>
+RAZORPAY_KEY_ID=<rzp_live_or_test_key_id>
+RAZORPAY_KEY_SECRET=<matching-secret>
+RAZORPAY_WEBHOOK_SECRET=<webhook-signing-secret>
 ```
+
+Create the Razorpay API keys in the Razorpay dashboard. Use test keys while validating checkout, then replace both values together with live keys for production. Add `https://prakashshop.in/api/orders/webhook` as a Razorpay webhook subscribed to `payment.captured`, and use its signing secret for `RAZORPAY_WEBHOOK_SECRET`. Never expose either secret through a `REACT_APP_*` variable; payment signatures are verified only by the Express server.
 
 Use Brevo Transactional Email API for all production email. Do not configure legacy mail transport variables.
 
@@ -97,4 +102,4 @@ https://<render-service-name>.onrender.com/
 https://<render-service-name>.onrender.com/admin/login
 ```
 
-Also test admin OTP, create-admin OTP, a booking with images, booking notification retry, Cloudinary image upload, map rendering, and one admin save action.
+Also test admin OTP, create-admin OTP, a booking with images, booking notification retry, Cloudinary image upload, map rendering, one successful Razorpay test payment, customer Order ID tracking, and an order-status update from the admin Orders section.

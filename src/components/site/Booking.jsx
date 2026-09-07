@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react";
+import toast from "react-hot-toast";
 import { CalendarClock, ShoppingBag, Trash2, UploadCloud, X, AlertTriangle, MapPin, CheckCircle2 } from "lucide-react";
 import { apiRequest } from "../../api/client";
 import { cartItemToBookingProduct, cartStockMessage, getCartStockLimit, useCart } from "../../context/CartContext";
@@ -443,9 +444,11 @@ export function Booking() {
       sessionStorage.removeItem("selectedCartBooking");
       if (isCartBooking) clearCart();
       setStatus("Booking request submitted. We will contact you soon.");
+      toast.success("Booking request submitted successfully.", { id: "booking-submit" });
       setShowSuccessAnimation(true);
     } catch (error) {
       setStatus(error.message || "Unable to submit booking.");
+      toast.error(error.message || "Unable to submit booking.", { id: "booking-submit" });
     } finally {
       setBusy(false);
     }

@@ -167,7 +167,7 @@ export function Services({ sectionId = "services" }) {
   if (!products.length) return null;
 
   return (
-    <section id={sectionId || undefined} className="site-section relative overflow-x-hidden overflow-y-visible">
+    <section id={sectionId || undefined} className="services-section site-section relative overflow-x-hidden overflow-y-visible">
       <div className="pointer-events-none absolute left-1/2 top-20 hidden h-72 w-[80%] -translate-x-1/2 rounded-full bg-gradient-primary opacity-10 blur-3xl md:block" />
 
       <div className="relative mx-auto max-w-7xl px-4">
@@ -181,7 +181,7 @@ export function Services({ sectionId = "services" }) {
           <p className="mt-4 text-muted-foreground">{section.description}</p>
         </div>
 
-        <div className="relative mt-8 sm:mt-10">
+        <div className="services-carousel-bleed relative mt-8 sm:mt-10">
           <SnapCarousel
             className="snap-carousel--services"
             ariaLabel="Services"

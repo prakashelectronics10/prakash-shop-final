@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 const ShopProduct = require("../models/ShopProduct");
 const ProjectPart = require("../models/ProjectPart");
 const { isConnected } = require("../config/db");
+const { resolveProductPricing } = require("../utils/productPricing");
 
 const DEFAULT_SITE_NAME = "Prakash Electronics and Electricals";
 const DEFAULT_DESCRIPTION = "Electronics products, accessories, and science project parts from Prakash Electronics.";
@@ -46,6 +47,8 @@ function serializeProductMeta(product, { origin, sourceType }) {
   );
   const rawImage = product.imageUrl || product.images?.find((item) => item?.url)?.url || "/og-image.jpg";
   const image = absoluteUrl(cloudinaryOgImage(rawImage), origin);
+  const price = resolveProductPricing(product).price;
+  const unavailable = /out of stock|not available/i.test(String(product.availability || ""));
 
   return {
     title,
@@ -55,6 +58,11 @@ function serializeProductMeta(product, { origin, sourceType }) {
     url,
     type: "product",
     sourceType,
+    sku: String(product._id || identifier),
+    category: trimText(product.category, sourceType === "project-part" ? "Wiring Accessories" : "Electronics", 80),
+    tags: Array.isArray(product.tags) ? product.tags.map((tag) => trimText(tag, "", 60)).filter(Boolean).slice(0, 12) : [],
+    price: Number.isFinite(price) && price >= 0 ? price : null,
+    availability: unavailable ? "https://schema.org/OutOfStock" : "https://schema.org/InStock",
   };
 }
 
@@ -69,11 +77,11 @@ async function findProductForMetadata(identifier, origin) {
 
   const [shopProduct, projectPart] = await Promise.all([
     ShopProduct.findOne(query)
-      .select("name slug shortDescription description imageUrl images isActive")
+      .select("name slug shortDescription description category mrp discountPercent price quantity availability imageUrl images tags isActive")
       .maxTimeMS(5000)
       .lean(),
     ProjectPart.findOne(query)
-      .select("name slug shortDescription description imageUrl isActive")
+      .select("name slug shortDescription description category subCategory mrp discountPercent price stock availability imageUrl tags isActive")
       .maxTimeMS(5000)
       .lean(),
   ]);

@@ -1,8 +1,8 @@
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowLeft, Bot, Check, Filter, PackageSearch, Search, ShoppingBag, ShoppingCart, Tag, X } from "lucide-react";
+import { ArrowLeft, Check, Filter, PackageSearch, Search, ShoppingBag, ShoppingCart, Tag, X } from "lucide-react";
 import { apiRequest } from "../../api/client";
-import { SCIENCE_PROJECTS_CATEGORY, isWiringAccessoriesCategory, cartStockMessage, getCartStockLimit, useCart, useCartActions, useCartQuantity } from "../../context/CartContext";
+import { isWiringAccessoriesCategory, cartStockMessage, getCartStockLimit, useCart, useCartActions, useCartQuantity } from "../../context/CartContext";
 import { Navbar } from "./Navbar";
 import { CANONICAL_WIRING_PARTS_PATH } from "../../utils/routes";
 import { Footer } from "./Footer";
@@ -21,6 +21,7 @@ import {
   readSearchQueryFromLocation,
 } from "../../utils/productSearch";
 import { formatINR } from "../../utils/productPricing";
+import { notifyCartResult } from "../../utils/cartToast";
 import {
   CATALOG_CACHE_TTL_MS,
   SHOP_CATALOG_CACHE_KEY,
@@ -150,7 +151,6 @@ export function ShopProductsPage() {
   const [category, setCategory] = useState("");
   const [maxPrice, setMaxPrice] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
-  const [cartNotice, setCartNotice] = useState("");
   const debouncedSearch = useDebouncedValue(search);
   const debouncedMaxPrice = useDebouncedValue(maxPrice, 180);
 
@@ -264,10 +264,7 @@ export function ShopProductsPage() {
     const result = addItem(product, {
       sourceType: product.sourceType || (isWiringAccessoriesCategory(product.category) ? "project-part" : "shop-product"),
     });
-    if (result?.message) {
-      setCartNotice(result.message);
-      window.setTimeout(() => setCartNotice(""), 3200);
-    }
+    notifyCartResult(result, product.name);
   }, [addItem]);
 
   const filterSheet = filterOpen
@@ -418,7 +415,6 @@ export function ShopProductsPage() {
               {loading && products.length ? "Updating results..." : `${catalogTotal} ${catalogTotal === 1 ? "product" : "products"}`}
             </span>
           )}
-          {cartNotice && <div className="cart-stock-notice shop-stock-notice">{cartNotice}</div>}
           {error && <div className="parts-state">{error}</div>}
           {loading && products.length === 0 && <CatalogGridSkeleton count={8} />}
           {!loading && !error && products.length === 0 && (
@@ -455,10 +451,6 @@ export function ShopProductsPage() {
         </section>
       </main>
       {filterSheet}
-      <a className="science-ai-float" href="/pulse-ai" aria-label="Open Pulse AI">
-        <Bot size={24} />
-        <span>Pulse AI</span>
-      </a>
       <Footer />
     </div>
   );
@@ -518,23 +510,11 @@ export function ProductDetailPage() {
       setError("This product is out of stock.");
       return;
     }
-    const isProjectPart = source === "project-part" || product.sourceType === "project-part";
-    sessionStorage.setItem("selectedProjectPartBooking", JSON.stringify({
-      productId: product._id || "",
-      sourceId: product.sourceId || product._id || "",
-      sourceType: isProjectPart ? "project-part" : "shop-product",
-      productSlug: product.slug || "",
-      productName: product.name || "",
-      productCategory: isProjectPart ? SCIENCE_PROJECTS_CATEGORY : product.category || "Electronics",
-      originalCategory: product.originalCategory || (isProjectPart ? product.category : ""),
-      productImageUrl: product.imageUrl || "",
-      productDescription: product.description || product.shortDescription || "",
-      bookingSource: source === "shop" ? "shop-product-detail" : "product-detail",
-      quantity: 1,
-      stockQuantity: getCartStockLimit(product),
-      price: product.price ?? null,
-    }));
-    window.location.href = "/booking?source=product-detail";
+    const result = addItem(product, {
+      sourceType: source === "project-part" || product.sourceType === "project-part" ? "project-part" : "shop-product",
+    });
+    notifyCartResult(result, product.name);
+    if (result?.status !== "blocked") window.location.href = "/cart";
   };
 
   const addCurrentToCart = () => {
@@ -542,7 +522,7 @@ export function ProductDetailPage() {
     const result = addItem(product, {
       sourceType: source === "project-part" || product.sourceType === "project-part" ? "project-part" : "shop-product",
     });
-    if (result?.message) setError(result.message);
+    notifyCartResult(result, product.name);
   };
 
   const detailCartQuantity = product ? getQuantity(product, {

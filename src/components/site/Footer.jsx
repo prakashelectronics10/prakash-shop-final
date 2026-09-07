@@ -39,6 +39,20 @@ function externalHref(url) {
   return `https://${value}`;
 }
 
+function quickLinkHref(label) {
+  const routes = {
+    home: "/#home",
+    about: "/about",
+    services: "/#services",
+    gallery: "/gallery",
+    contact: "/contact",
+    offers: "/#offers",
+    products: "/products",
+  };
+  const key = String(label || "").trim().toLowerCase();
+  return routes[key] || `/#${key.replace(/\s+/g, "-")}`;
+}
+
 function socialIconFor(link) {
   const raw = String(link.iconName || link.platform || link.title || "").trim();
   const simple = raw.includes(":") ? raw.split(":").pop() : raw;
@@ -116,7 +130,7 @@ export function Footer() {
             <p className="mt-4 text-sm text-muted-foreground">{footer.description}</p>
           </div>
 
-          <FooterCol title="Quick Links" items={footer.quickLinks || []} />
+          <FooterCol title="Quick Links" items={footer.quickLinks || []} routeLinks />
           <FooterCol title="Services" items={footer.serviceLinks || []} />
           {socialLinks.length > 0 && <SocialCol title="Social Media Links" items={socialLinks} />}
           <div>
@@ -136,6 +150,10 @@ export function Footer() {
 
         <div className="mt-10 flex flex-col items-center justify-between gap-4 border-t border-border pt-6 text-sm text-muted-foreground md:flex-row">
           <p>Copyright {new Date().getFullYear()} {footer.copyrightPrefix}</p>
+          <nav className="footer-legal-links" aria-label="Legal information">
+            <a href="/privacy-policy">Privacy Policy</a>
+            <a href="/terms-and-conditions">Terms &amp; Conditions</a>
+          </nav>
           <p>{footer.creditText}</p>
         </div>
       </div>
@@ -181,14 +199,14 @@ function SocialCol({ title, items }) {
   );
 }
 
-function FooterCol({ title, items }) {
+function FooterCol({ title, items, routeLinks = false }) {
   return (
     <div>
       <h3 className="font-display text-sm font-semibold uppercase tracking-wider">{title}</h3>
       <ul className="mt-4 space-y-2 text-sm text-muted-foreground">
         {items.map((it) => (
           <li key={it}>
-            <a href={`#${it.toLowerCase().replace(/\s+/g, "-")}`} className="hover:text-foreground">{it}</a>
+            <a href={routeLinks ? quickLinkHref(it) : `/#${it.toLowerCase().replace(/\s+/g, "-")}`} className="hover:text-foreground">{it}</a>
           </li>
         ))}
       </ul>

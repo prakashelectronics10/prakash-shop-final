@@ -30,6 +30,7 @@ const allPermissions = [
   "webSettings",
   "notificationEmails",
   "invoices",
+  "orders",
 ];
 
 const normalizeEmail = (email) => String(email || "").trim().toLowerCase();

@@ -40,7 +40,7 @@ function cartPositionClass(count) {
 
 export function CartFloatingButton() {
   const { totals } = useCart();
-  const isCartPage = typeof window !== "undefined" && window.location.pathname === "/cart";
+  const hidesCartShortcut = typeof window !== "undefined" && ["/cart", "/checkout", "/orders"].includes(window.location.pathname);
   const [lowerFloatingActionCount, setLowerFloatingActionCount] = useState(routeLowerFloatingActionCount);
 
   useLayoutEffect(() => {
@@ -63,7 +63,7 @@ export function CartFloatingButton() {
     };
   }, []);
 
-  if (!totals.quantity || isCartPage) return null;
+  if (!totals.quantity || hidesCartShortcut) return null;
 
   return (
     <a

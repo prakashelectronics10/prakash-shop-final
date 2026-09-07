@@ -26,12 +26,14 @@ const projectPartRoutes = require("./routes/projectPartRoutes");
 const scienceAIRoutes = require("./routes/scienceAIRoutes");
 const shopProductRoutes = require("./routes/shopProductRoutes");
 const brandSliderRoutes = require("./routes/brandSliderRoutes");
+const orderRoutes = require("./routes/orderRoutes");
 const { getAppSettings, updateAppLogo, updateProfileImage } = require("./controllers/mobileController");
 const { upload } = require("./controllers/uploadController");
 const { getSitePayload, getHtmlShellSiteMeta } = require("./services/siteService");
 const { isEmailConfigured } = require("./services/mailService");
 const { configureCloudinary } = require("./config/cloudinary");
 const { findProductForMetadata, absoluteUrl } = require("./services/productMetadataService");
+const { handleRazorpayWebhook } = require("./controllers/orderController");
 
 const app = express();
 const writeLimiter = rateLimit({
@@ -52,11 +54,11 @@ app.use(
       directives: {
         defaultSrc: ["'self'"],
         baseUri: ["'self'"],
-        connectSrc: ["'self'", "https://prakashshop.in", "https://www.prakashshop.in", "https://formspree.io"],
+        connectSrc: ["'self'", "https://prakashshop.in", "https://www.prakashshop.in", "https://formspree.io", "https://api.razorpay.com", "https://*.razorpay.com"],
         fontSrc: ["'self'", "https:", "data:"],
         formAction: ["'self'"],
         frameAncestors: ["'self'"],
-        frameSrc: ["'self'", "https://www.google.com", "https://maps.google.com"],
+        frameSrc: ["'self'", "https://www.google.com", "https://maps.google.com", "https://api.razorpay.com", "https://*.razorpay.com"],
         imgSrc: [
           "'self'",
           "data:",
@@ -67,7 +69,7 @@ app.use(
           "https://*.googleusercontent.com",
         ],
         objectSrc: ["'none'"],
-        scriptSrc: ["'self'"],
+        scriptSrc: ["'self'", "https://checkout.razorpay.com"],
         scriptSrcAttr: ["'none'"],
         styleSrc: ["'self'", "https:", "'unsafe-inline'"],
         upgradeInsecureRequests: [],
@@ -76,6 +78,9 @@ app.use(
   }),
 );
 app.use(compression());
+// Razorpay webhook signatures require the untouched request bytes, so this route
+// must be registered before the global JSON parser.
+app.post("/api/orders/webhook", express.raw({ type: "application/json", limit: "1mb" }), handleRazorpayWebhook);
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use(cookieParser());
@@ -141,6 +146,7 @@ app.use("/api/admin", requireAdmin, adminRoutes);
 app.use("/api/project-parts", projectPartRoutes);
 app.use("/api/shop-products", shopProductRoutes);
 app.use("/api/brand-sliders", brandSliderRoutes);
+app.use("/api/orders", orderRoutes);
 app.use("/api/science-ai", scienceAIRoutes);
 
 app.get(["/science-ai", "/science-ai/"], (_req, res) => {
@@ -185,10 +191,10 @@ app.get("/sitemap.xml", async (req, res, next) => {
 
     const [shopProducts, projectParts] = await Promise.all([
       isConnected()
-        ? ShopProduct.find({ isActive: true }).select("slug _id updatedAt").sort({ updatedAt: -1 }).limit(500).lean().catch(() => [])
+        ? ShopProduct.find({ isActive: true }).select("slug _id updatedAt").sort({ updatedAt: -1 }).lean().catch(() => [])
         : [],
       isConnected()
-        ? ProjectPart.find({ isActive: true }).select("slug _id updatedAt").sort({ updatedAt: -1 }).limit(500).lean().catch(() => [])
+        ? ProjectPart.find({ isActive: true }).select("slug _id updatedAt").sort({ updatedAt: -1 }).lean().catch(() => [])
         : [],
     ]);
 
@@ -198,6 +204,11 @@ app.get("/sitemap.xml", async (req, res, next) => {
       { path: "/booking", priority: "0.95", changefreq: "weekly" },
       { path: "/products", priority: "0.95", changefreq: "daily" },
       { path: "/wiring-parts", priority: "0.9", changefreq: "daily" },
+      { path: "/about", priority: "0.75", changefreq: "monthly" },
+      { path: "/contact", priority: "0.75", changefreq: "monthly" },
+      { path: "/gallery", priority: "0.7", changefreq: "weekly" },
+      { path: "/privacy-policy", priority: "0.35", changefreq: "yearly" },
+      { path: "/terms-and-conditions", priority: "0.35", changefreq: "yearly" },
       { path: "/?page=learn-more&service=quick-repair-booking", priority: "0.8", changefreq: "monthly" },
       { path: "/?page=learn-more&service=lcd-led-tv-repair", priority: "0.8", changefreq: "monthly" },
       { path: "/?page=learn-more&service=ceiling-fan-repair", priority: "0.8", changefreq: "monthly" },
@@ -334,9 +345,19 @@ function injectWebSettings(html, site = {}, options = {}) {
 
 const ROUTE_SHARE_META = [
   {
+    match: (pathname) => pathname === "/",
+    title: "Prakash Electronics and Electricals | Electronics Repair in Chitarpur",
+    description: "Prakash Electronics and Electricals in Chitarpur offers electronics products, wiring accessories, and dependable TV, fan, cooler, AC, speaker, and home-appliance repair.",
+    keywords: "electronics shop Chitarpur, electronics repair Chitarpur, wiring accessories, TV repair, fan repair, cooler repair, AC repair, Prakash Electronics",
+    ogImage: "/og-image.jpg",
+    ogImageAlt: "Prakash Electronics and Electricals in Chitarpur",
+    canonicalPath: "/",
+  },
+  {
     match: (pathname) => pathname === "/pulse-ai" || pathname === "/science-ai",
     title: "Pulse AI | Electronics Shop, Repair Guidance & Product Assistant",
     description: "Pulse AI by Prakash Electronics helps you find electronics shop products, wiring accessories, RGB lights, cooler repairing, AC repairing, home appliances repairing, and booking guidance in Chitarpur, Jharkhand.",
+    keywords: "Pulse AI, electronics products, wiring accessories, repair assistant, Prakash Electronics",
     ogImage: "/og-image-pulse-ai.jpg",
     ogImageAlt: "Pulse AI by Prakash Electronics",
     canonicalPath: "/pulse-ai",
@@ -345,6 +366,7 @@ const ROUTE_SHARE_META = [
     match: (pathname) => pathname === "/products" || pathname.startsWith("/products/"),
     title: "Electronics Shop Products in Chitarpur | Prakash Electronics",
     description: "Browse electronics shop products, wiring accessories, RGB lights, electrical parts, and accessories from Prakash Electronics and Electricals in Chitarpur.",
+    keywords: "electronics products Chitarpur, electronics shop, electrical products, home appliances, Prakash Electronics",
     ogImage: "/og-image-shop-products.jpg",
     ogImageAlt: "Prakash Electronics shop products",
     canonicalPath: "/products",
@@ -358,9 +380,102 @@ const ROUTE_SHARE_META = [
     ),
     title: "Wiring Accessories in Chitarpur | Prakash Electronics",
     description: "Buy wiring accessories, switches, sockets, wires, MCBs, and electrical fittings by category and brand from Prakash Electronics in Chitarpur.",
+    keywords: "wiring accessories Chitarpur, switches, sockets, wires, MCB, electrical fittings",
     ogImage: "/og-image-wiring.jpg",
     ogImageAlt: "Prakash Electronics wiring accessories",
     canonicalPath: "/wiring-parts",
+  },
+  {
+    match: (pathname) => pathname === "/booking",
+    title: "Book Electronics Repair in Chitarpur | Prakash Electronics",
+    description: "Book TV, fan, cooler, AC, speaker, or home-appliance repair with Prakash Electronics in Chitarpur, Jharkhand.",
+    keywords: "book electronics repair Chitarpur, TV repair, fan repair, cooler repair, AC repair",
+    ogImage: "/og-image.jpg",
+    canonicalPath: "/booking",
+  },
+  {
+    match: (pathname) => pathname === "/gallery",
+    title: "Gallery | Prakash Electronics and Electricals Chitarpur",
+    description: "See workshop photos, electronics products, repair work, and shop moments from Prakash Electronics in Chitarpur.",
+    keywords: "Prakash Electronics gallery, electronics workshop Chitarpur, repair photos",
+    ogImage: "/og-image.jpg",
+    canonicalPath: "/gallery",
+  },
+  {
+    match: (pathname) => pathname === "/about",
+    title: "About Prakash Electronics | Trusted Since 2000",
+    description: "Learn about Prakash Electronics and its experienced electronics sales, diagnostics, parts, and repair support in Chitarpur since 2000.",
+    keywords: "about Prakash Electronics, electronics shop Chitarpur, repair service since 2000",
+    ogImage: "/og-image.jpg",
+    canonicalPath: "/about",
+  },
+  {
+    match: (pathname) => pathname === "/contact",
+    title: "Contact Prakash Electronics | Chitarpur, Jharkhand",
+    description: "Call, WhatsApp, email, or visit Prakash Electronics in Chitarpur for products, wiring accessories, repair bookings, and support.",
+    keywords: "contact Prakash Electronics, electronics shop Chitarpur, repair contact Ramgarh",
+    ogImage: "/og-image.jpg",
+    canonicalPath: "/contact",
+  },
+  {
+    match: (pathname) => pathname === "/learn-more",
+    title: "Electronics Repair Services | Prakash Electronics Chitarpur",
+    description: "Explore TV, fan, cooler, AC, speaker, and home-appliance repair services from Prakash Electronics in Chitarpur.",
+    keywords: "electronics repair services Chitarpur, TV repair, fan repair, cooler repair, AC repair",
+    ogImage: "/og-image.jpg",
+    canonicalPath: "/learn-more",
+  },
+  {
+    match: (pathname) => pathname === "/privacy-policy",
+    title: "Privacy Policy | Prakash Electronics",
+    description: "Read how Prakash Electronics collects, uses, protects, and manages information for orders, repair bookings, payments, and website services.",
+    keywords: "Prakash Electronics privacy policy, order privacy, Razorpay payment privacy",
+    ogImage: "/og-image.jpg",
+    canonicalPath: "/privacy-policy",
+  },
+  {
+    match: (pathname) => pathname === "/terms-and-conditions",
+    title: "Terms & Conditions | Prakash Electronics",
+    description: "Read the terms for using the Prakash Electronics website, ordering products, making payments, delivery, and booking repairs.",
+    keywords: "Prakash Electronics terms and conditions, order terms, delivery terms, repair booking terms",
+    ogImage: "/og-image.jpg",
+    canonicalPath: "/terms-and-conditions",
+  },
+  {
+    match: (pathname) => pathname === "/cart",
+    title: "Cart | Prakash Electronics",
+    description: "Review your selected products before checkout.",
+    keywords: "Prakash Electronics cart",
+    ogImage: "/og-image.jpg",
+    canonicalPath: "/cart",
+    robots: "noindex, nofollow",
+  },
+  {
+    match: (pathname) => pathname === "/checkout",
+    title: "Secure Checkout | Prakash Electronics",
+    description: "Complete delivery details and pay securely for your Prakash Electronics order.",
+    keywords: "Prakash Electronics checkout",
+    ogImage: "/og-image.jpg",
+    canonicalPath: "/checkout",
+    robots: "noindex, nofollow",
+  },
+  {
+    match: (pathname) => pathname === "/orders",
+    title: "Track Order | Prakash Electronics",
+    description: "Track a Prakash Electronics order using its Order ID.",
+    keywords: "track Prakash Electronics order",
+    ogImage: "/og-image.jpg",
+    canonicalPath: "/orders",
+    robots: "noindex, nofollow",
+  },
+  {
+    match: (pathname) => pathname.startsWith("/prakash-control-panel@1999"),
+    title: "Admin | Prakash Electronics",
+    description: "Prakash Electronics administration.",
+    keywords: "Prakash Electronics admin",
+    ogImage: "/og-image.jpg",
+    canonicalPath: "/prakash-control-panel@1999",
+    robots: "noindex, nofollow",
   },
 ];
 
@@ -379,10 +494,14 @@ function injectRouteMetadata(html, routeMeta, origin) {
   const image = absoluteUrl(routeMeta.ogImage, origin);
   const url = absoluteUrl(routeMeta.canonicalPath || "/", origin);
   const imageAlt = routeMeta.ogImageAlt || title;
+  const robots = routeMeta.robots || "index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1";
 
   let output = replaceTitle(html, title);
   output = replaceTag(output, /<link rel="canonical" href="[^"]*"\s*\/?>/i, `<link rel="canonical" href="${escapeAttribute(url)}" />`);
   output = replaceTag(output, /<meta\s+name="description"\s+content="[^"]*"\s*\/?>/i, `<meta name="description" content="${escapeAttribute(description)}" />`);
+  output = replaceTag(output, /<meta\s+name="keywords"\s+content="[^"]*"\s*\/?>/i, `<meta name="keywords" content="${escapeAttribute(routeMeta.keywords || "Prakash Electronics")}" />`);
+  output = replaceTag(output, /<meta\s+name="robots"\s+content="[^"]*"\s*\/?>/i, `<meta name="robots" content="${escapeAttribute(robots)}" />`);
+  output = replaceTag(output, /<meta\s+name="googlebot"\s+content="[^"]*"\s*\/?>/i, `<meta name="googlebot" content="${escapeAttribute(robots)}" />`);
   output = replaceTag(output, /<meta property="og:type" content="[^"]*"\s*\/?>/i, '<meta property="og:type" content="website" />');
   output = replaceTag(output, /<meta property="og:title" content="[^"]*"\s*\/?>/i, `<meta property="og:title" content="${escapeAttribute(title)}" />`);
   output = replaceTag(output, /<meta property="og:description" content="[^"]*"\s*\/?>/i, `<meta property="og:description" content="${escapeAttribute(description)}" />`);
@@ -409,20 +528,48 @@ function injectProductMetadata(html, productMeta) {
   const imageAlt = productMeta.imageAlt || productMeta.title;
   const productJsonLd = JSON.stringify({
     "@context": "https://schema.org",
-    "@type": "Product",
-    name: productMeta.title,
-    description,
-    image,
-    url,
-    brand: {
-      "@type": "Brand",
-      name: "Prakash Electronics",
-    },
+    "@graph": [
+      {
+        "@type": "Product",
+        name: productMeta.title,
+        description,
+        image: [image],
+        url,
+        sku: productMeta.sku,
+        category: productMeta.category,
+        brand: {
+          "@type": "Brand",
+          name: "Prakash Electronics",
+        },
+        ...(productMeta.price === null ? {} : {
+          offers: {
+            "@type": "Offer",
+            url,
+            priceCurrency: "INR",
+            price: String(productMeta.price),
+            availability: productMeta.availability,
+            itemCondition: "https://schema.org/NewCondition",
+            seller: { "@type": "Organization", name: "Prakash Electronics" },
+          },
+        }),
+      },
+      {
+        "@type": "BreadcrumbList",
+        itemListElement: [
+          { "@type": "ListItem", position: 1, name: "Home", item: `${new URL(url).origin}/` },
+          { "@type": "ListItem", position: 2, name: productMeta.category || "Products", item: `${new URL(url).origin}/products` },
+          { "@type": "ListItem", position: 3, name: productMeta.title, item: url },
+        ],
+      },
+    ],
   }).replace(/</g, "\\u003c");
 
   let output = replaceTitle(html, title);
   output = replaceTag(output, /<link rel="canonical" href="[^"]*"\s*\/?>/i, `<link rel="canonical" href="${escapeAttribute(url)}" />`);
   output = replaceTag(output, /<meta\s+name="description"\s+content="[^"]*"\s*\/?>/i, `<meta name="description" content="${escapeAttribute(description)}" />`);
+  output = replaceTag(output, /<meta\s+name="keywords"\s+content="[^"]*"\s*\/?>/i, `<meta name="keywords" content="${escapeAttribute([productMeta.title, productMeta.category, ...productMeta.tags, "Prakash Electronics", "electronics shop Chitarpur"].filter(Boolean).join(", "))}" />`);
+  output = replaceTag(output, /<meta\s+name="robots"\s+content="[^"]*"\s*\/?>/i, '<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />');
+  output = replaceTag(output, /<meta\s+name="googlebot"\s+content="[^"]*"\s*\/?>/i, '<meta name="googlebot" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />');
   output = replaceTag(output, /<meta property="og:type" content="[^"]*"\s*\/?>/i, '<meta property="og:type" content="product" />');
   output = replaceTag(output, /<meta property="og:title" content="[^"]*"\s*\/?>/i, `<meta property="og:title" content="${escapeAttribute(title)}" />`);
   output = replaceTag(output, /<meta property="og:description" content="[^"]*"\s*\/?>/i, `<meta property="og:description" content="${escapeAttribute(description)}" />`);
@@ -436,6 +583,10 @@ function injectProductMetadata(html, productMeta) {
   output = replaceTag(output, /<meta name="twitter:title" content="[^"]*"\s*\/?>/i, `<meta name="twitter:title" content="${escapeAttribute(title)}" />`);
   output = replaceTag(output, /<meta name="twitter:description" content="[^"]*"\s*\/?>/i, `<meta name="twitter:description" content="${escapeAttribute(description)}" />`);
   output = replaceTag(output, /<meta name="twitter:image" content="[^"]*"\s*\/?>/i, `<meta name="twitter:image" content="${escapeAttribute(image)}" />`);
+  if (productMeta.price !== null) {
+    output = replaceTag(output, /<meta property="product:price:amount" content="[^"]*"\s*\/?>/i, `<meta property="product:price:amount" content="${escapeAttribute(productMeta.price)}" />`);
+    output = replaceTag(output, /<meta property="product:price:currency" content="[^"]*"\s*\/?>/i, '<meta property="product:price:currency" content="INR" />');
+  }
   return replaceTag(
     output,
     /<script type="application\/ld\+json" data-product-share>[\s\S]*?<\/script>/i,
