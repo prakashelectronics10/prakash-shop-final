@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Ban, Check, Clock3, PackageCheck, Search, Truck, WalletCards } from "lucide-react";
 import { apiRequest } from "../../api/client";
+import { formatINR } from "../../utils/productPricing";
 import { Navbar } from "./Navbar";
 import { Footer } from "./Footer";
 import { OptimizedImage } from "./OptimizedImage";
@@ -12,10 +13,6 @@ const STEPS = [
   { key: "out_for_delivery", title: "Out for delivery", detail: "Your order is with the delivery partner", icon: Truck },
   { key: "delivered", title: "Delivered", detail: "Order delivered successfully", icon: Check },
 ];
-
-function formatINR(value) {
-  return `₹${Number(value || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
-}
 
 function formatDate(value) {
   if (!value) return "";

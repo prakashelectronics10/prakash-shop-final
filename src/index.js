@@ -5,6 +5,15 @@ import './styles.css';
 import App from './App';
 import { installGlobalImageFallbacks } from './utils/media';
 
+const registerServiceWorker = () => {
+  if (process.env.NODE_ENV !== 'production' || !('serviceWorker' in navigator)) return;
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/service-worker.js', { scope: '/' }).catch(() => {
+      // The website remains fully usable when service workers are unavailable.
+    });
+  });
+};
+
 const scheduleImageSafetyNet = () => {
   if (typeof window === "undefined") return;
   if ("requestIdleCallback" in window) {
@@ -15,6 +24,7 @@ const scheduleImageSafetyNet = () => {
 };
 
 scheduleImageSafetyNet();
+registerServiceWorker();
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(

@@ -3,19 +3,15 @@ import { ArrowRight, ShoppingCart } from "lucide-react";
 import { useCart } from "../../context/CartContext";
 import { CANONICAL_WIRING_PARTS_PATH } from "../../utils/routes";
 
-function productDetailWithoutLowerActions() {
-  if (typeof window === "undefined") return false;
-  return window.location.pathname.startsWith("/product/") || window.location.pathname.startsWith("/product-detail/");
-}
-
 function routeLowerFloatingActionCount() {
   if (typeof window === "undefined") return 0;
-  if (productDetailWithoutLowerActions()) return 0;
   const path = window.location.pathname;
   const page = new URLSearchParams(window.location.search).get("page");
   const hasOneKnownFloatingAction = (
     path === "/" ||
     path === "/products" ||
+    path.startsWith("/product/") ||
+    path.startsWith("/product-detail/") ||
     path === CANONICAL_WIRING_PARTS_PATH ||
     path === `${CANONICAL_WIRING_PARTS_PATH}/product-detail` ||
     page === "products" ||
@@ -46,10 +42,6 @@ export function CartFloatingButton() {
   useLayoutEffect(() => {
     if (typeof document === "undefined") return undefined;
     const checkFloatingActions = () => {
-      if (productDetailWithoutLowerActions()) {
-        setLowerFloatingActionCount(0);
-        return;
-      }
       setLowerFloatingActionCount(Math.max(routeLowerFloatingActionCount(), domLowerFloatingActionCount()));
     };
 

@@ -4,6 +4,8 @@ import { ArrowUpRight, Bot, Camera, Check, ImagePlus, Images, Link2, Moon, Packa
 import { apiRequest, apiUrl } from "../../api/client";
 import { SCIENCE_PROJECTS_CATEGORY, getCartStockLimit, useCart } from "../../context/CartContext";
 import { notifyCartResult } from "../../utils/cartToast";
+import { couponOrderItems, getAppliedCouponCode } from "../../utils/coupons";
+import { formatINR } from "../../utils/productPricing";
 import { AIChatInput } from "../ui/AIChatInput";
 import { LottieSvgAnimation } from "./LottieSvgAnimation";
 import { OptimizedImage } from "./OptimizedImage";
@@ -17,6 +19,59 @@ const SCIENCE_AI_SESSIONS_KEY = "prakash:pulse-ai-sessions:v2";
 const LEGACY_SCIENCE_AI_SESSION_KEY = "prakash:pulse-ai-session:v1";
 const SCIENCE_AI_CUSTOMER_KEY = "prakash:pulse-ai-customer:v1";
 const MAX_TEMPORARY_CHAT_SESSIONS = 25;
+const MAX_PREVIOUS_CHATS_SUMMARY_LENGTH = 8000;
+
+function cleanMemoryText(value, maxLength) {
+  return String(value || "").replace(/\s+/g, " ").trim().slice(0, maxLength);
+}
+
+function normalizeConversationMemory(memory = {}) {
+  return {
+    summary: cleanMemoryText(memory.summary, 3600),
+    importantFacts: (Array.isArray(memory.importantFacts) ? memory.importantFacts : [])
+      .map((item) => cleanMemoryText(item, 280)).filter(Boolean).slice(0, 16),
+    openTopics: (Array.isArray(memory.openTopics) ? memory.openTopics : [])
+      .map((item) => cleanMemoryText(item, 280)).filter(Boolean).slice(0, 10),
+  };
+}
+
+function firstQuestionFromSession(session = {}) {
+  return cleanMemoryText(
+    (session.messages || []).find((message) => message.role === "user")?.text,
+    2000,
+  );
+}
+
+function sessionSummary(session = {}) {
+  const memory = normalizeConversationMemory(session.memory);
+  if (memory.summary) return memory.summary;
+  const questions = (session.messages || [])
+    .filter((message) => message.role === "user" && message.text)
+    .map((message) => cleanMemoryText(message.text, 220));
+  return questions.length ? `Customer questions: ${questions.join(" | ")}` : "";
+}
+
+function buildPreviousChatsSummary(sessions = []) {
+  const summaries = [...sessions]
+    .filter((item) => firstQuestionFromSession(item))
+    .sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0))
+    .map((item) => {
+      const memory = normalizeConversationMemory(item.memory);
+      return [
+        `Chat: ${cleanMemoryText(item.title || "Previous chat", 100)}`,
+        `First question: ${firstQuestionFromSession(item)}`,
+        `Summary: ${cleanMemoryText(sessionSummary(item), 900)}`,
+        memory.importantFacts.length ? `Important facts: ${memory.importantFacts.join("; ")}` : "",
+      ].filter(Boolean).join(" | ");
+    });
+  let result = "";
+  for (const summary of summaries) {
+    const next = result ? `${result}\n${summary}` : summary;
+    if (next.length > MAX_PREVIOUS_CHATS_SUMMARY_LENGTH) break;
+    result = next;
+  }
+  return result;
+}
 
 function getPulseAICustomerId() {
   if (typeof window === "undefined") return "";
@@ -136,9 +191,17 @@ function useScienceAIHeroAnimationData(enabled) {
   return animationData;
 }
 
-function createSession() {
+function createSession(priorChatsSummary = "") {
   const id = `chat-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  return { id, title: "New Chat", messages: [welcomeMessage], createdAt: Date.now(), updatedAt: Date.now() };
+  return {
+    id,
+    title: "New Chat",
+    messages: [welcomeMessage],
+    memory: normalizeConversationMemory(),
+    priorChatsSummary: cleanMemoryText(priorChatsSummary, MAX_PREVIOUS_CHATS_SUMMARY_LENGTH),
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  };
 }
 
 function normalizeStoredMessage(message = {}) {
@@ -168,6 +231,8 @@ function normalizeStoredSession(session = {}) {
     id: session.id || `chat-${Date.now()}`,
     title: session.title || "New Chat",
     messages: messages.length ? messages : [welcomeMessage],
+    memory: normalizeConversationMemory(session.memory),
+    priorChatsSummary: cleanMemoryText(session.priorChatsSummary, MAX_PREVIOUS_CHATS_SUMMARY_LENGTH),
     createdAt: session.createdAt || Date.now(),
     updatedAt: session.updatedAt || Date.now(),
   };
@@ -236,10 +301,6 @@ function titleFrom(text) {
   const clean = String(text || "").trim().replace(/\s+/g, " ");
   if (!clean) return "Image analysis";
   return clean.length > 34 ? `${clean.slice(0, 34)}...` : clean;
-}
-
-function priceLabel(price) {
-  return price === null || price === undefined || price === "" ? "Price on request" : `Rs. ${Number(price).toLocaleString("en-IN")}`;
 }
 
 function createMessageId(prefix) {
@@ -391,6 +452,7 @@ function FormattedMessage({ text }) {
 }
 
 export function ScienceAIPage() {
+  const { items: cartItems } = useCart();
   const [chatState, setChatState] = useState(loadScienceAIState);
   const [input, setInput] = useState("");
   const [images, setImages] = useState([]);
@@ -540,19 +602,38 @@ export function ScienceAIPage() {
   };
 
   const conversationHistory = useMemo(
-    () =>
-      messages
+    () => {
+      const recentMessages = messages
         .filter((message) => !(message.role === "ai" && message.text === welcomeMessage.text))
-        .slice(-12)
-        .map((message) => ({
-          role: message.role === "user" ? "user" : "ai",
-          text: message.text,
-          images: (message.images || [])
+        .slice(-18);
+      const imageMessageIndexes = recentMessages
+        .map((message, index) => ((message.images || []).some((image) => image.base64) ? index : -1))
+        .filter((index) => index >= 0)
+        .slice(-2);
+      return recentMessages.map((message, index) => ({
+        role: message.role === "user" ? "user" : "ai",
+        text: message.text,
+        images: imageMessageIndexes.includes(index)
+          ? (message.images || [])
             .filter((image) => image.base64)
-            .map((image) => ({ base64: image.base64, mimeType: image.mimeType })),
-        })),
+            .slice(0, 1)
+            .map((image) => ({ base64: image.base64, mimeType: image.mimeType }))
+          : [],
+      }));
+    },
     [messages],
   );
+
+  const conversationMemory = useMemo(() => {
+    const memory = normalizeConversationMemory(session.memory);
+    const userMessages = messages.filter((item) => item.role === "user");
+    return {
+      ...memory,
+      firstUserQuestion: firstQuestionFromSession(session),
+      previousChatsSummary: cleanMemoryText(session.priorChatsSummary, MAX_PREVIOUS_CHATS_SUMMARY_LENGTH),
+      totalUserMessages: userMessages.length,
+    };
+  }, [messages, session]);
 
   const addFiles = async (fileList) => {
     const valid = Array.from(fileList || []).filter((file) => file.type.startsWith("image/") && file.size <= 4 * 1024 * 1024);
@@ -592,7 +673,7 @@ export function ScienceAIPage() {
     if (typeof window !== "undefined" && window.innerWidth <= 860) setNavOpen(false);
   };
 
-  const revealAssistantMessage = ({ text, suggestions, linkCards = [], warning, isError = false, targetSessionId = session.id }) => new Promise((resolve) => {
+  const revealAssistantMessage = ({ text, suggestions, linkCards = [], warning, memory, isError = false, targetSessionId = session.id }) => new Promise((resolve) => {
     stopStreaming();
     streamResolve.current = resolve;
     const id = createMessageId("ai");
@@ -601,6 +682,7 @@ export function ScienceAIPage() {
 
     updateSessionById(targetSessionId, (targetSession) => ({
       ...targetSession,
+      memory: memory ? normalizeConversationMemory(memory) : targetSession.memory,
       messages: [...targetSession.messages, { id, role: "ai", text: "", isStreaming: true, isError }],
     }));
 
@@ -635,7 +717,7 @@ export function ScienceAIPage() {
   });
 
   const newChat = () => {
-    const nextSession = createSession();
+    const nextSession = createSession(buildPreviousChatsSummary(sessions));
     setChatState((current) => ({
       activeSessionId: nextSession.id,
       sessions: [nextSession, ...current.sessions].slice(0, MAX_TEMPORARY_CHAT_SESSIONS),
@@ -699,6 +781,11 @@ export function ScienceAIPage() {
             name: image.name,
           })),
           conversationHistory,
+          conversationMemory,
+          cart: {
+            items: couponOrderItems(cartItems),
+            couponCode: getAppliedCouponCode(),
+          },
           customerId: getPulseAICustomerId(),
           sessionId: targetSessionId,
         }),
@@ -707,7 +794,8 @@ export function ScienceAIPage() {
       const suggestions = response.data?.suggestions || [];
       const linkCards = normalizeLinkCards(response.data?.linkCards);
       const warning = response.data?.warning || "";
-      await revealAssistantMessage({ text: answer, suggestions, linkCards, warning, targetSessionId });
+      const memory = response.data?.memory || null;
+      await revealAssistantMessage({ text: answer, suggestions, linkCards, warning, memory, targetSessionId });
     } catch (err) {
       const message = err.message || "Pulse AI is unavailable right now.";
       setError(message);
@@ -1017,6 +1105,15 @@ function SuggestionCards({ suggestions }) {
     notifyCartResult(result, item.name);
   };
 
+  const offerPrice = (item) => {
+    const value = Number(item.effectivePrice);
+    return Number.isFinite(value) && value >= 0 ? value : item.price;
+  };
+
+  const hasPublicOffer = (item) => item.publicCoupon
+    && Number.isFinite(Number(item.publicCoupon.finalPrice))
+    && Number(item.publicCoupon.finalPrice) < Number(item.price);
+
   return (
     <div className="ai-suggestions">
       <div className="ai-suggestions-head">
@@ -1032,10 +1129,21 @@ function SuggestionCards({ suggestions }) {
             <div className="ai-suggestion-content">
               <div className="ai-suggestion-meta">
                 <span className="available">{item.status}</span>
-                <strong>{priceLabel(item.price)}</strong>
+                <span className="ai-suggestion-price">
+                  {hasPublicOffer(item) ? <del>{formatINR(item.price)}</del> : null}
+                  <strong>{formatINR(offerPrice(item))}</strong>
+                </span>
               </div>
               <h3>{item.name}</h3>
-              <small>{item.component}</small>
+              <div className="ai-suggestion-context">
+                <small>{item.component}</small>
+                {hasPublicOffer(item) ? (
+                  <div className="ai-suggestion-offer">
+                    <code>{item.publicCoupon.code}</code>
+                    <span>Save {formatINR(item.publicCoupon.discountAmount)}</span>
+                  </div>
+                ) : null}
+              </div>
               <p>{item.shortDescription}</p>
               <div className="ai-suggestion-actions">
                 <a href={`/product/${encodeURIComponent(item.slug || item.productId)}`}>

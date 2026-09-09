@@ -1,6 +1,13 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { allocateCouponDiscount, calculateCouponDiscount, couponMatchesItem, normalizedCode, priceProductCouponItems } = require("../services/couponService");
+const {
+  allocateCouponDiscount,
+  calculateCouponDiscount,
+  couponMatchesItem,
+  normalizedCode,
+  priceProductCouponItems,
+  publicCouponsForProductFromList,
+} = require("../services/couponService");
 const { couponSchema } = require("../validations/adminSchemas");
 
 const shopItem = {
@@ -136,4 +143,32 @@ test("admin accepts both image layouts and rejects invalid display settings", ()
   assert.equal(couponSchema.parse({ ...payload, imageLayout: "thumbnail" }).imageLayout, "thumbnail");
   assert.equal(couponSchema.parse(payload).imageLayout, "banner");
   assert.equal(couponSchema.safeParse({ ...payload, imageLayout: "crop" }).success, false);
+});
+
+test("Pulse AI product offers include only current public applicable coupons", () => {
+  const now = new Date("2026-09-09T12:00:00.000Z");
+  const baseCoupon = {
+    _id: "coupon-current",
+    title: "Fan sale",
+    code: "FAN200",
+    visibility: "public",
+    isActive: true,
+    appliesToAll: true,
+    discountType: "fixed",
+    discountValue: 200,
+  };
+  const coupons = [
+    baseCoupon,
+    { ...baseCoupon, _id: "coupon-private", code: "SECRET", visibility: "private" },
+    { ...baseCoupon, _id: "coupon-inactive", code: "OFF", isActive: false },
+    { ...baseCoupon, _id: "coupon-expired", code: "OLD", endsAt: "2026-09-09T11:59:59.000Z" },
+    { ...baseCoupon, _id: "coupon-future", code: "LATER", startsAt: "2026-09-09T12:00:01.000Z" },
+  ];
+  const product = { _id: shopItem.productId, category: "Fans", sourceCollection: "shop-products" };
+  const offers = publicCouponsForProductFromList(product, 2000, coupons, now);
+
+  assert.equal(offers.length, 1);
+  assert.equal(offers[0].code, "FAN200");
+  assert.equal(offers[0].finalPrice, 1800);
+  assert.deepEqual(publicCouponsForProductFromList({ ...product, sourceCollection: "project-parts" }, 2000, coupons, now), []);
 });

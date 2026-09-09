@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import toast from "react-hot-toast";
-import { ArrowLeft, ArrowUpRight, BadgePercent, Check, Expand, Filter, PackageSearch, Search, ShoppingBag, ShoppingCart, Tag, X } from "lucide-react";
+import { ArrowLeft, ArrowUpRight, BadgePercent, Ban, Check, Expand, Filter, PackageSearch, Search, ShoppingBag, ShoppingCart, Tag, X } from "lucide-react";
 import { apiRequest } from "../../api/client";
 import { isWiringAccessoriesCategory, cartStockMessage, getCartStockLimit, useCart, useCartActions, useCartQuantity } from "../../context/CartContext";
 import { Navbar } from "./Navbar";
@@ -61,6 +61,8 @@ const ProductCard = memo(function ProductCard({ product, onAddToCart, eager = fa
   const category = product.category || "Electronics";
   const stockLimit = getCartStockLimit(product);
   const atStockLimit = stockLimit > 0 && cartQuantity >= stockLimit;
+  const isOutOfStock = stockLimit < 1;
+  const buttonTextColor = isOutOfStock ? "#00a5f8" : atStockLimit ? "#0f172a" : "#fffefe";
   return (
     <article className="part-card shop-product-card">
       <ProductShareButton product={product} compact />
@@ -79,7 +81,7 @@ const ProductCard = memo(function ProductCard({ product, onAddToCart, eager = fa
               sizes="(min-width: 1024px) 25vw, (min-width: 760px) 50vw, 46vw"
             />
           ) : <PackageSearch size={48} />}
-          <span className={`part-status ${String(product.availability || "").toLowerCase().replace(/\s+/g, "-")}`}>{product.availability || "Available"}</span>
+          
         </div>
         <div className="part-card-body">
           <span className="part-category">{category}</span>
@@ -98,9 +100,22 @@ const ProductCard = memo(function ProductCard({ product, onAddToCart, eager = fa
             aria-label={`Add ${product.name} to cart`}
             title={stockLimit < 1 ? "Out of stock" : atStockLimit ? cartStockMessage(product) : "Add to Cart"}
             disabled={stockLimit < 1 || atStockLimit}
+            style={{
+              color: buttonTextColor,
+              opacity: 1,
+              WebkitTextFillColor: buttonTextColor,
+            }}
           >
-            {cartQuantity ? <Check size={17} /> : <ShoppingCart size={17} />}
-            <span>{stockLimit < 1 ? "Out of Stock" : atStockLimit ? "Stock Limit" : cartQuantity ? `Added (${cartQuantity})` : "Add to Cart"}</span>
+            {isOutOfStock || atStockLimit ? <Ban size={17} /> : cartQuantity ? <Check size={17} /> : <ShoppingCart size={17} />}
+            <span
+              style={{
+                color: buttonTextColor,
+                opacity: 1,
+                WebkitTextFillColor: buttonTextColor,
+              }}
+            >
+              {stockLimit < 1 ? "Out of Stock" : atStockLimit ? "Stock Limit" : cartQuantity ? `Added (${cartQuantity})` : "Add to Cart"}
+            </span>
           </button>
         </div>
       </div>

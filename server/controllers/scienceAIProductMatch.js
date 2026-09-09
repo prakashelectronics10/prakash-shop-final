@@ -480,6 +480,8 @@ function extractPriceConstraint(text) {
 }
 
 function effectiveProductPrice(product) {
+  const offerPrice = Number(product.effectivePrice);
+  if (Number.isFinite(offerPrice) && offerPrice >= 0) return offerPrice;
   const price = Number(product.price);
   if (Number.isFinite(price) && price >= 0) return price;
   const mrp = Number(product.mrp);
@@ -539,12 +541,22 @@ function formatProductMemoryLine(product) {
   const price = product.price === null || product.price === undefined || product.price === ""
     ? "Price on request"
     : `Rs.${Number(product.price).toLocaleString("en-IN")}`;
+  const publicOffers = (product.publicCoupons || []).slice(0, 5).map((coupon) => {
+    const details = [
+      `${coupon.title || "Public offer"} code:${coupon.code}`,
+      Number.isFinite(Number(coupon.finalPrice)) ? `after-offer:Rs.${Number(coupon.finalPrice).toLocaleString("en-IN")}` : "",
+      Number.isFinite(Number(coupon.discountAmount)) ? `save:Rs.${Number(coupon.discountAmount).toLocaleString("en-IN")}` : "",
+      Number(coupon.minimumSubtotal) > 0 ? `minimum:Rs.${Number(coupon.minimumSubtotal).toLocaleString("en-IN")}` : "",
+      coupon.endsAt ? `expires:${new Date(coupon.endsAt).toISOString()}` : "no-expiry",
+    ].filter(Boolean);
+    return details.join(",");
+  }).join("; ");
   const lookBits = unique([
     ...colors,
     ...RETAIL_COOLING_KEYS.filter((key) => containsPhrase(productIdentityText(product), key)),
     ...(product.tags || []).slice(0, 4).map((tag) => normalize(tag)),
   ]).slice(0, 8).join(",");
-  return `- ${product.name} | cat:${product.category || "General"}${product.subCategory ? `/${product.subCategory}` : ""} | ${product.availability || "In Stock"} | ${price}${colors.length ? ` | colors:${colors.join(",")}` : ""}${lookBits ? ` | look:${lookBits}` : ""}${tags ? ` | tags:${tags}` : ""}${specs ? ` | specs:${specs}` : ""}${desc ? ` | desc:${desc}` : ""}`;
+  return `- ${product.name} | cat:${product.category || "General"}${product.subCategory ? `/${product.subCategory}` : ""} | ${product.availability || "In Stock"} | base-price:${price}${publicOffers ? ` | public-coupons:${publicOffers}` : " | public-coupons:none"}${colors.length ? ` | colors:${colors.join(",")}` : ""}${lookBits ? ` | look:${lookBits}` : ""}${tags ? ` | tags:${tags}` : ""}${specs ? ` | specs:${specs}` : ""}${desc ? ` | desc:${desc}` : ""}`;
 }
 
 function rankProductsForDemand(promptText, aiText, products, deepSearch = false, options = {}) {

@@ -4305,6 +4305,7 @@ html {
 
   .cart-icon-button {
     width: 100%;
+    colour:var(--ai-accent);
     justify-content: center;
     min-height: 2.35rem;
     padding: 0.45rem 0.55rem;
@@ -6057,6 +6058,53 @@ html {
   white-space: nowrap;
 }
 
+.science-ai-page .ai-suggestion-price {
+  display: grid;
+  justify-items: end;
+  min-width: 0;
+  max-width: 48%;
+  line-height: 1.1;
+}
+
+.science-ai-page .ai-suggestion-price del {
+  color: var(--ai-muted);
+  font-size: 0.66rem;
+  font-weight: 700;
+}
+
+.science-ai-page .ai-suggestion-price strong {
+  max-width: 100%;
+}
+
+.science-ai-page .ai-suggestion-offer {
+  display: flex;
+  align-items: center;
+  gap: 0.42rem;
+  min-width: 0;
+  color: #86efac;
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+
+.science-ai-page .ai-suggestion-context {
+  display: grid;
+  gap: 0.36rem;
+  min-width: 0;
+}
+
+.science-ai-page .ai-suggestion-offer code {
+  padding: 0.2rem 0.38rem;
+  border: 1px dashed rgba(34, 197, 94, 0.58);
+  border-radius: 7px;
+  color: inherit;
+  background: rgba(34, 197, 94, 0.1);
+  font: inherit;
+}
+
+.science-ai-page.light .ai-suggestion-offer {
+  color: #15803d;
+}
+
 .science-ai-page .ai-suggestion-card h3 {
   display: -webkit-box;
   margin: 0.1rem 0 0;
@@ -7550,11 +7598,9 @@ footer {
   justify-content: center;
   gap: 0.55rem;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  border: 1px solid #159bea;
   border-radius: 1rem;
-  background:
-    linear-gradient(135deg, rgba(34, 211, 238, 0.95), rgba(10, 132, 255, 0.95)),
-    #0a84ff;
+  background: linear-gradient(135deg, #22c7df 0%, #1689f5 100%);
   padding: 0.82rem 1rem;
   color: #ffffff;
   text-align: center;
@@ -7563,14 +7609,17 @@ footer {
   line-height: 1;
   text-overflow: ellipsis;
   white-space: nowrap;
-  box-shadow: 0 16px 30px rgba(10, 132, 255, 0.22);
-  transition: transform 180ms ease, box-shadow 180ms ease, filter 180ms ease;
+  box-shadow: 0 6px 14px rgba(10, 132, 255, 0.18);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  isolation: isolate;
+  transition: transform 160ms ease, box-shadow 160ms ease;
 }
 
 #offers .offer-card-button:hover {
   transform: translateY(-1px);
-  filter: saturate(1.06);
-  box-shadow: 0 20px 38px rgba(10, 132, 255, 0.3);
+  background: linear-gradient(135deg, #18bdd8 0%, #087cf0 100%);
+  box-shadow: 0 8px 18px rgba(10, 132, 255, 0.22);
 }
 
 .hero-media-card {

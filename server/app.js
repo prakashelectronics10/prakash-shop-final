@@ -36,6 +36,14 @@ const { configureCloudinary } = require("./config/cloudinary");
 const { findProductForMetadata, absoluteUrl } = require("./services/productMetadataService");
 const { buildGoogleMerchantFeed } = require("./services/googleMerchantFeedService");
 const { handleRazorpayWebhook } = require("./controllers/orderController");
+const {
+  listAmpProducts,
+  renderAmpCatalogPage,
+  renderAmpNotFound,
+  renderAmpProductPage,
+} = require("./services/ampPageService");
+
+const CANONICAL_ORIGIN = "https://www.prakashshop.in";
 
 const app = express();
 const writeLimiter = rateLimit({
@@ -71,7 +79,7 @@ app.use(
           "https://*.googleusercontent.com",
         ],
         objectSrc: ["'none'"],
-        scriptSrc: ["'self'", "https://checkout.razorpay.com"],
+        scriptSrc: ["'self'", "https://cdn.ampproject.org", "https://checkout.razorpay.com"],
         scriptSrcAttr: ["'none'"],
         styleSrc: ["'self'", "https:", "'unsafe-inline'"],
         upgradeInsecureRequests: [],
@@ -152,6 +160,27 @@ app.use("/api/brand-sliders", brandSliderRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/science-ai", scienceAIRoutes);
 
+const LEGACY_PAGE_ROUTES = new Map([
+  ["learn-more", "/learn-more"],
+  ["booking", "/booking"],
+  ["gallery", "/gallery"],
+  ["about", "/about"],
+  ["contact", "/contact"],
+  ["products", "/products"],
+  ["projects-parts", "/wiring-parts"],
+  ["pulse-ai", "/pulse-ai"],
+  ["science-ai", "/pulse-ai"],
+  ["cart", "/cart"],
+]);
+
+app.get("/", (req, res, next) => {
+  const page = String(req.query.page || "").trim().toLowerCase();
+  const destination = LEGACY_PAGE_ROUTES.get(page);
+  if (!destination) return next();
+  const service = page === "learn-more" ? String(req.query.service || "").trim() : "";
+  return res.redirect(301, `${destination}${service ? `?service=${encodeURIComponent(service)}` : ""}`);
+});
+
 app.get(["/science-ai", "/science-ai/"], (_req, res) => {
   res.redirect(301, "/pulse-ai");
 });
@@ -162,6 +191,40 @@ app.get(["/projects-parts", "/projects-parts/"], (_req, res) => {
 
 app.get(["/projects-parts/product-detail", "/projects-parts/product-detail/"], (_req, res) => {
   res.redirect(301, "/wiring-parts/product-detail");
+});
+
+app.get(["/amp/products", "/amp/products/"], async (_req, res, next) => {
+  try {
+    const products = await listAmpProducts("shop-product", CANONICAL_ORIGIN);
+    res.set("Cache-Control", "public, max-age=120, stale-while-revalidate=600");
+    res.type("html").send(renderAmpCatalogPage({ products, sourceType: "shop-product", origin: CANONICAL_ORIGIN }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get(["/amp/wiring-parts", "/amp/wiring-parts/"], async (_req, res, next) => {
+  try {
+    const products = await listAmpProducts("project-part", CANONICAL_ORIGIN);
+    res.set("Cache-Control", "public, max-age=120, stale-while-revalidate=600");
+    res.type("html").send(renderAmpCatalogPage({ products, sourceType: "project-part", origin: CANONICAL_ORIGIN }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/amp/product/:identifier", async (req, res, next) => {
+  try {
+    const product = await findProductForMetadata(req.params.identifier, CANONICAL_ORIGIN);
+    if (!product) {
+      res.set("Cache-Control", "no-store");
+      return res.status(404).type("html").send(renderAmpNotFound(CANONICAL_ORIGIN));
+    }
+    res.set("Cache-Control", "public, max-age=120, stale-while-revalidate=600");
+    return res.type("html").send(renderAmpProductPage(product, CANONICAL_ORIGIN));
+  } catch (error) {
+    return next(error);
+  }
 });
 
 app.get("/google-merchant-feed.xml", async (req, res, next) => {
@@ -176,13 +239,11 @@ app.get("/google-merchant-feed.xml", async (req, res, next) => {
 });
 
 app.get("/robots.txt", (_req, res) => {
+  res.set("Cache-Control", "public, max-age=86400");
   res.type("text/plain").send([
     "User-agent: *",
     "Allow: /",
-    "Disallow: /prakash-control-panel@1999",
-    "Disallow: /checkout",
-    "Disallow: /cart",
-    "Disallow: /orders",
+    "Disallow: /api/",
     "",
     "Sitemap: https://www.prakashshop.in/sitemap.xml",
     "",
@@ -211,8 +272,7 @@ function sitemapUrlEntry(loc, lastmod, changefreq = "weekly", priority = "0.8") 
 
 app.get("/sitemap.xml", async (req, res, next) => {
   try {
-    const origin = "https://www.prakashshop.in";
-    const today = new Date().toISOString().slice(0, 10);
+    const origin = CANONICAL_ORIGIN;
     const site = await getSitePayload().catch(() => null);
     const ShopProduct = require("./models/ShopProduct");
     const ProjectPart = require("./models/ProjectPart");
@@ -235,34 +295,33 @@ app.get("/sitemap.xml", async (req, res, next) => {
       { path: "/about", priority: "0.75", changefreq: "monthly" },
       { path: "/contact", priority: "0.75", changefreq: "monthly" },
       { path: "/gallery", priority: "0.7", changefreq: "weekly" },
+      { path: "/learn-more", priority: "0.8", changefreq: "monthly" },
       { path: "/privacy-policy", priority: "0.35", changefreq: "yearly" },
       { path: "/terms-and-conditions", priority: "0.35", changefreq: "yearly" },
       { path: "/shipping-policy", priority: "0.45", changefreq: "monthly" },
       { path: "/return-refund-policy", priority: "0.45", changefreq: "monthly" },
-      { path: "/?page=learn-more&service=quick-repair-booking", priority: "0.8", changefreq: "monthly" },
-      { path: "/?page=learn-more&service=lcd-led-tv-repair", priority: "0.8", changefreq: "monthly" },
-      { path: "/?page=learn-more&service=ceiling-fan-repair", priority: "0.8", changefreq: "monthly" },
-      { path: "/?page=learn-more&service=cooler-repair", priority: "0.8", changefreq: "monthly" },
-      { path: "/?page=learn-more&service=ac-repairing", priority: "0.8", changefreq: "monthly" },
-      { path: "/?page=learn-more&service=speaker-home-theater", priority: "0.8", changefreq: "monthly" },
-      { path: "/?page=learn-more&service=home-appliances", priority: "0.8", changefreq: "monthly" },
-      { path: "/?page=learn-more&service=wiring-accessories", priority: "0.8", changefreq: "monthly" },
-      { path: "/?page=learn-more&service=accessories-sales", priority: "0.75", changefreq: "monthly" },
     ];
+
+    const contentLastmod = site?.contentUpdatedAt
+      ? new Date(site.contentUpdatedAt).toISOString().slice(0, 10)
+      : "";
 
     const entries = [
       ...staticPaths.map((item) => ({
         loc: `${origin}${item.path}`,
-        lastmod: today,
+        lastmod: item.path === "/" ? contentLastmod : "",
         changefreq: item.changefreq,
         priority: item.priority,
       })),
-      ...((site?.offers || []).length
-        ? [{ loc: `${origin}/#offers`, lastmod: today, changefreq: "daily", priority: "0.7" }]
-        : []),
+      ...((site?.products || []).filter((service) => service?.slug).map((service) => ({
+        loc: `${origin}/learn-more?service=${encodeURIComponent(String(service.slug))}`,
+        lastmod: service.updatedAt ? new Date(service.updatedAt).toISOString().slice(0, 10) : "",
+        changefreq: "monthly",
+        priority: "0.8",
+      }))),
       ...shopProducts.map((product) => {
         const id = product.slug || product._id;
-        const updated = product.updatedAt ? new Date(product.updatedAt).toISOString().slice(0, 10) : today;
+        const updated = product.updatedAt ? new Date(product.updatedAt).toISOString().slice(0, 10) : "";
         return {
           loc: `${origin}/product/${encodeURIComponent(String(id))}`,
           lastmod: updated,
@@ -272,7 +331,7 @@ app.get("/sitemap.xml", async (req, res, next) => {
       }),
       ...projectParts.map((product) => {
         const id = product.slug || product._id;
-        const updated = product.updatedAt ? new Date(product.updatedAt).toISOString().slice(0, 10) : today;
+        const updated = product.updatedAt ? new Date(product.updatedAt).toISOString().slice(0, 10) : "";
         return {
           loc: `${origin}/product/${encodeURIComponent(String(id))}`,
           lastmod: updated,
@@ -317,6 +376,13 @@ function replaceTitle(html, title) {
   return /<title>.*?<\/title>/i.test(html)
     ? html.replace(/<title>.*?<\/title>/i, `<title>${safeTitle}</title>`)
     : html.replace("</head>", `<title>${safeTitle}</title>\n</head>`);
+}
+
+function injectAmpHtmlLink(html, ampUrl = "") {
+  const pattern = /<link\s+rel=["']amphtml["'][^>]*>\s*/i;
+  if (!ampUrl) return html.replace(pattern, "");
+  const tag = `<link rel="amphtml" href="${escapeAttribute(ampUrl)}" />`;
+  return pattern.test(html) ? html.replace(pattern, `${tag}\n`) : html.replace("</head>", `${tag}\n</head>`);
 }
 
 function getCloudinaryOptimizedImageUrl(url, width = 1200) {
@@ -385,8 +451,8 @@ const ROUTE_SHARE_META = [
   },
   {
     match: (pathname) => pathname === "/pulse-ai" || pathname === "/science-ai",
-    title: "Pulse AI | Electronics Shop, Repair Guidance & Product Assistant",
-    description: "Pulse AI by Prakash Electronics helps you find electronics shop products, wiring accessories, RGB lights, cooler repairing, AC repairing, home appliances repairing, and booking guidance in Chitarpur, Jharkhand.",
+    title: "Pulse AI by Prakash Electronics | Prakash Electronics and Electricals",
+    description: "Pulse AI helps you find suitable electronics products, wiring accessories, repair guidance, offers, and service-booking options from Prakash Electronics.",
     keywords: "Pulse AI, electronics products, wiring accessories, repair assistant, Prakash Electronics",
     ogImage: "/og-image-pulse-ai.jpg",
     ogImageAlt: "Pulse AI by Prakash Electronics",
@@ -400,6 +466,7 @@ const ROUTE_SHARE_META = [
     ogImage: "/og-image-shop-products.jpg",
     ogImageAlt: "Prakash Electronics shop products",
     canonicalPath: "/products",
+    ampPath: "/amp/products",
   },
   {
     match: (pathname) => (
@@ -414,6 +481,7 @@ const ROUTE_SHARE_META = [
     ogImage: "/og-image-wiring.jpg",
     ogImageAlt: "Prakash Electronics wiring accessories",
     canonicalPath: "/wiring-parts",
+    ampPath: "/amp/wiring-parts",
   },
   {
     match: (pathname) => pathname === "/booking",
@@ -532,6 +600,33 @@ function getRouteShareMeta(pathname = "") {
   return ROUTE_SHARE_META.find((item) => item.match(clean)) || null;
 }
 
+function compactMetaText(value, fallback, maxLength) {
+  const text = String(value || fallback || "").replace(/\s+/g, " ").trim();
+  return text.length > maxLength ? `${text.slice(0, maxLength - 1).trim()}…` : text;
+}
+
+function getServiceRouteShareMeta(req, site = {}) {
+  if (req.path !== "/learn-more") return null;
+  const serviceSlug = String(req.query.service || "").trim();
+  if (!serviceSlug) return null;
+  const service = (site.products || []).find((item) => String(item?.slug || "") === serviceSlug);
+  if (!service) return null;
+  const serviceName = compactMetaText(service.title, "Electronics Repair Service", 80);
+  const description = compactMetaText(
+    service.shortDescription || service.description || service.detail?.overview,
+    `Explore ${serviceName} from Prakash Electronics in Chitarpur and book trusted repair support.`,
+    160,
+  );
+  return {
+    title: `${serviceName} in Chitarpur | Prakash Electronics`,
+    description,
+    keywords: [serviceName, "electronics repair Chitarpur", "Prakash Electronics"].join(", "),
+    ogImage: service.imageUrl || "/og-image.jpg",
+    ogImageAlt: serviceName,
+    canonicalPath: `/learn-more?service=${encodeURIComponent(serviceSlug)}`,
+  };
+}
+
 function injectRouteMetadata(html, routeMeta, origin) {
   if (!routeMeta) return html;
 
@@ -561,6 +656,7 @@ function injectRouteMetadata(html, routeMeta, origin) {
   output = replaceTag(output, /<meta name="twitter:title" content="[^"]*"\s*\/?>/i, `<meta name="twitter:title" content="${escapeAttribute(title)}" />`);
   output = replaceTag(output, /<meta name="twitter:description" content="[^"]*"\s*\/?>/i, `<meta name="twitter:description" content="${escapeAttribute(description)}" />`);
   output = replaceTag(output, /<meta name="twitter:image" content="[^"]*"\s*\/?>/i, `<meta name="twitter:image" content="${escapeAttribute(image)}" />`);
+  output = injectAmpHtmlLink(output, routeMeta.ampPath ? absoluteUrl(routeMeta.ampPath, origin) : "");
   return output;
 }
 
@@ -651,6 +747,7 @@ function injectProductMetadata(html, productMeta) {
     output = replaceTag(output, /<meta property="product:price:amount" content="[^"]*"\s*\/?>/i, `<meta property="product:price:amount" content="${escapeAttribute(effectivePrice)}" />`);
     output = replaceTag(output, /<meta property="product:price:currency" content="[^"]*"\s*\/?>/i, '<meta property="product:price:currency" content="INR" />');
   }
+  output = injectAmpHtmlLink(output, `${new URL(url).origin}/amp/product/${encodeURIComponent(productMeta.identifier)}`);
   return replaceTag(
     output,
     /<script type="application\/ld\+json" data-product-share>[\s\S]*?<\/script>/i,
@@ -663,15 +760,22 @@ function productDetailIdentifier(reqPath = "") {
   return match ? decodeURIComponent(match[1]) : "";
 }
 
-function requestOrigin(req) {
-  return `${req.protocol}://${req.get("host")}`;
-}
-
 app.use(express.static(clientBuildPath, {
   index: false,
   etag: true,
   maxAge: "7d",
   setHeaders(res, filePath) {
+    const fileName = path.basename(filePath).toLowerCase();
+    if (fileName === "service-worker.js") {
+      res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+      res.setHeader("Service-Worker-Allowed", "/");
+      return;
+    }
+    if (fileName === "manifest.json") {
+      res.setHeader("Content-Type", "application/manifest+json; charset=utf-8");
+      res.setHeader("Cache-Control", "no-cache");
+      return;
+    }
     if (filePath.includes(`${path.sep}static${path.sep}`)) {
       res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
       return;
@@ -699,16 +803,30 @@ app.get("*", async (req, res, next) => {
       clientIndexCache = await fs.readFile(clientIndexPath, "utf8");
     }
     const identifier = productDetailIdentifier(req.path);
-    const origin = requestOrigin(req);
-    const routeMeta = getRouteShareMeta(req.path);
+    const origin = CANONICAL_ORIGIN;
+    const staticRouteMeta = getRouteShareMeta(req.path);
+    const needsServiceMetadata = req.path === "/learn-more" && Boolean(String(req.query.service || "").trim());
     const [html, site, productMeta] = await Promise.all([
       Promise.resolve(clientIndexCache),
-      getHtmlShellSiteMeta().catch(() => ({ webSettings: {} })),
+      (needsServiceMetadata ? getSitePayload() : getHtmlShellSiteMeta()).catch(() => ({ webSettings: {} })),
       identifier ? findProductForMetadata(identifier, origin).catch((error) => {
         logger.warn("product.metadata_lookup_failed", { identifier, error: error.message });
         return null;
       }) : Promise.resolve(null),
     ]);
+    const serviceRouteMeta = getServiceRouteShareMeta(req, site);
+    const routeMeta = serviceRouteMeta || staticRouteMeta;
+    const isMissingPage = !routeMeta && !productMeta;
+    const responseRouteMeta = isMissingPage
+      ? {
+          title: "Page not found | Prakash Electronics",
+          description: "The requested Prakash Electronics page could not be found.",
+          keywords: "Prakash Electronics",
+          ogImage: "/og-image.jpg",
+          canonicalPath: req.path,
+          robots: "noindex, nofollow",
+        }
+      : routeMeta;
     res.set("Cache-Control", "no-cache");
     // Dedicated page OG images must win over the global admin OG setting.
     let htmlWithSettings = injectWebSettings(html, {
@@ -722,10 +840,10 @@ app.get("*", async (req, res, next) => {
             }
           : site.webSettings?.ogImage,
       },
-    }, { skipOgImage: Boolean(routeMeta || productMeta) });
+    }, { skipOgImage: Boolean(responseRouteMeta || productMeta) });
 
-    htmlWithSettings = injectRouteMetadata(htmlWithSettings, routeMeta, origin);
-    res.type("html").send(injectProductMetadata(htmlWithSettings, productMeta));
+    htmlWithSettings = injectRouteMetadata(htmlWithSettings, responseRouteMeta, origin);
+    res.status(isMissingPage ? 404 : 200).type("html").send(injectProductMetadata(htmlWithSettings, productMeta));
   } catch (_error) {
     next();
   }

@@ -42,12 +42,24 @@ const ReturnRefundPolicyPage = lazy(() => import('./components/site/LegalPages')
 
 const SITE_URL = 'https://www.prakashshop.in';
 const ADMIN_ROUTE = '/prakash-control-panel@1999';
+const LEGACY_PAGE_ROUTES = {
+  'learn-more': '/learn-more',
+  booking: '/booking',
+  gallery: '/gallery',
+  about: '/about',
+  contact: '/contact',
+  products: '/products',
+  'projects-parts': CANONICAL_WIRING_PARTS_PATH,
+  'pulse-ai': '/pulse-ai',
+  'science-ai': '/pulse-ai',
+  cart: '/cart',
+};
 
 const routeMeta = [
   {
     match: (path) => path === '/pulse-ai' || path === '/science-ai',
-    title: 'Pulse AI | Electronics Shop, Repair Guidance & Product Assistant',
-    description: 'Pulse AI by Prakash Electronics helps you find electronics shop products, wiring accessories, RGB lights, cooler repairing, AC repairing, home appliances repairing, and booking guidance in Chitarpur, Jharkhand.',
+    title: 'Pulse AI by Prakash Electronics | Prakash Electronics and Electricals',
+    description: 'Pulse AI helps you find suitable electronics products, wiring accessories, repair guidance, offers, and service-booking options from Prakash Electronics.',
     keywords: 'Pulse AI, electronics shop, home appliances repairing, cooler repairing, AC repairing, wiring accessories, RGB lights, repair assistant, Prakash Electronics',
     ogImage: `${SITE_URL}/og-image-pulse-ai.jpg`,
     ogImageAlt: 'Pulse AI by Prakash Electronics',
@@ -174,10 +186,44 @@ function upsertMeta(selector, attributeName, attributeValue, content) {
   element.setAttribute('content', content);
 }
 
-function updateRouteMeta(pathname) {
-  const meta = routeMeta.find((item) => item.match(pathname)) || defaultMeta;
-  const canonicalPath = pathname === '/' ? '/' : pathname.replace(/\/$/, '');
-  const canonicalUrl = `${SITE_URL}${canonicalPath === '/science-ai' ? '/pulse-ai' : canonicalPath}`;
+function updateAmpHtmlLink(pathname) {
+  const cleanPath = String(pathname || '/').replace(/\/+$/, '') || '/';
+  const productMatch = cleanPath.match(/^\/(?:product|product-detail)\/([^/?#]+)/i);
+  let productIdentifier = '';
+  if (productMatch) {
+    try {
+      productIdentifier = encodeURIComponent(decodeURIComponent(productMatch[1]));
+    } catch (_error) {
+      productIdentifier = encodeURIComponent(productMatch[1]);
+    }
+  }
+  const ampPath = productMatch
+    ? `/amp/product/${productIdentifier}`
+    : cleanPath === '/products'
+      ? '/amp/products'
+      : cleanPath === CANONICAL_WIRING_PARTS_PATH
+        ? '/amp/wiring-parts'
+        : '';
+  let ampLink = document.head.querySelector('link[rel="amphtml"]');
+  if (!ampPath) {
+    ampLink?.remove();
+    return;
+  }
+  if (!ampLink) {
+    ampLink = document.createElement('link');
+    ampLink.setAttribute('rel', 'amphtml');
+    document.head.appendChild(ampLink);
+  }
+  ampLink.setAttribute('href', `${SITE_URL}${ampPath}`);
+}
+
+function updateRouteMeta(pathname, search = '') {
+  const normalizedPath = pathname === '/science-ai' ? '/pulse-ai' : pathname;
+  const meta = routeMeta.find((item) => item.match(normalizedPath)) || defaultMeta;
+  const canonicalPath = normalizedPath === '/' ? '/' : normalizedPath.replace(/\/$/, '');
+  const searchParams = new URLSearchParams(search);
+  const service = canonicalPath === '/learn-more' ? String(searchParams.get('service') || '').trim() : '';
+  const canonicalUrl = `${SITE_URL}${canonicalPath}${service ? `?service=${encodeURIComponent(service)}` : ''}`;
   const keywords = meta.keywords || defaultMeta.keywords;
   const ogImage = meta.ogImage || `${SITE_URL}/og-image.jpg`;
   const ogImageAlt = meta.ogImageAlt || meta.title;
@@ -190,6 +236,7 @@ function updateRouteMeta(pathname) {
 
   document.title = meta.title;
   canonical.setAttribute('href', canonicalUrl);
+  updateAmpHtmlLink(pathname);
   upsertMeta('meta[name="description"]', 'name', 'description', meta.description);
   upsertMeta('meta[name="keywords"]', 'name', 'keywords', keywords);
   upsertMeta('meta[name="robots"]', 'name', 'robots', meta.robots || defaultMeta.robots);
@@ -212,6 +259,28 @@ function updateRouteMeta(pathname) {
 
 function LazyScreen({ children }) {
   return <Suspense fallback={<SectionFallback />}>{children}</Suspense>;
+}
+
+function NotFoundPage() {
+  return (
+    <PublicShell>
+      <div className="App min-h-screen bg-background text-foreground">
+        <Navbar />
+        <main className="mx-auto grid min-h-[70vh] max-w-3xl place-items-center px-4 py-20 text-center">
+          <section>
+            <p className="text-sm font-bold uppercase tracking-[0.2em] text-accent">404 · Page not found</p>
+            <h1 className="mt-4 font-display text-4xl font-bold sm:text-5xl">This page is not available</h1>
+            <p className="mx-auto mt-4 max-w-xl text-base leading-7 text-muted-foreground">The link may be outdated. Continue to the shop or return to the homepage.</p>
+            <div className="mt-8 flex flex-wrap justify-center gap-3">
+              <a className="rounded-xl bg-gradient-primary px-6 py-3 font-semibold text-primary-foreground" href="/">Go to homepage</a>
+              <a className="rounded-xl border border-border px-6 py-3 font-semibold" href="/products">Browse products</a>
+            </div>
+          </section>
+        </main>
+        <Footer />
+      </div>
+    </PublicShell>
+  );
 }
 
 function PublicShell({ children, siteData = true, showFloatingActions = true }) {
@@ -342,22 +411,31 @@ function App() {
   useEffect(() => {
     const params = new URLSearchParams(search);
     const pathname = window.location.pathname;
+    const legacyPage = String(params.get('page') || '').trim().toLowerCase();
+    const legacyDestination = pathname === '/' ? LEGACY_PAGE_ROUTES[legacyPage] : '';
+    if (legacyDestination) {
+      const service = legacyPage === 'learn-more' ? String(params.get('service') || '').trim() : '';
+      const nextSearch = service ? `?service=${encodeURIComponent(service)}` : '';
+      window.history.replaceState({}, '', `${legacyDestination}${nextSearch}`);
+      updateRouteMeta(legacyDestination, nextSearch);
+      return;
+    }
     if (
       pathname === '/science-ai'
       || params.get('page') === 'science-ai'
     ) {
       window.history.replaceState({}, '', '/pulse-ai');
-      updateRouteMeta('/pulse-ai');
+      updateRouteMeta('/pulse-ai', '');
       return;
     }
 
     if (isLegacyWiringPartsPath(pathname) || params.get('page') === 'projects-parts') {
       window.history.replaceState({}, '', getWiringPartsPath());
-      updateRouteMeta(CANONICAL_WIRING_PARTS_PATH);
+      updateRouteMeta(CANONICAL_WIRING_PARTS_PATH, '');
       return;
     }
 
-    updateRouteMeta(pathname);
+    updateRouteMeta(pathname, search);
   }, [search]);
 
   const params = new URLSearchParams(search);
@@ -542,6 +620,10 @@ function App() {
         </LazyScreen>
       </PublicShell>
     );
+  }
+
+  if (window.location.pathname !== '/') {
+    return <NotFoundPage />;
   }
 
   return (

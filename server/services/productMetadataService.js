@@ -51,7 +51,9 @@ function serializeProductMeta(product, { origin, sourceType }) {
   const rawImage = product.imageUrl || product.images?.find((item) => item?.url)?.url || "/og-image.jpg";
   const image = absoluteUrl(cloudinaryOgImage(rawImage), origin);
   const price = resolveProductPricing(product).price;
-  const unavailable = availableStockQuantity(product, sourceType === "project-part" ? "stock" : "quantity") < 1
+  const pricing = resolveProductPricing(product);
+  const stockQuantity = availableStockQuantity(product, sourceType === "project-part" ? "stock" : "quantity");
+  const unavailable = stockQuantity < 1
     || /out of stock|not available/i.test(String(product.availability || ""));
   const images = [rawImage, ...(product.images || []).map((item) => item?.url)]
     .filter(Boolean)
@@ -59,9 +61,12 @@ function serializeProductMeta(product, { origin, sourceType }) {
     .map((value) => absoluteUrl(value, origin));
 
   return {
+    identifier,
     name,
     title,
     description,
+    fullDescription: trimText(product.description || product.shortDescription, description, 5000),
+    shortDescription: trimText(product.shortDescription, description, 500),
     image,
     images,
     imageAlt: name,
@@ -76,8 +81,29 @@ function serializeProductMeta(product, { origin, sourceType }) {
     condition: String(product.condition || "new").trim(),
     category: trimText(product.category, sourceType === "project-part" ? "Wiring Accessories" : "Electronics", 80),
     tags: Array.isArray(product.tags) ? product.tags.map((tag) => trimText(tag, "", 60)).filter(Boolean).slice(0, 12) : [],
+    mrp: Number.isFinite(pricing.mrp) && pricing.mrp >= 0 ? pricing.mrp : null,
     price: Number.isFinite(price) && price >= 0 ? price : null,
+    discountPercent: pricing.discountPercent,
+    stockQuantity,
+    availabilityLabel: unavailable ? "Out of Stock" : String(product.availability || "In Stock"),
     availability: unavailable ? "https://schema.org/OutOfStock" : "https://schema.org/InStock",
+    manufacturer: trimText(product.manufacturer, "", 100),
+    warranty: trimText(product.warranty, "", 180),
+    specifications: Array.isArray(product.specifications)
+      ? product.specifications
+        .map((item) => ({
+          label: trimText(item?.label, "", 100),
+          value: trimText(item?.value, "", 300),
+        }))
+        .filter((item) => item.label || item.value)
+        .slice(0, 50)
+      : [],
+    shipping: {
+      serviceArea: trimText(product.shipping?.serviceArea, "", 180),
+      dispatchTime: trimText(product.shipping?.dispatchTime, "", 180),
+      deliveryEstimate: trimText(product.shipping?.deliveryEstimate, "", 180),
+      chargeNote: trimText(product.shipping?.chargeNote, "", 240),
+    },
   };
 }
 
@@ -92,11 +118,11 @@ async function findProductForMetadata(identifier, origin) {
 
   const [shopProduct, projectPart] = await Promise.all([
     ShopProduct.findOne(query)
-      .select("name slug shortDescription description seoTitle seoDescription category mrp discountPercent price quantity availability imageUrl images tags isActive sku brand gtin mpn modelNumber condition")
+      .select("name slug shortDescription description seoTitle seoDescription category mrp discountPercent price quantity availability imageUrl images tags specifications isActive sku brand gtin mpn manufacturer modelNumber condition warranty shipping")
       .maxTimeMS(5000)
       .lean(),
     ProjectPart.findOne(query)
-      .select("name slug shortDescription description seoTitle seoDescription category subCategory mrp discountPercent price stock availability imageUrl images tags isActive sku brand gtin mpn modelNumber condition")
+      .select("name slug shortDescription description seoTitle seoDescription category subCategory mrp discountPercent price stock availability imageUrl images tags specifications isActive sku brand gtin mpn manufacturer modelNumber condition warranty shipping")
       .maxTimeMS(5000)
       .lean(),
   ]);
@@ -117,4 +143,5 @@ module.exports = {
   DEFAULT_SITE_NAME,
   absoluteUrl,
   findProductForMetadata,
+  serializeProductMeta,
 };

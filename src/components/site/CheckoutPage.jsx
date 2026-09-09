@@ -8,6 +8,7 @@ import { Footer } from "./Footer";
 import { OptimizedImage } from "./OptimizedImage";
 import { clearAppliedCouponCode } from "../../utils/coupons";
 import { useOrderQuote } from "../../hooks/useOrderQuote";
+import { formatINR } from "../../utils/productPricing";
 import "./OrderExperience.css";
 
 let razorpayScriptPromise;
@@ -24,10 +25,6 @@ function loadRazorpayCheckout() {
     document.body.appendChild(script);
   });
   return razorpayScriptPromise;
-}
-
-function formatINR(value) {
-  return `₹${Number(value || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 }
 
 async function copyOrderId(orderId, automatic = false) {

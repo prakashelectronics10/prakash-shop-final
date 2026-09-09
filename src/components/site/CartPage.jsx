@@ -7,10 +7,7 @@ import { OptimizedImage } from "./OptimizedImage";
 import { CANONICAL_WIRING_PARTS_PATH } from "../../utils/routes";
 import { setAppliedCouponCode } from "../../utils/coupons";
 import { useOrderQuote } from "../../hooks/useOrderQuote";
-
-function priceLabel(price) {
-  return price === null || price === undefined || price === "" ? "Price on request" : `Rs. ${Number(price).toLocaleString("en-IN")}`;
-}
+import { formatINR } from "../../utils/productPricing";
 
 function lineTotal(item) {
   const price = Number(item.price);
@@ -94,8 +91,8 @@ export function CartPage() {
                     {item.originalCategory && <small>Original category: {item.originalCategory}</small>}
                     <p>{item.productDescription || "Available at Prakash Electronics."}</p>
                     <div className="cart-item-price">
-                      {hasDiscount && <del>{priceLabel(quoteItem.unitPrice)}</del>}
-                      <strong>{priceLabel(unitPrice)}</strong>
+                      {hasDiscount && <del>{formatINR(quoteItem.unitPrice)}</del>}
+                      <strong>{formatINR(unitPrice)}</strong>
                       {hasDiscount && <small>{quoteItem.couponCode} applied</small>}
                     </div>
                     {payload.items[index]?.couponCode && <button className="cart-coupon-remove" type="button" onClick={() => setAppliedCouponCode("", item)}>Remove coupon {payload.items[index].couponCode}</button>}
@@ -122,8 +119,8 @@ export function CartPage() {
                       </button>
                     </div>
                     <div className="cart-line-price">
-                      {hasDiscount && <del>{priceLabel(quoteItem.lineTotal)}</del>}
-                      <strong className="cart-line-total">{quotedLineTotal === null ? "Request price" : priceLabel(quotedLineTotal)}</strong>
+                      {hasDiscount && <del>{formatINR(quoteItem.lineTotal)}</del>}
+                      <strong className="cart-line-total">{quotedLineTotal === null ? "Request price" : formatINR(quotedLineTotal)}</strong>
                     </div>
                     <button className="cart-remove-button" type="button" onClick={() => removeItem(item.cartId)}>
                       <Trash2 size={16} /> Remove
@@ -142,7 +139,7 @@ export function CartPage() {
               </div>
               <div>
                 <span>Subtotal</span>
-                <strong>{quote ? priceLabel(quote.discountedSubtotal) : chargesLoading ? "Calculating…" : "Unavailable"}</strong>
+                <strong>{quote ? formatINR(quote.discountedSubtotal) : chargesLoading ? "Calculating…" : "Unavailable"}</strong>
               </div>
               {quote?.discountTotal > 0 && <small className="cart-discount-included">Coupon savings included in product prices.</small>}
               {chargesLoading ? (
@@ -150,12 +147,12 @@ export function CartPage() {
               ) : additionalCharges.map((charge) => (
                 <div key={charge._id || charge.slug || charge.name}>
                   <span>{charge.name}</span>
-                  <strong className={Number(charge.amount || 0) === 0 ? "cart-summary-free" : ""}>{Number(charge.amount || 0) === 0 ? "Free" : priceLabel(charge.amount)}</strong>
+                  <strong className={Number(charge.amount || 0) === 0 ? "cart-summary-free" : ""}>{Number(charge.amount || 0) === 0 ? "Free" : formatINR(charge.amount)}</strong>
                 </div>
               ))}
               <div className="cart-summary-total">
                 <span>Estimated total</span>
-                <strong>{quote ? priceLabel(estimatedTotal) : chargesLoading ? "Calculating…" : "Unavailable"}</strong>
+                <strong>{quote ? formatINR(estimatedTotal) : chargesLoading ? "Calculating…" : "Unavailable"}</strong>
               </div>
               {quoteError && <p className="cart-quote-error" role="alert">{quoteError} <button type="button" onClick={refresh}>Retry</button></p>}
               <button type="button" onClick={openCheckout}>

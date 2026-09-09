@@ -443,3 +443,4 @@ exports.resolveOrderCancellation = asyncHandler(async (req, res) => {
 });
 
 exports.ORDER_STATUSES = ORDER_STATUSES;
+exports.buildOrderQuote = buildOrderQuote;

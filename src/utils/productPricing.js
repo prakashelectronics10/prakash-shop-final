@@ -65,6 +65,13 @@ export function resolveProductPricing(product = {}) {
 }
 
 export function formatINR(amount) {
-  if (amount === null || amount === undefined || amount === "") return "Price on request";
-  return `₹ ${Number(amount).toLocaleString("en-IN")}`;
+  const value = toNumberOrNull(amount);
+  if (value === null) return "Price on request";
+  const fractionDigits = Number.isInteger(value) ? 0 : 2;
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: 2,
+  }).format(value);
 }

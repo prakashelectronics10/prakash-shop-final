@@ -2975,12 +2975,18 @@ button.stat-card:focus-visible {
   font-size: 1rem;
 }
 
-.pulse-ai-rule-card > p {
+.pulse-ai-rule-instruction {
+  display: -webkit-box;
   margin: 0;
+  overflow: hidden;
   color: var(--muted);
   line-height: 1.6;
+  text-overflow: ellipsis;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 5;
+  line-clamp: 5;
 }
 
 .pulse-ai-rule-meta {

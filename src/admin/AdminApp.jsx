@@ -1147,7 +1147,9 @@ function PulseAIInstructionsManager({ instructions = [], runAction, busy }) {
                   </div>
                   <b>Priority {item.priority ?? 100}</b>
                 </div>
-                <p>{item.instruction}</p>
+                <p className="pulse-ai-rule-instruction" title={item.instruction}>
+                  {item.instruction}
+                </p>
                 <div className="pulse-ai-rule-meta">
                   <span>{item.scope || "general"}</span>
                   {item.target ? <span>Target: {item.target}</span> : null}

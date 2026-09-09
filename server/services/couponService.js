@@ -180,6 +180,47 @@ function publicCoupon(coupon, result, unitPrice = null) {
   };
 }
 
+function isCurrentPublicCoupon(coupon = {}, now = new Date()) {
+  if (coupon.isActive === false || coupon.visibility !== "public") return false;
+  const timestamp = now instanceof Date ? now.getTime() : new Date(now).getTime();
+  const startsAt = coupon.startsAt ? new Date(coupon.startsAt).getTime() : null;
+  const endsAt = coupon.endsAt ? new Date(coupon.endsAt).getTime() : null;
+  if (Number.isFinite(startsAt) && startsAt > timestamp) return false;
+  if (Number.isFinite(endsAt) && endsAt <= timestamp) return false;
+  return true;
+}
+
+function publicCouponsForProductFromList(product, unitPrice, coupons = [], now = new Date()) {
+  const item = {
+    sourceType: product.sourceCollection === "project-parts" || product.sourceType === "project-part"
+      ? "project-part"
+      : "shop-product",
+    productId: product._id || product.sourceId,
+    productCategory: product.category || "Electronics",
+    lineTotal: Number(unitPrice || 0),
+  };
+  return coupons
+    .filter((coupon) => isCurrentPublicCoupon(coupon, now))
+    .map((coupon) => ({ coupon, result: calculateCouponDiscount(coupon, [item]) }))
+    .filter(({ result }) => result.valid)
+    .map(({ coupon, result }) => publicCoupon(coupon, result, unitPrice))
+    .sort((a, b) => b.discountAmount - a.discountAmount || String(a.title).localeCompare(String(b.title)))
+    .slice(0, 12);
+}
+
+async function listPublicCouponsForProducts(products = []) {
+  const items = Array.isArray(products) ? products : [];
+  if (!items.length) return new Map();
+  const coupons = await Coupon.find({ ...activeCouponFilter(), visibility: "public" })
+    .sort({ displayOrder: 1, createdAt: -1 })
+    .limit(100)
+    .lean();
+  return new Map(items.map((product) => [
+    String(product._id || product.sourceId || ""),
+    publicCouponsForProductFromList(product, product.price, coupons),
+  ]));
+}
+
 async function validateCouponForItems(code, items, { requirePublic = false } = {}) {
   const safeCode = normalizedCode(code);
   if (!safeCode) throw new AppError("Enter a coupon code", 400);
@@ -191,22 +232,11 @@ async function validateCouponForItems(code, items, { requirePublic = false } = {
 }
 
 async function listPublicCouponsForProduct(product, unitPrice) {
-  const items = [{
-    sourceType: "shop-product",
-    productId: product._id,
-    productCategory: product.category || "Electronics",
-    lineTotal: Number(unitPrice || 0),
-  }];
   const coupons = await Coupon.find({ ...activeCouponFilter(), visibility: "public" })
     .sort({ displayOrder: 1, createdAt: -1 })
     .limit(100)
     .lean();
-  return coupons
-    .map((coupon) => ({ coupon, result: calculateCouponDiscount(coupon, items) }))
-    .filter(({ result }) => result.valid)
-    .map(({ coupon, result }) => publicCoupon(coupon, result, unitPrice))
-    .sort((a, b) => b.discountAmount - a.discountAmount || String(a.title).localeCompare(String(b.title)))
-    .slice(0, 12);
+  return publicCouponsForProductFromList(product, unitPrice, coupons);
 }
 
 module.exports = {
@@ -214,10 +244,13 @@ module.exports = {
   allocateCouponDiscount,
   calculateCouponDiscount,
   couponMatchesItem,
+  isCurrentPublicCoupon,
   listPublicCouponsForProduct,
+  listPublicCouponsForProducts,
   normalizedCode,
   priceOrderCoupons,
   priceProductCouponItems,
   publicCoupon,
+  publicCouponsForProductFromList,
   validateCouponForItems,
 };

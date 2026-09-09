@@ -78,7 +78,8 @@ function productKnowledge(product) {
     category: product.category,
     subCategory: product.subCategory,
     description: product.shortDescription || product.description,
-    price: product.price,
+    basePrice: product.price,
+    effectivePrice: product.effectivePrice ?? product.price,
     mrp: product.mrp,
     discountPercent: product.discountPercent,
     availability: product.availability,
@@ -92,7 +93,30 @@ function productKnowledge(product) {
     url: `/product/${encodeURIComponent(product.slug || product._id)}`,
     catalog: product.sourceCollection,
     updatedAt: product.updatedAt,
+    publicCoupons: (product.publicCoupons || []).map((coupon) => ({
+      title: coupon.title,
+      code: coupon.code,
+      description: coupon.description,
+      discountType: coupon.discountType,
+      discountValue: coupon.discountValue,
+      maxDiscountAmount: coupon.maxDiscountAmount,
+      minimumSubtotal: coupon.minimumSubtotal,
+      discountAmount: coupon.discountAmount,
+      finalPrice: coupon.finalPrice,
+      startsAt: coupon.startsAt,
+      endsAt: coupon.endsAt,
+    })),
   });
+}
+
+function isCurrentPublicOffer(offer = {}, now = new Date()) {
+  if (offer.isActive === false) return false;
+  const timestamp = now instanceof Date ? now.getTime() : new Date(now).getTime();
+  const startsAt = offer.startsAt ? new Date(offer.startsAt).getTime() : null;
+  const endsAt = offer.endsAt ? new Date(offer.endsAt).getTime() : null;
+  if (Number.isFinite(startsAt) && startsAt > timestamp) return false;
+  if (Number.isFinite(endsAt) && endsAt <= timestamp) return false;
+  return true;
 }
 
 function buildAllowedLinks(site, catalogProducts) {
@@ -145,7 +169,7 @@ function formatLinkActions(instructions) {
   ].join("\n");
 }
 
-function buildWebsiteKnowledge(site, catalogProducts, supplementary = {}) {
+function buildWebsiteKnowledge(site, catalogProducts, supplementary = {}, now = new Date()) {
   const shopProducts = (catalogProducts || []).filter((item) => item.sourceCollection === "shop-products");
   const wiringProducts = (catalogProducts || []).filter((item) => item.sourceCollection === "project-parts");
   const topProducts = [...shopProducts, ...wiringProducts]
@@ -157,13 +181,13 @@ function buildWebsiteKnowledge(site, catalogProducts, supplementary = {}) {
   const content = site.content || {};
 
   const snapshot = {
-    generatedAt: new Date().toISOString(),
+    generatedAt: now.toISOString(),
     contentUpdatedAt: site.contentUpdatedAt || "",
     routesAndElements: CORE_ROUTES,
     hero: compactValue(site.hero || {}),
     contactInformation: compactValue(site.contact || {}),
     services: compactValue(site.products || []),
-    offersAndRecentUpdates: compactValue(site.offers || []),
+    offersAndRecentUpdates: compactValue((site.offers || []).filter((offer) => isCurrentPublicOffer(offer, now))),
     shopHighlights: compactValue(content.shopHighlights || {}),
     testimonials: compactValue(content.testimonials || {}),
     ourStoryAndAbout: compactValue({ about: content.about || {}, aboutShowcase: content.aboutShowcase || {} }),
@@ -184,7 +208,7 @@ function buildWebsiteKnowledge(site, catalogProducts, supplementary = {}) {
     catalogCoverage: {
       shopProducts: shopProducts.length,
       wiringAccessories: wiringProducts.length,
-      note: "The complete live catalog, stock, pricing, tags and specifications are included once in the catalog section below this snapshot.",
+      note: "The complete live catalog, stock, base pricing, current public coupons, after-offer pricing, tags and specifications are included once in the catalog section below this snapshot.",
     },
     topProducts: topProducts.map(productKnowledge),
     trendingProducts: trendingProducts.map(productKnowledge),
@@ -214,4 +238,10 @@ async function getPulseAIKnowledge(catalogProducts = []) {
   };
 }
 
-module.exports = { CORE_ROUTES, getPulseAIKnowledge };
+module.exports = {
+  CORE_ROUTES,
+  buildWebsiteKnowledge,
+  getPulseAIKnowledge,
+  isCurrentPublicOffer,
+  productKnowledge,
+};

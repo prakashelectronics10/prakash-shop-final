@@ -1,6 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
+  formatProductMemoryLine,
   isGeneralProductDiscoveryRequest,
   isServiceOnlyRequest,
   rankProductsForDemand,
@@ -63,4 +64,34 @@ test("generic product discovery returns available catalog cards even without a s
   const results = rankProductsForDemand("Mujhe suggestions do products ka", "Here are some options", products);
   assert.equal(results.length, 2);
   assert.equal(results[0].component, "Popular shop pick");
+});
+
+test("catalog memory tells Pulse AI the verified public coupon and after-offer price", () => {
+  const memory = formatProductMemoryLine({
+    _id: "1",
+    name: "Blue Table Fan",
+    category: "Cooling",
+    price: 1200,
+    publicCoupons: [{
+      title: "Fan deal",
+      code: "FAN300",
+      discountAmount: 300,
+      finalPrice: 900,
+      minimumSubtotal: 1000,
+      endsAt: "2026-10-01T00:00:00.000Z",
+    }],
+  });
+  assert.match(memory, /base-price:Rs\.1,200/);
+  assert.match(memory, /code:FAN300/);
+  assert.match(memory, /after-offer:Rs\.900/);
+  assert.match(memory, /minimum:Rs\.1,000/);
+});
+
+test("customer budget matching uses the current public after-offer price", () => {
+  const products = [
+    { _id: "1", name: "Blue Table Fan Offer", category: "Cooling", tags: ["blue", "fan"], price: 1400, effectivePrice: 950 },
+    { _id: "2", name: "Blue Table Fan Premium", category: "Cooling", tags: ["blue", "fan"], price: 1600, effectivePrice: 1300 },
+  ];
+  const results = rankProductsForDemand("blue table fan 1000 ke andar chahiye", "Recommended fans", products);
+  assert.deepEqual(results.map((item) => item.product.name), ["Blue Table Fan Offer"]);
 });

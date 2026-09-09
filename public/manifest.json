@@ -1,21 +1,30 @@
 {
-  "short_name": "Prakash Electronics",
+  "id": "/",
   "name": "Prakash Electronics and Electricals",
+  "short_name": "Prakash Shop",
+  "description": "Shop electronics and wiring accessories, explore offers, use Pulse AI, and book trusted repair services from Prakash Electronics in Chitarpur.",
+  "lang": "en-IN",
+  "dir": "ltr",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "any",
+  "theme_color": "#0f172a",
+  "background_color": "#f7faff",
+  "categories": ["shopping", "business", "utilities"],
   "icons": [
     {
-      "src": "logo192.png",
+      "src": "/logo192.png",
       "type": "image/png",
-      "sizes": "192x192"
+      "sizes": "192x192",
+      "purpose": "any"
     },
     {
-      "src": "logo512.png",
+      "src": "/logo512.png",
       "type": "image/png",
-      "sizes": "512x512"
+      "sizes": "512x512",
+      "purpose": "any"
     }
-  ],
-  "start_url": ".",
-  "display": "standalone",
-  "theme_color": "#0f172a",
-  "background_color": "#0b1020",
-  "description": "Prakash Electronics and Electricals is an electronics and electrical repair shop in Chitarpur, Jharkhand for TV, fan, cooler, speaker, appliance service, and electronics parts."
+  ]
 }
