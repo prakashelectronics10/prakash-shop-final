@@ -354,7 +354,7 @@ export function Booking() {
               Repair Booking
             </span>
             <h1 className="mt-5 font-display text-4xl font-bold leading-tight sm:text-5xl">
-              Book your <span className="text-gradient">repair</span> or <span className="text-gradient">purchase</span> with ease
+              Book your <span className="text-gradient">repair</span> or <span className="text-gradient">Services</span> with ease
             </h1>
             <p className="mt-4 text-muted-foreground">
               Share your contact details, location, repair type and a photo. The booking time is recorded automatically.
@@ -430,7 +430,7 @@ export function Booking() {
               </div>
               <Field label="Phone Number" type="tel" inputMode="numeric" maxLength={10} pattern="\d{10}" placeholder="10 digit mobile number" value={form.phoneNumber} onChange={(v) => updateDigits("phoneNumber", v)} required />
               <Field label="WhatsApp Number" type="tel" inputMode="numeric" maxLength={10} pattern="\d{10}" placeholder="10 digit WhatsApp number" value={form.whatsappNumber} onChange={(v) => updateDigits("whatsappNumber", v)} required />
-              <Field label="What do you want Repair or BUY?" value={form.repairType} onChange={(v) => update("repairType", v)} placeholder="Fan, induction, torch..." required />
+              <Field label="What do you want Repair or Service?" value={form.repairType} onChange={(v) => update("repairType", v)} placeholder="Fan, induction, torch..." required />
             </div>
             <div className="mt-4">
               <Field
