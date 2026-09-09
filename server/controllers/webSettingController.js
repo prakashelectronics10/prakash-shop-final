@@ -6,7 +6,7 @@ const { processOgImage, processFavicon } = require("../services/imageProcessingS
 const { clearSitePayloadCache } = require("../services/siteService");
 const { normalizeSettings } = require("../utils/webSettings");
 
-const faviconSizes = [16, 32, 48, 180];
+const faviconSizes = [16, 32, 48, 180, 192, 512];
 
 async function getOrCreateSettings() {
   return WebSetting.findOneAndUpdate(

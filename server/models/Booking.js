@@ -6,7 +6,7 @@ const bookingSchema = new mongoose.Schema(
     customerEmail: { type: String, default: "", lowercase: true, trim: true },
     phoneNumber: { type: String, required: true, trim: true },
     whatsappNumber: { type: String, required: true, trim: true },
-    address: { type: String, default: "", trim: true },
+    address: { type: String, required: true, trim: true },
     pincode: { type: String, required: true, trim: true, match: [/^\d{6}$/, "Pincode must be exactly 6 digits"] },
     landmark: { type: String, default: "", trim: true },
     repairType: { type: String, required: true, trim: true },

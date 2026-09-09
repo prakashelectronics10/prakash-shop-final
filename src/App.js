@@ -69,7 +69,7 @@ const routeMeta = [
     title: 'Electronics Shop Products in Chitarpur | Prakash Electronics',
     description: 'Browse electronics shop products, wiring accessories, RGB lights, electrical parts, and accessories from Prakash Electronics and Electricals in Chitarpur.',
     keywords: 'electronics shop, wiring accessories, RGB lights, electrical accessories, electronics parts, shop products Chitarpur',
-    ogImage: `${SITE_URL}/og-image-shop-products.jpg`,
+    ogImage: `${SITE_URL}/og-image-shop-products.png`,
     ogImageAlt: 'Prakash Electronics shop products',
   },
   {

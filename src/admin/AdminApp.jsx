@@ -4271,7 +4271,7 @@ function WebSettingsManager({ settings, runAction, busy }) {
       <AssetUploadCard
         title="Website Icon / Favicon"
         description="Supports PNG, ICO, and SVG uploads. The server generates browser-friendly PNG favicon sizes."
-        recommended="Generated sizes: 16x16, 32x32, 48x48, 180x180 Apple touch icon"
+        recommended="Generated sizes: 16x16, 32x32, 48x48, 180x180 Apple icon, plus 192x192 and 512x512 app icons"
         accept="image/png,image/x-icon,image/vnd.microsoft.icon,image/svg+xml"
         current={favicon}
         secondary={appleTouchIcon}

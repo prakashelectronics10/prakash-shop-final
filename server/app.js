@@ -250,6 +250,47 @@ app.get("/robots.txt", (_req, res) => {
   ].join("\n"));
 });
 
+app.get("/manifest.json", async (_req, res, next) => {
+  try {
+    const site = await getHtmlShellSiteMeta().catch(() => ({ webSettings: {} }));
+    const settings = site.webSettings || {};
+    const generatedIcons = (settings.faviconSizes || [])
+      .filter((asset) => [192, 512].includes(Number(asset?.width)) && asset?.url)
+      .map((asset) => ({
+        src: cacheBustedAssetUrl(asset.url, asset.updatedAt || settings.updatedAt),
+        sizes: `${asset.width}x${asset.height || asset.width}`,
+        type: "image/png",
+        purpose: "any",
+      }));
+    const generatedSizes = new Set(generatedIcons.map((icon) => icon.sizes));
+    const fallbackIcons = [
+      { src: "/favicon-192x192.png", sizes: "192x192", type: "image/png", purpose: "any maskable" },
+      { src: "/favicon-512x512.png", sizes: "512x512", type: "image/png", purpose: "any maskable" },
+    ].filter((icon) => !generatedSizes.has(icon.sizes));
+
+    res.set("Cache-Control", "no-cache");
+    res.type("application/manifest+json").json({
+      id: "/",
+      name: "Prakash Electronics and Electricals",
+      short_name: "Prakash Shop",
+      description: "Electronics products, wiring accessories, repair booking, and support from Prakash Electronics in Chitarpur.",
+      lang: "en-IN",
+      dir: "ltr",
+      start_url: "/",
+      scope: "/",
+      display: "standalone",
+      display_override: ["window-controls-overlay", "standalone", "minimal-ui"],
+      orientation: "any",
+      theme_color: "#0b1220",
+      background_color: "#f8fafc",
+      categories: ["shopping", "business", "utilities"],
+      icons: [...generatedIcons, ...fallbackIcons],
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 function xmlEscape(value) {
   return String(value || "")
     .replace(/&/g, "&amp;")
@@ -302,8 +343,12 @@ app.get("/sitemap.xml", async (req, res, next) => {
       { path: "/return-refund-policy", priority: "0.45", changefreq: "monthly" },
     ];
 
-    const contentLastmod = site?.contentUpdatedAt
-      ? new Date(site.contentUpdatedAt).toISOString().slice(0, 10)
+    const contentUpdatedAt = [site?.contentUpdatedAt, site?.webSettings?.updatedAt]
+      .map((value) => (value ? new Date(value).getTime() : 0))
+      .filter(Number.isFinite)
+      .reduce((latest, value) => Math.max(latest, value), 0);
+    const contentLastmod = contentUpdatedAt
+      ? new Date(contentUpdatedAt).toISOString().slice(0, 10)
       : "";
 
     const entries = [
@@ -348,7 +393,7 @@ app.get("/sitemap.xml", async (req, res, next) => {
       return true;
     }).map((entry) => sitemapUrlEntry(entry.loc, entry.lastmod, entry.changefreq, entry.priority));
     const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${uniqueEntries.join("\n")}\n</urlset>\n`;
-    res.set("Cache-Control", "public, max-age=3600");
+    res.set("Cache-Control", "no-cache");
     res.type("application/xml").send(xml);
   } catch (error) {
     next(error);
@@ -369,6 +414,22 @@ function escapeAttribute(value) {
 
 function replaceTag(html, pattern, replacement) {
   return pattern.test(html) ? html.replace(pattern, replacement) : html.replace("</head>", `${replacement}\n</head>`);
+}
+
+function cacheBustedAssetUrl(url, version) {
+  if (!url || !version) return url || "";
+  const separator = url.includes("?") ? "&" : "?";
+  const stamp = new Date(version).getTime();
+  return `${url}${separator}v=${encodeURIComponent(Number.isFinite(stamp) ? stamp : String(version))}`;
+}
+
+function replaceHeadLinksByRel(html, relPattern, replacements = []) {
+  const withoutOldLinks = html.replace(/<link\b[^>]*>/gi, (tag) => (
+    relPattern.test(tag) ? "" : tag
+  ));
+  return replacements.length
+    ? withoutOldLinks.replace("</head>", `${replacements.join("\n")}\n</head>`)
+    : withoutOldLinks;
 }
 
 function replaceTitle(html, title) {
@@ -409,7 +470,7 @@ function heroPreloadTag(heroImageUrl = "") {
 
 function injectWebSettings(html, site = {}, options = {}) {
   const webSettings = site.webSettings || {};
-  const ogUrl = options.skipOgImage ? "" : webSettings.ogImage?.url;
+  const ogUrl = options.includeOgImage ? webSettings.ogImage?.url : "";
   const faviconUrl = webSettings.favicon?.url;
   const appleUrl = webSettings.appleTouchIcon?.url;
   const heroPreload = heroPreloadTag(site.heroSlider?.[0]?.imageUrl || site.hero?.image?.url);
@@ -429,11 +490,22 @@ function injectWebSettings(html, site = {}, options = {}) {
   }
 
   if (faviconUrl) {
-    output = replaceTag(output, /<link\s+rel="icon"[^>]*>/i, `<link rel="icon" type="image/png" sizes="${webSettings.favicon.width || 32}x${webSettings.favicon.height || 32}" href="${escapeAttribute(faviconUrl)}" />`);
+    const faviconAssets = webSettings.faviconSizes?.length
+      ? webSettings.faviconSizes
+      : [webSettings.favicon];
+    const faviconLinks = faviconAssets
+      .filter((asset) => asset?.url && asset?.width && asset?.height)
+      .map((asset) => `<link rel="icon" type="image/png" sizes="${asset.width}x${asset.height}" href="${escapeAttribute(cacheBustedAssetUrl(asset.url, asset.updatedAt || webSettings.updatedAt))}" />`);
+    faviconLinks.push(`<link rel="shortcut icon" type="image/png" href="${escapeAttribute(cacheBustedAssetUrl(faviconUrl, webSettings.favicon.updatedAt || webSettings.updatedAt))}" />`);
+    output = replaceHeadLinksByRel(output, /\brel=["'](?:shortcut\s+icon|icon)["']/i, faviconLinks);
   }
 
   if (appleUrl) {
-    output = replaceTag(output, /<link rel="apple-touch-icon" href="[^"]*"\s*\/?>/i, `<link rel="apple-touch-icon" sizes="${webSettings.appleTouchIcon.width || 180}x${webSettings.appleTouchIcon.height || 180}" href="${escapeAttribute(appleUrl)}" />`);
+    output = replaceHeadLinksByRel(
+      output,
+      /\brel=["']apple-touch-icon["']/i,
+      [`<link rel="apple-touch-icon" sizes="${webSettings.appleTouchIcon.width || 180}x${webSettings.appleTouchIcon.height || 180}" href="${escapeAttribute(cacheBustedAssetUrl(appleUrl, webSettings.appleTouchIcon.updatedAt || webSettings.updatedAt))}" />`],
+    );
   }
 
   return output;
@@ -463,7 +535,7 @@ const ROUTE_SHARE_META = [
     title: "Electronics Shop Products in Chitarpur | Prakash Electronics",
     description: "Browse electronics shop products, wiring accessories, RGB lights, electrical parts, and accessories from Prakash Electronics and Electricals in Chitarpur.",
     keywords: "electronics products Chitarpur, electronics shop, electrical products, home appliances, Prakash Electronics",
-    ogImage: "/og-image-shop-products.jpg",
+    ogImage: "/og-image-shop-products.png",
     ogImageAlt: "Prakash Electronics shop products",
     canonicalPath: "/products",
     ampPath: "/amp/products",
@@ -627,7 +699,7 @@ function getServiceRouteShareMeta(req, site = {}) {
   };
 }
 
-function injectRouteMetadata(html, routeMeta, origin) {
+function injectRouteMetadata(html, routeMeta, origin, options = {}) {
   if (!routeMeta) return html;
 
   const title = routeMeta.title;
@@ -647,15 +719,17 @@ function injectRouteMetadata(html, routeMeta, origin) {
   output = replaceTag(output, /<meta property="og:title" content="[^"]*"\s*\/?>/i, `<meta property="og:title" content="${escapeAttribute(title)}" />`);
   output = replaceTag(output, /<meta property="og:description" content="[^"]*"\s*\/?>/i, `<meta property="og:description" content="${escapeAttribute(description)}" />`);
   output = replaceTag(output, /<meta property="og:url" content="[^"]*"\s*\/?>/i, `<meta property="og:url" content="${escapeAttribute(url)}" />`);
-  output = replaceTag(output, /<meta property="og:image" content="[^"]*"\s*\/?>/i, `<meta property="og:image" content="${escapeAttribute(image)}" />`);
-  output = replaceTag(output, /<meta property="og:image:secure_url" content="[^"]*"\s*\/?>/i, `<meta property="og:image:secure_url" content="${escapeAttribute(image)}" />`);
+  if (!options.preserveOgImage) {
+    output = replaceTag(output, /<meta property="og:image" content="[^"]*"\s*\/?>/i, `<meta property="og:image" content="${escapeAttribute(image)}" />`);
+    output = replaceTag(output, /<meta property="og:image:secure_url" content="[^"]*"\s*\/?>/i, `<meta property="og:image:secure_url" content="${escapeAttribute(image)}" />`);
+    output = replaceTag(output, /<meta property="og:image:width" content="[^"]*"\s*\/?>/i, '<meta property="og:image:width" content="1200" />');
+    output = replaceTag(output, /<meta property="og:image:height" content="[^"]*"\s*\/?>/i, '<meta property="og:image:height" content="630" />');
+    output = replaceTag(output, /<meta name="twitter:image" content="[^"]*"\s*\/?>/i, `<meta name="twitter:image" content="${escapeAttribute(image)}" />`);
+  }
   output = replaceTag(output, /<meta property="og:image:alt" content="[^"]*"\s*\/?>/i, `<meta property="og:image:alt" content="${escapeAttribute(imageAlt)}" />`);
-  output = replaceTag(output, /<meta property="og:image:width" content="[^"]*"\s*\/?>/i, '<meta property="og:image:width" content="1200" />');
-  output = replaceTag(output, /<meta property="og:image:height" content="[^"]*"\s*\/?>/i, '<meta property="og:image:height" content="630" />');
   output = replaceTag(output, /<meta name="twitter:card" content="[^"]*"\s*\/?>/i, '<meta name="twitter:card" content="summary_large_image" />');
   output = replaceTag(output, /<meta name="twitter:title" content="[^"]*"\s*\/?>/i, `<meta name="twitter:title" content="${escapeAttribute(title)}" />`);
   output = replaceTag(output, /<meta name="twitter:description" content="[^"]*"\s*\/?>/i, `<meta name="twitter:description" content="${escapeAttribute(description)}" />`);
-  output = replaceTag(output, /<meta name="twitter:image" content="[^"]*"\s*\/?>/i, `<meta name="twitter:image" content="${escapeAttribute(image)}" />`);
   output = injectAmpHtmlLink(output, routeMeta.ampPath ? absoluteUrl(routeMeta.ampPath, origin) : "");
   return output;
 }
@@ -828,7 +902,7 @@ app.get("*", async (req, res, next) => {
         }
       : routeMeta;
     res.set("Cache-Control", "no-cache");
-    // Dedicated page OG images must win over the global admin OG setting.
+    const useGlobalOgImage = req.path === "/" && Boolean(site.webSettings?.ogImage?.url);
     let htmlWithSettings = injectWebSettings(html, {
       ...site,
       webSettings: {
@@ -840,9 +914,13 @@ app.get("*", async (req, res, next) => {
             }
           : site.webSettings?.ogImage,
       },
-    }, { skipOgImage: Boolean(responseRouteMeta || productMeta) });
+    }, { includeOgImage: req.path === "/" });
 
-    htmlWithSettings = injectRouteMetadata(htmlWithSettings, responseRouteMeta, origin);
+    // Web Settings controls only the main-domain OG image. All other routes
+    // retain the dedicated image defined by their route or product metadata.
+    htmlWithSettings = injectRouteMetadata(htmlWithSettings, responseRouteMeta, origin, {
+      preserveOgImage: useGlobalOgImage,
+    });
     res.status(isMissingPage ? 404 : 200).type("html").send(injectProductMetadata(htmlWithSettings, productMeta));
   } catch (_error) {
     next();

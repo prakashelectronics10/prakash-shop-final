@@ -41,11 +41,13 @@ function replaceLinks(rel, href, extra = {}) {
 }
 
 export function applyDynamicWebSettings(webSettings) {
+  if (typeof document === "undefined") return;
   const version = webSettings?.updatedAt || "";
   const ogUrl = webSettings?.ogImage?.url;
-  // Keep route-specific OG images (Pulse AI / Shop / Wiring) from App.updateRouteMeta.
-  const hasRouteOgImage = typeof document !== "undefined" && document.documentElement.dataset.routeOgImage === "1";
-  if (ogUrl && !hasRouteOgImage) {
+  const isHomepage = window.location.pathname === "/";
+  // Web Settings controls only the main-domain preview. Every other route
+  // keeps the dedicated OG image selected by its route metadata.
+  if (ogUrl && isHomepage) {
     setMeta('meta[property="og:image"]', "content", ogUrl);
     setMeta('meta[property="og:image:secure_url"]', "content", ogUrl);
     setMeta('meta[property="og:image:width"]', "content", String(webSettings.ogImage.width || 1200));
@@ -55,9 +57,18 @@ export function applyDynamicWebSettings(webSettings) {
 
   const faviconUrl = webSettings?.favicon?.url;
   if (faviconUrl) {
-    const freshFaviconUrl = withCacheBust(faviconUrl, version);
-    replaceLinks("icon", freshFaviconUrl, { type: "image/png", sizes: `${webSettings.favicon.width || 32}x${webSettings.favicon.height || 32}` });
-    replaceLinks("shortcut icon", freshFaviconUrl, { type: "image/png" });
+    document.head.querySelectorAll('link[rel="icon"], link[rel="shortcut icon"]').forEach((node) => node.remove());
+    const sizes = webSettings?.faviconSizes?.length ? webSettings.faviconSizes : [webSettings.favicon];
+    sizes.forEach((asset) => {
+      if (!asset?.url || !asset?.width || !asset?.height) return;
+      const link = document.createElement("link");
+      link.setAttribute("rel", "icon");
+      link.setAttribute("type", "image/png");
+      link.setAttribute("sizes", `${asset.width}x${asset.height}`);
+      link.setAttribute("href", withCacheBust(asset.url, asset.updatedAt || version));
+      document.head.appendChild(link);
+    });
+    replaceLinks("shortcut icon", withCacheBust(faviconUrl, webSettings.favicon.updatedAt || version), { type: "image/png" });
   }
 
   const appleUrl = webSettings?.appleTouchIcon?.url;

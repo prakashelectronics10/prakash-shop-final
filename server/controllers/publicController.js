@@ -329,7 +329,7 @@ const createBooking = asyncHandler(async (req, res) => {
     req.body.repairType = productSummary.repairType;
   }
 
-  const requiredFields = ["fullName", "customerEmail", "phoneNumber", "whatsappNumber", "pincode", "repairType"];
+  const requiredFields = ["fullName", "customerEmail", "phoneNumber", "whatsappNumber", "address", "pincode", "repairType"];
   const missing = requiredFields.find((field) => !String(req.body[field] || "").trim());
   if (missing) throw new AppError(`${missing} is required`, 400);
   const customerEmail = String(req.body.customerEmail || "").trim().toLowerCase();

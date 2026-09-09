@@ -66,3 +66,14 @@ test("web app manifest and service worker contain the installability essentials"
   assert.match(serviceWorker, /\/api\//);
   assert.match(serviceWorker, /\/prakash-control-panel@1999/);
 });
+
+test("manifest endpoint is fresh and always exposes installable icon sizes", async () => {
+  await withServer(async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/manifest.json`);
+    const manifest = await response.json();
+    assert.match(response.headers.get("content-type") || "", /application\/manifest\+json/);
+    assert.equal(response.headers.get("cache-control"), "no-cache");
+    assert.ok(manifest.icons.some((icon) => icon.sizes === "192x192"));
+    assert.ok(manifest.icons.some((icon) => icon.sizes === "512x512"));
+  });
+});

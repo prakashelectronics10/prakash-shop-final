@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, useId } from "react";
 import toast from "react-hot-toast";
 import { CalendarClock, ShoppingBag, Trash2, UploadCloud, X, AlertTriangle } from "lucide-react";
 import { apiRequest } from "../../api/client";
@@ -264,6 +264,11 @@ export function Booking() {
     setBusy(true);
     setStatus("");
     try {
+      if (!form.address.trim()) {
+        setStatus("Location / address is required.");
+        setBusy(false);
+        return;
+      }
       if (!/^\d{10}$/.test(form.phoneNumber)) {
         setStatus("Phone number must be exactly 10 digits.");
         setBusy(false);
@@ -429,10 +434,11 @@ export function Booking() {
             </div>
             <div className="mt-4">
               <Field
-                label="Location / Address (Optional)"
+                label="Location / Address"
                 value={form.address}
                 placeholder="Area, city or delivery address"
                 onChange={(value) => update("address", value)}
+                required
               />
             </div>
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
@@ -538,6 +544,7 @@ export function Booking() {
                 || emailCheck.status === "checking"
                 || emailCheck.status !== "valid"
                 || form.pincode.length !== 6
+                || !form.address.trim()
               }
               className="mt-6 inline-flex w-full items-center justify-center rounded-xl bg-gradient-primary px-6 py-3.5 text-sm font-semibold text-primary-foreground shadow-glow transition-transform hover:scale-[1.02] disabled:opacity-60"
             >
@@ -553,10 +560,14 @@ export function Booking() {
 }
 
 function Field({ label, value, onChange, placeholder = "", required = false, type = "text", inputMode, maxLength, pattern }) {
+  const fieldId = useId();
   return (
     <div>
-      <label className="mb-2 block text-sm font-medium text-muted-foreground">{label}</label>
+      <label htmlFor={fieldId} className="mb-2 block text-sm font-medium text-muted-foreground">
+        {label}{required ? <span className="text-red-400" aria-hidden="true"> *</span> : null}
+      </label>
       <input
+        id={fieldId}
         type={type}
         value={value}
         onChange={(event) => onChange(event.target.value)}
