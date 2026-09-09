@@ -1,4 +1,5 @@
 import { applyDynamicWebSettings } from "./SiteDataContext";
+import { applyProductPageMeta, getProductSharePath } from "../utils/productShare";
 
 describe("applyDynamicWebSettings", () => {
   beforeEach(() => {
@@ -47,6 +48,32 @@ describe("applyDynamicWebSettings", () => {
     });
 
     expect(document.head.querySelector('meta[property="og:image"]')?.getAttribute("content")).toBe("https://example.com/old-og.jpg");
+    expect(document.head.querySelector('link[rel="icon"]')?.getAttribute("href")).toContain("favicon-32.png?v=");
+  });
+
+  test("never replaces a shared product's own OG image with the main-domain image", () => {
+    const product = {
+      _id: "product-id",
+      slug: "havells-bldc-fan",
+      name: "Havells BLDC Fan",
+      shortDescription: "Energy-efficient BLDC fan",
+      imageUrl: "https://cdn.example.com/products/havells-bldc-fan.jpg",
+      price: 2499,
+      availability: "In Stock",
+    };
+    window.history.replaceState({}, "", getProductSharePath(product));
+    applyProductPageMeta(product);
+    applyDynamicWebSettings({
+      updatedAt: "2026-09-09T10:00:00.000Z",
+      ogImage: { url: "https://cdn.example.com/main-domain-og.jpg", width: 1200, height: 630 },
+      favicon: { url: "https://cdn.example.com/favicon-32.png", width: 32, height: 32 },
+      faviconSizes: [{ url: "https://cdn.example.com/favicon-32.png", width: 32, height: 32 }],
+    });
+
+    expect(window.location.pathname).toBe("/product/havells-bldc-fan");
+    expect(document.head.querySelector('meta[property="og:type"]')?.getAttribute("content")).toBe("product");
+    expect(document.head.querySelector('meta[property="og:image"]')?.getAttribute("content")).toBe(product.imageUrl);
+    expect(document.head.querySelector('link[rel="canonical"]')?.getAttribute("href")).toBe("http://localhost/product/havells-bldc-fan");
     expect(document.head.querySelector('link[rel="icon"]')?.getAttribute("href")).toContain("favicon-32.png?v=");
   });
 });
