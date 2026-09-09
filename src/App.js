@@ -37,6 +37,8 @@ const AboutPage = lazy(() => import('./components/site/AboutPage').then((module)
 const ContactPage = lazy(() => import('./components/site/ContactPage').then((module) => ({ default: module.ContactPage })));
 const PrivacyPolicyPage = lazy(() => import('./components/site/LegalPages').then((module) => ({ default: module.PrivacyPolicyPage })));
 const TermsConditionsPage = lazy(() => import('./components/site/LegalPages').then((module) => ({ default: module.TermsConditionsPage })));
+const ShippingPolicyPage = lazy(() => import('./components/site/LegalPages').then((module) => ({ default: module.ShippingPolicyPage })));
+const ReturnRefundPolicyPage = lazy(() => import('./components/site/LegalPages').then((module) => ({ default: module.ReturnRefundPolicyPage })));
 
 const SITE_URL = 'https://www.prakashshop.in';
 const ADMIN_ROUTE = '/prakash-control-panel@1999';
@@ -103,6 +105,18 @@ const routeMeta = [
     keywords: 'Prakash Electronics terms and conditions, product order terms, repair booking terms, delivery terms',
   },
   {
+    match: (path) => path === '/shipping-policy',
+    title: 'Shipping Policy | Prakash Electronics',
+    description: 'Read delivery areas, charges, tracking, delivery attempts, and failed-delivery refund information for Prakash Electronics orders.',
+    keywords: 'Prakash Electronics shipping policy, delivery policy, order tracking',
+  },
+  {
+    match: (path) => path === '/return-refund-policy',
+    title: 'Return & Refund Policy | Prakash Electronics',
+    description: 'Read cancellation eligibility and refund timelines for paid Prakash Electronics product orders.',
+    keywords: 'Prakash Electronics refund policy, cancellation policy, return policy',
+  },
+  {
     match: (path) => path === '/learn-more',
     title: 'Electronics Repair Services | Prakash Electronics Chitarpur',
     description: 'Explore electronics and home-appliance repair services from Prakash Electronics in Chitarpur, including TV, fan, cooler, AC, and speaker repairs.',
@@ -130,7 +144,7 @@ const routeMeta = [
     robots: 'noindex, nofollow',
   },
   {
-    match: (path) => path.startsWith('/product-detail/'),
+    match: (path) => path.startsWith('/product/') || path.startsWith('/product-detail/'),
     title: 'Product Detail | Prakash Electronics and Electricals',
     description: 'View electronics product details, availability, price, and booking options at Prakash Electronics and Electricals.',
     keywords: 'electronics shop, product detail, wiring accessories, electrical accessories',
@@ -429,6 +443,22 @@ function App() {
     );
   }
 
+  if (window.location.pathname === '/shipping-policy') {
+    return (
+      <PublicShell>
+        <LazyScreen><ShippingPolicyPage /></LazyScreen>
+      </PublicShell>
+    );
+  }
+
+  if (window.location.pathname === '/return-refund-policy') {
+    return (
+      <PublicShell>
+        <LazyScreen><ReturnRefundPolicyPage /></LazyScreen>
+      </PublicShell>
+    );
+  }
+
   if (window.location.pathname === '/cart' || params.get('page') === 'cart') {
     return (
       <PublicShell>
@@ -479,7 +509,7 @@ function App() {
     );
   }
 
-  if (window.location.pathname.startsWith('/product-detail/')) {
+  if (window.location.pathname.startsWith('/product/') || window.location.pathname.startsWith('/product-detail/')) {
     return (
       <PublicShell>
         <LazyScreen>

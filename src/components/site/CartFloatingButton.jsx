@@ -5,7 +5,7 @@ import { CANONICAL_WIRING_PARTS_PATH } from "../../utils/routes";
 
 function productDetailWithoutLowerActions() {
   if (typeof window === "undefined") return false;
-  return window.location.pathname.startsWith("/product-detail/");
+  return window.location.pathname.startsWith("/product/") || window.location.pathname.startsWith("/product-detail/");
 }
 
 function routeLowerFloatingActionCount() {

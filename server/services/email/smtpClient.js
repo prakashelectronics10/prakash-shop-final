@@ -59,6 +59,28 @@ function stripHtml(html = "") {
     .trim();
 }
 
+function wrapBase64(value) {
+  return String(value || "").match(/.{1,76}/g)?.join("\r\n") || "";
+}
+
+function normalizeAttachments(attachments = []) {
+  return (Array.isArray(attachments) ? attachments : [])
+    .filter((item) => item && item.content && (item.filename || item.name))
+    .map((item, index) => {
+      const filename = String(item.filename || item.name || `attachment-${index + 1}`)
+        .replace(/[\r\n"\\]/g, "-")
+        .slice(0, 120);
+      const content = Buffer.isBuffer(item.content)
+        ? item.content
+        : Buffer.from(String(item.content), item.encoding === "base64" ? "base64" : "utf8");
+      return {
+        filename,
+        contentType: String(item.contentType || item.mimeType || "application/octet-stream").replace(/[\r\n]/g, ""),
+        base64: content.toString("base64"),
+      };
+    });
+}
+
 function buildMimeMessage(message) {
   const from = parseEmailAddress(message.from || env.smtp.from, env.mail?.fromName || "Prakash Electronics");
   const to = normalizeRecipients(message.to).map((item) => parseEmailAddress(item));
@@ -68,7 +90,9 @@ function buildMimeMessage(message) {
   const subject = String(message.subject || "").trim();
   const text = String(message.text || stripHtml(message.html) || "");
   const html = String(message.html || "");
-  const boundary = `prakash_${crypto.randomBytes(12).toString("hex")}`;
+  const boundary = `prakash_alt_${crypto.randomBytes(12).toString("hex")}`;
+  const mixedBoundary = `prakash_mixed_${crypto.randomBytes(12).toString("hex")}`;
+  const attachments = normalizeAttachments(message.attachments);
   const headers = [
     `From: ${formatAddress(from)}`,
     `To: ${to.map(formatAddress).join(", ")}`,
@@ -79,6 +103,61 @@ function buildMimeMessage(message) {
     "Auto-Submitted: auto-generated",
     "X-Auto-Response-Suppress: OOF, AutoReply",
   ];
+
+  if (attachments.length) {
+    const bodyParts = html
+      ? [
+          `--${mixedBoundary}`,
+          `Content-Type: multipart/alternative; boundary="${boundary}"`,
+          "",
+          `--${boundary}`,
+          'Content-Type: text/plain; charset="UTF-8"',
+          "Content-Transfer-Encoding: 8bit",
+          "",
+          text,
+          "",
+          `--${boundary}`,
+          'Content-Type: text/html; charset="UTF-8"',
+          "Content-Transfer-Encoding: 8bit",
+          "",
+          html,
+          "",
+          `--${boundary}--`,
+          "",
+        ]
+      : [
+          `--${mixedBoundary}`,
+          'Content-Type: text/plain; charset="UTF-8"',
+          "Content-Transfer-Encoding: 8bit",
+          "",
+          text,
+          "",
+        ];
+
+    attachments.forEach((attachment) => {
+      bodyParts.push(
+        `--${mixedBoundary}`,
+        `Content-Type: ${attachment.contentType}; name="${attachment.filename}"`,
+        "Content-Transfer-Encoding: base64",
+        `Content-Disposition: attachment; filename="${attachment.filename}"`,
+        "",
+        wrapBase64(attachment.base64),
+        "",
+      );
+    });
+    bodyParts.push(`--${mixedBoundary}--`, "");
+
+    return {
+      from: from.email,
+      to: to.map((item) => item.email),
+      raw: [
+        ...headers,
+        `Content-Type: multipart/mixed; boundary="${mixedBoundary}"`,
+        "",
+        ...bodyParts,
+      ].join("\r\n"),
+    };
+  }
 
   if (html) {
     return {
@@ -214,6 +293,7 @@ async function sendSmtpEmail(message) {
 
 module.exports = {
   assertSmtpConfigured,
+  buildMimeMessage,
   isSmtpConfigured,
   sendSmtpEmail,
 };

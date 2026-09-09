@@ -54,6 +54,14 @@ const {
   updateAutoSliderBanner,
   deleteAutoSliderBanner,
 } = require("../controllers/autoSliderBannerController");
+const {
+  listPulseAIInstructions,
+  createPulseAIInstruction,
+  updatePulseAIInstruction,
+  deletePulseAIInstruction,
+  getPulseAIUnavailableDemandSettings,
+  updatePulseAIUnavailableDemandSettings,
+} = require("../controllers/pulseAIAdminController");
 const { validateBody } = require("../middleware/validate");
 const {
   categorySchema,
@@ -68,11 +76,32 @@ const {
   adminUpdateSchema,
   notificationEmailCreateSchema,
   notificationEmailUpdateSchema,
+  pulseAIInstructionSchema,
+  pulseAIUnavailableDemandSettingsSchema,
+  couponSchema,
 } = require("../validations/adminSchemas");
+const {
+  listAdminCoupons,
+  createCoupon,
+  updateCoupon,
+  deleteCoupon,
+} = require("../controllers/couponController");
 
 const router = express.Router();
 
 router.get("/dashboard", dashboard);
+
+router.get("/pulse-ai-instructions", requirePermission("pulseAI"), listPulseAIInstructions);
+router.post("/pulse-ai-instructions", requirePermission("pulseAI"), validateBody(pulseAIInstructionSchema), createPulseAIInstruction);
+router.put("/pulse-ai-instructions/:id", requirePermission("pulseAI"), validateBody(pulseAIInstructionSchema), updatePulseAIInstruction);
+router.delete("/pulse-ai-instructions/:id", requirePermission("pulseAI"), deletePulseAIInstruction);
+router.get("/pulse-ai-demand-settings", requireSuperAdmin, getPulseAIUnavailableDemandSettings);
+router.put("/pulse-ai-demand-settings", requireSuperAdmin, validateBody(pulseAIUnavailableDemandSettingsSchema), updatePulseAIUnavailableDemandSettings);
+
+router.get("/coupons", requirePermission("coupons"), listAdminCoupons);
+router.post("/coupons", requirePermission("coupons"), validateBody(couponSchema), createCoupon);
+router.put("/coupons/:id", requirePermission("coupons"), validateBody(couponSchema), updateCoupon);
+router.delete("/coupons/:id", requirePermission("coupons"), deleteCoupon);
 
 router.get("/admins", requireSuperAdmin, listAdmins);
 router.post("/admins", requireSuperAdmin, validateBody(adminCreateSchema), requestCreateAdminOtp);
@@ -129,8 +158,8 @@ router.post("/web-settings/favicon", requirePermission("webSettings"), upload.si
 router.delete("/web-settings/favicon", requirePermission("webSettings"), deleteFavicon);
 
 router.post("/profile-image", upload.single("image"), updateProfileImage);
-router.post("/upload/image", requirePermission("offers", "shopHighlights", "services", "featuredRepairs", "gallery", "testimonials", "about", "footer", "projectParts", "projectSliders", "brandsSlider", "shopProducts", "autoSliderBanners", "webSettings", "invoices"), upload.single("image"), uploadImage);
+router.post("/upload/image", requirePermission("offers", "coupons", "shopHighlights", "services", "featuredRepairs", "gallery", "testimonials", "about", "footer", "projectParts", "projectSliders", "brandsSlider", "shopProducts", "autoSliderBanners", "webSettings", "invoices"), upload.single("image"), uploadImage);
 router.post("/upload/images", requirePermission("offers", "shopHighlights", "services", "featuredRepairs", "gallery", "testimonials", "about", "footer", "projectParts", "projectSliders", "brandsSlider", "shopProducts", "autoSliderBanners", "webSettings", "invoices"), upload.array("images", 8), uploadImages);
-router.delete("/upload/image", requirePermission("offers", "shopHighlights", "services", "featuredRepairs", "gallery", "testimonials", "about", "footer", "projectParts", "projectSliders", "brandsSlider", "shopProducts", "autoSliderBanners", "webSettings", "invoices"), deleteUploadedImage);
+router.delete("/upload/image", requirePermission("offers", "coupons", "shopHighlights", "services", "featuredRepairs", "gallery", "testimonials", "about", "footer", "projectParts", "projectSliders", "brandsSlider", "shopProducts", "autoSliderBanners", "webSettings", "invoices"), deleteUploadedImage);
 
 module.exports = router;

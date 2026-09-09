@@ -329,7 +329,7 @@ const createBooking = asyncHandler(async (req, res) => {
     req.body.repairType = productSummary.repairType;
   }
 
-  const requiredFields = ["fullName", "customerEmail", "phoneNumber", "whatsappNumber", "address", "pincode", "repairType"];
+  const requiredFields = ["fullName", "customerEmail", "phoneNumber", "whatsappNumber", "pincode", "repairType"];
   const missing = requiredFields.find((field) => !String(req.body[field] || "").trim());
   if (missing) throw new AppError(`${missing} is required`, 400);
   const customerEmail = String(req.body.customerEmail || "").trim().toLowerCase();
@@ -345,11 +345,7 @@ const createBooking = asyncHandler(async (req, res) => {
   if (!/^\d{6}$/.test(pincode)) throw new AppError("Pincode must be exactly 6 digits", 400);
   const landmark = safeString(req.body.landmark, 200);
 
-  const addressCheck = await validateAddress(String(req.body.address || "").trim());
-  if (!addressCheck.valid) {
-    throw new AppError(addressCheck.reason || "Please enter a real, verifiable location / address", 400);
-  }
-  const verifiedAddress = addressCheck.address || String(req.body.address || "").trim();
+  const submittedAddress = safeString(req.body.address, 500);
 
   await validateBookingStock(bookingProducts);
 
@@ -403,7 +399,7 @@ const createBooking = asyncHandler(async (req, res) => {
     customerEmail: emailCheck.email || customerEmail,
     phoneNumber,
     whatsappNumber,
-    address: verifiedAddress,
+    address: submittedAddress,
     pincode,
     landmark,
     repairType: req.body.repairType,

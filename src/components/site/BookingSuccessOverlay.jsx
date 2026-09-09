@@ -119,7 +119,13 @@ function spawnCssConfetti(container, { dense = false } = {}) {
  * 2) after a short delay Success check plays once
  * 3) translucent blur backdrop clears when the sequence finishes
  */
-export function BookingSuccessOverlay({ open, onDone }) {
+export function SuccessCelebrationOverlay({
+  open,
+  onDone,
+  title = "Success",
+  subtitle = "Your request was completed successfully.",
+  ariaLabel = "Success",
+}) {
   const confettiRef = useRef(null);
   const successRef = useRef(null);
   const cssConfettiRef = useRef(null);
@@ -207,7 +213,7 @@ export function BookingSuccessOverlay({ open, onDone }) {
         rendererSettings: {
           preserveAspectRatio: "xMidYMid meet",
           progressiveLoad: true,
-          title: "Booking success",
+          title: ariaLabel,
         },
       });
 
@@ -336,7 +342,7 @@ export function BookingSuccessOverlay({ open, onDone }) {
       destroyAnimations();
       document.body.style.overflow = previousOverflow;
     };
-  }, [open, clearTimers, destroyAnimations, finish]);
+  }, [open, ariaLabel, clearTimers, destroyAnimations, finish]);
 
   if (!open) return null;
 
@@ -345,7 +351,7 @@ export function BookingSuccessOverlay({ open, onDone }) {
       className={`booking-success-overlay ${ready ? "is-ready" : ""}`}
       role="dialog"
       aria-modal="true"
-      aria-label="Booking submitted successfully"
+      aria-label={ariaLabel}
     >
       <div className="booking-success-backdrop" aria-hidden="true" />
       <div ref={cssConfettiRef} className="booking-css-confetti" aria-hidden="true" />
@@ -357,9 +363,20 @@ export function BookingSuccessOverlay({ open, onDone }) {
             className={`booking-success-check ${phase === "success" ? "is-visible" : ""}`}
           />
         </div>
-        <p className="booking-success-message">Booking submitted successfully</p>
-        <p className="booking-success-submessage">We will contact you soon.</p>
+        <p className="booking-success-message">{title}</p>
+        <p className="booking-success-submessage">{subtitle}</p>
       </div>
     </div>
+  );
+}
+
+export function BookingSuccessOverlay(props) {
+  return (
+    <SuccessCelebrationOverlay
+      {...props}
+      title="Booking submitted successfully"
+      subtitle="We will contact you soon."
+      ariaLabel="Booking submitted successfully"
+    />
   );
 }

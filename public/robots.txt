@@ -1,4 +1,8 @@
 User-agent: *
 Allow: /
+Disallow: /prakash-control-panel@1999
+Disallow: /checkout
+Disallow: /cart
+Disallow: /orders
 
 Sitemap: https://www.prakashshop.in/sitemap.xml

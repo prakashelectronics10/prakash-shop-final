@@ -23,6 +23,34 @@ const shopProductSchema = new mongoose.Schema(
       },
     ],
     tags: [{ type: String, trim: true }],
+    sku: { type: String, trim: true, uppercase: true, sparse: true, unique: true, index: true },
+    brand: { type: String, trim: true, default: "" },
+    gtin: { type: String, trim: true, default: "" },
+    mpn: { type: String, trim: true, default: "" },
+    manufacturer: { type: String, trim: true, default: "" },
+    modelNumber: { type: String, trim: true, default: "" },
+    condition: { type: String, enum: ["new", "refurbished", "used"], default: "new" },
+    productType: { type: String, trim: true, default: "" },
+    googleProductCategory: { type: String, trim: true, default: "" },
+    warranty: { type: String, trim: true, default: "" },
+    weight: {
+      value: { type: Number, min: 0, default: null },
+      unit: { type: String, enum: ["g", "kg"], default: "kg" },
+    },
+    dimensions: {
+      length: { type: Number, min: 0, default: null },
+      width: { type: Number, min: 0, default: null },
+      height: { type: Number, min: 0, default: null },
+      unit: { type: String, enum: ["cm", "in"], default: "cm" },
+    },
+    shipping: {
+      serviceArea: { type: String, trim: true, default: "" },
+      dispatchTime: { type: String, trim: true, default: "" },
+      deliveryEstimate: { type: String, trim: true, default: "" },
+      chargeNote: { type: String, trim: true, default: "" },
+    },
+    seoTitle: { type: String, trim: true, default: "" },
+    seoDescription: { type: String, trim: true, default: "" },
     specifications: [
       {
         label: { type: String, trim: true },
@@ -53,6 +81,7 @@ shopProductSchema.index({ isActive: 1, isTopProduct: 1, displayOrder: 1 });
 
 shopProductSchema.pre("validate", function setSlug(next) {
   if (!this.slug && this.name) this.slug = slugify(this.name);
+  if (!this.sku && this._id) this.sku = `PE-${String(this._id).slice(-10).toUpperCase()}`;
   next();
 });
 

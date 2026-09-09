@@ -3,6 +3,8 @@ const ShopProduct = require("../models/ShopProduct");
 const ProjectPart = require("../models/ProjectPart");
 const { isConnected } = require("../config/db");
 const { resolveProductPricing } = require("../utils/productPricing");
+const { availableStockQuantity } = require("../utils/inventory");
+const { listPublicCouponsForProduct } = require("./couponService");
 
 const DEFAULT_SITE_NAME = "Prakash Electronics and Electricals";
 const DEFAULT_DESCRIPTION = "Electronics products, accessories, and science project parts from Prakash Electronics.";
@@ -38,27 +40,40 @@ function productIdentifier(product = {}) {
 
 function serializeProductMeta(product, { origin, sourceType }) {
   const identifier = productIdentifier(product);
-  const url = `${origin}/product-detail/${encodeURIComponent(identifier)}`;
-  const title = trimText(product.name, DEFAULT_SITE_NAME, 90);
+  const url = `${origin}/product/${encodeURIComponent(identifier)}`;
+  const name = trimText(product.name, DEFAULT_SITE_NAME, 150);
+  const title = trimText(product.seoTitle || product.name, DEFAULT_SITE_NAME, 90);
   const description = trimText(
-    product.shortDescription || product.description,
+    product.seoDescription || product.shortDescription || product.description,
     `${title} is available at Prakash Electronics.`,
     220,
   );
   const rawImage = product.imageUrl || product.images?.find((item) => item?.url)?.url || "/og-image.jpg";
   const image = absoluteUrl(cloudinaryOgImage(rawImage), origin);
   const price = resolveProductPricing(product).price;
-  const unavailable = /out of stock|not available/i.test(String(product.availability || ""));
+  const unavailable = availableStockQuantity(product, sourceType === "project-part" ? "stock" : "quantity") < 1
+    || /out of stock|not available/i.test(String(product.availability || ""));
+  const images = [rawImage, ...(product.images || []).map((item) => item?.url)]
+    .filter(Boolean)
+    .filter((value, index, list) => list.indexOf(value) === index)
+    .map((value) => absoluteUrl(value, origin));
 
   return {
+    name,
     title,
     description,
     image,
-    imageAlt: title,
+    images,
+    imageAlt: name,
     url,
     type: "product",
     sourceType,
-    sku: String(product._id || identifier),
+    sku: String(product.sku || product._id || identifier),
+    brand: trimText(product.brand, "", 80),
+    gtin: String(product.gtin || "").trim(),
+    mpn: String(product.mpn || "").trim(),
+    modelNumber: String(product.modelNumber || "").trim(),
+    condition: String(product.condition || "new").trim(),
     category: trimText(product.category, sourceType === "project-part" ? "Wiring Accessories" : "Electronics", 80),
     tags: Array.isArray(product.tags) ? product.tags.map((tag) => trimText(tag, "", 60)).filter(Boolean).slice(0, 12) : [],
     price: Number.isFinite(price) && price >= 0 ? price : null,
@@ -77,16 +92,22 @@ async function findProductForMetadata(identifier, origin) {
 
   const [shopProduct, projectPart] = await Promise.all([
     ShopProduct.findOne(query)
-      .select("name slug shortDescription description category mrp discountPercent price quantity availability imageUrl images tags isActive")
+      .select("name slug shortDescription description seoTitle seoDescription category mrp discountPercent price quantity availability imageUrl images tags isActive sku brand gtin mpn modelNumber condition")
       .maxTimeMS(5000)
       .lean(),
     ProjectPart.findOne(query)
-      .select("name slug shortDescription description category subCategory mrp discountPercent price stock availability imageUrl tags isActive")
+      .select("name slug shortDescription description seoTitle seoDescription category subCategory mrp discountPercent price stock availability imageUrl images tags isActive sku brand gtin mpn modelNumber condition")
       .maxTimeMS(5000)
       .lean(),
   ]);
 
-  if (shopProduct) return serializeProductMeta(shopProduct, { origin, sourceType: "shop-product" });
+  if (shopProduct) {
+    const metadata = serializeProductMeta(shopProduct, { origin, sourceType: "shop-product" });
+    metadata.publicOffers = Number.isFinite(metadata.price)
+      ? await listPublicCouponsForProduct(shopProduct, metadata.price).catch(() => [])
+      : [];
+    return metadata;
+  }
   if (projectPart) return serializeProductMeta(projectPart, { origin, sourceType: "project-part" });
   return null;
 }

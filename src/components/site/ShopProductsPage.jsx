@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowLeft, Check, Filter, PackageSearch, Search, ShoppingBag, ShoppingCart, Tag, X } from "lucide-react";
+import toast from "react-hot-toast";
+import { ArrowLeft, ArrowUpRight, BadgePercent, Check, Expand, Filter, PackageSearch, Search, ShoppingBag, ShoppingCart, Tag, X } from "lucide-react";
 import { apiRequest } from "../../api/client";
 import { isWiringAccessoriesCategory, cartStockMessage, getCartStockLimit, useCart, useCartActions, useCartQuantity } from "../../context/CartContext";
 import { Navbar } from "./Navbar";
@@ -11,6 +12,8 @@ import { ProductShareButton } from "./ProductShareButton";
 import { ProductPriceDisplay } from "./ProductPriceDisplay";
 import { CatalogInfiniteLoader } from "./CatalogInfiniteLoader";
 import { RelatedProductsSection } from "./RelatedProductsSection";
+import { Lightbox } from "./Lightbox";
+import { SuccessCelebrationOverlay } from "./BookingSuccessOverlay";
 import { CatalogGridSkeleton, EmptyProductsState, LoadingState } from "./StateLottie";
 import { applyProductPageMeta, getProductSharePath } from "../../utils/productShare";
 import { trackProductPageView } from "../../utils/productViews";
@@ -20,8 +23,9 @@ import {
   normalizeTag,
   readSearchQueryFromLocation,
 } from "../../utils/productSearch";
-import { formatINR } from "../../utils/productPricing";
+import { formatINR, resolveProductPricing } from "../../utils/productPricing";
 import { notifyCartResult } from "../../utils/cartToast";
+import { getAppliedCouponCode, setAppliedCouponCode } from "../../utils/coupons";
 import {
   CATALOG_CACHE_TTL_MS,
   SHOP_CATALOG_CACHE_KEY,
@@ -128,6 +132,148 @@ function ExpandableDescription({ text }) {
         </button>
       ) : null}
     </div>
+  );
+}
+
+function productGalleryItems(product = {}) {
+  const rawItems = [
+    product.imageUrl ? { src: product.imageUrl, label: `${product.name} product image` } : null,
+    ...(Array.isArray(product.images) ? product.images.map((item, index) => ({
+      src: item?.url,
+      label: item?.alt || `${product.name} product image ${index + 2}`,
+    })) : []),
+  ].filter((item) => item?.src);
+  const seen = new Set();
+  return rawItems.filter((item) => {
+    if (seen.has(item.src)) return false;
+    seen.add(item.src);
+    return true;
+  });
+}
+
+function ProductGallery({ product }) {
+  const items = useMemo(() => productGalleryItems(product), [product]);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [lightboxIndex, setLightboxIndex] = useState(null);
+  const active = items[activeIndex];
+
+  if (!active) return <div className="product-gallery-empty"><PackageSearch size={70} /></div>;
+  return (
+    <div className="product-gallery">
+      <button type="button" className="product-gallery-stage" onClick={() => setLightboxIndex(activeIndex)} aria-label={`Open ${active.label} fullscreen`}>
+        <OptimizedImage src={active.src} alt={active.label} className="part-detail-image" width={900} height={900} decoding="async" fetchPriority="high" sizes="(min-width: 1024px) 42vw, 100vw" />
+        <span className="product-gallery-expand"><Expand size={17} /> View full size</span>
+      </button>
+      {items.length > 1 && (
+        <div className="product-gallery-thumbnails" aria-label="Product images">
+          {items.map((item, index) => (
+            <button type="button" className={index === activeIndex ? "active" : ""} onClick={() => setActiveIndex(index)} aria-label={`Show ${item.label}`} aria-current={index === activeIndex ? "true" : undefined} key={item.src}>
+              <OptimizedImage src={item.src} alt="" width={96} height={96} loading="lazy" />
+            </button>
+          ))}
+        </div>
+      )}
+      <Lightbox items={items} index={lightboxIndex} onClose={() => setLightboxIndex(null)} onIndexChange={(index) => { setLightboxIndex(index); setActiveIndex(index); }} />
+    </div>
+  );
+}
+
+function DetailFact({ label, value }) {
+  if (value === "" || value === null || value === undefined) return null;
+  return <div><span>{label}</span><strong>{value}</strong></div>;
+}
+
+function ProductInformation({ product }) {
+  const dimensions = product.dimensions;
+  const dimensionText = dimensions && [dimensions.length, dimensions.width, dimensions.height].every((value) => Number(value) > 0)
+    ? `${dimensions.length} × ${dimensions.width} × ${dimensions.height} ${dimensions.unit || "cm"}`
+    : "";
+  const weightText = Number(product.weight?.value) > 0 ? `${product.weight.value} ${product.weight.unit || "kg"}` : "";
+  const merchantFacts = [
+    ["SKU", product.sku], ["Brand", product.brand], ["Model", product.modelNumber],
+    ["Manufacturer", product.manufacturer], ["MPN", product.mpn], ["GTIN", product.gtin],
+    ["Condition", product.condition ? `${product.condition.charAt(0).toUpperCase()}${product.condition.slice(1)}` : ""],
+    ["Warranty", product.warranty], ["Weight", weightText], ["Dimensions", dimensionText],
+  ].filter(([, value]) => value);
+  const shippingFacts = [
+    ["Service area", product.shipping?.serviceArea],
+    ["Dispatch", product.shipping?.dispatchTime],
+    ["Delivery estimate", product.shipping?.deliveryEstimate],
+    ["Delivery charges", product.shipping?.chargeNote],
+  ].filter(([, value]) => value);
+  const specifications = Array.isArray(product.specifications) ? product.specifications.filter((item) => item?.label || item?.value) : [];
+  if (!merchantFacts.length && !shippingFacts.length && !specifications.length) return null;
+  return (
+    <section className="product-information-panel" aria-labelledby="product-information-title">
+      <header><p className="parts-kicker">Complete information</p><h2 id="product-information-title">Product details</h2></header>
+      {specifications.length > 0 && <div className="product-information-grid">{specifications.map((item) => <DetailFact label={item.label || "Specification"} value={item.value} key={`${item.label}-${item.value}`} />)}</div>}
+      {merchantFacts.length > 0 && <><h3>Identification &amp; specifications</h3><div className="product-information-grid">{merchantFacts.map(([label, value]) => <DetailFact label={label} value={value} key={label} />)}</div></>}
+      {shippingFacts.length > 0 && <><h3>Shipping information</h3><div className="product-information-grid">{shippingFacts.map(([label, value]) => <DetailFact label={label} value={value} key={label} />)}</div></>}
+    </section>
+  );
+}
+
+function AdaptiveOfferBanner({ offer }) {
+  const [aspectRatio, setAspectRatio] = useState(16 / 9);
+
+  const handleLoad = useCallback((event) => {
+    const width = Number(event.currentTarget.naturalWidth || 0);
+    const height = Number(event.currentTarget.naturalHeight || 0);
+    if (width > 0 && height > 0) setAspectRatio(width / height);
+  }, []);
+
+  return (
+    <div
+      className="public-offer-banner-frame"
+      style={{ "--offer-image-ratio": String(aspectRatio) }}
+    >
+      <OptimizedImage
+        className="public-offer-banner"
+        src={offer.bannerImageUrl}
+        alt={`${offer.title} offer`}
+        width={900}
+        height={600}
+        sizes="(min-width: 760px) 700px, calc(100vw - 1.5rem)"
+        onLoad={handleLoad}
+      />
+    </div>
+  );
+}
+
+function ProductCouponOffers({ offers, appliedCoupon, onApply, privateCode, onPrivateCodeChange, onApplyPrivate, applying, error }) {
+  const hasOffers = offers.length > 0;
+  const expiryText = (value) => value
+    ? `Valid until ${new Date(value).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}`
+    : "No fixed expiry";
+  return (
+    <section className="product-coupon-area" aria-labelledby="product-offers-title">
+      <div className="product-coupon-heading">
+        <span><BadgePercent size={24} /></span>
+        <div><p>Coupons &amp; offers</p><h2 id="product-offers-title">Save more on this product</h2></div>
+      </div>
+      {hasOffers && <div className="public-offer-grid">{offers.map((offer) => {
+        const isApplied = appliedCoupon?.code === offer.code;
+        return (
+          <article className={`public-offer-card ${offer.bannerImageUrl ? "has-banner" : ""} ${offer.imageLayout === "thumbnail" ? "offer-layout-thumbnail" : "offer-layout-banner"} ${isApplied ? "is-applied" : ""}`} key={offer.id || offer.code}>
+            {offer.bannerImageUrl && offer.imageLayout !== "thumbnail" ? <AdaptiveOfferBanner key={offer.bannerImageUrl} offer={offer} /> : null}
+            <div className="public-offer-content">
+              {offer.bannerImageUrl && offer.imageLayout === "thumbnail" ? <AdaptiveOfferBanner key={offer.bannerImageUrl} offer={offer} /> : <span className="public-offer-icon"><BadgePercent size={26} /></span>}
+              <div className="public-offer-copy">
+                <div className="public-offer-title-row"><h3>{offer.title}</h3>{isApplied && <em><Check size={14} /> Applied</em>}</div>
+                {offer.description && <p>{offer.description}</p>}
+                <div className="public-offer-meta"><code>{offer.code}</code><span>Save {formatINR(offer.discountAmount)}</span><small>{expiryText(offer.endsAt)}</small></div>
+              </div>
+              <div className="public-offer-action"><strong>{formatINR(offer.finalPrice)}</strong><small>after offer</small>{!isApplied && <button type="button" onClick={() => onApply(offer)}>Apply <ArrowUpRight size={16} /></button>}</div>
+            </div>
+          </article>
+        );
+      })}</div>}
+      <form className="private-coupon-form" onSubmit={onApplyPrivate}>
+        <div><strong>Have a private coupon?</strong><small>Enter the code shared with you by Prakash Electronics.</small></div>
+        <label><span className="sr-only">Private coupon code</span><input value={privateCode} onChange={(event) => onPrivateCodeChange(event.target.value)} placeholder="Enter coupon code" autoComplete="off" /><button className={privateCode && appliedCoupon?.code === privateCode ? "is-applied" : ""} type="submit" disabled={applying || !privateCode.trim() || appliedCoupon?.code === privateCode}>{applying ? "Checking…" : privateCode && appliedCoupon?.code === privateCode ? <><Check size={16} /> Applied</> : "Apply"}</button></label>
+      </form>
+      {error && <p className="private-coupon-error" role="alert">{error}</p>}
+    </section>
   );
 }
 
@@ -459,11 +605,18 @@ export function ShopProductsPage() {
 export function ProductDetailPage() {
   const { addItem, getQuantity } = useCart();
   const pathParts = window.location.pathname.split("/").filter(Boolean);
-  const id = pathParts[0] === "product-detail" ? pathParts[1] : "";
+  const id = ["product", "product-detail"].includes(pathParts[0]) ? pathParts[1] : "";
   const [product, setProduct] = useState(null);
   const [source, setSource] = useState("shop");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [publicOffers, setPublicOffers] = useState([]);
+  const [appliedCoupon, setAppliedCoupon] = useState(null);
+  const [privateCode, setPrivateCode] = useState("");
+  const [couponError, setCouponError] = useState("");
+  const [couponApplying, setCouponApplying] = useState(false);
+  const [lastValidatedCoupon, setLastValidatedCoupon] = useState(null);
+  const [showCouponSuccess, setShowCouponSuccess] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -498,11 +651,97 @@ export function ProductDetailPage() {
   }, [id]);
 
   useEffect(() => {
-    if (product) {
-      applyProductPageMeta(product);
-      trackProductPageView(product);
+    if (!product || source !== "shop") {
+      setPublicOffers([]);
+      setAppliedCoupon(null);
+      return undefined;
     }
+    let mounted = true;
+    async function loadCoupons() {
+      setCouponError("");
+      setLastValidatedCoupon(null);
+      try {
+        const response = await apiRequest(`/coupons/product/${encodeURIComponent(product._id || product.slug)}`, { cache: "no-store" });
+        if (!mounted) return;
+        const offers = Array.isArray(response.data?.coupons) ? response.data.coupons : [];
+        setPublicOffers(offers);
+        const storedCode = getAppliedCouponCode(product);
+        if (storedCode) {
+          try {
+            const validated = await apiRequest("/coupons/validate", { method: "POST", cache: "no-store", body: JSON.stringify({ productId: product._id || product.slug, code: storedCode }) });
+            if (!mounted) return;
+            setAppliedCoupon(validated.data);
+            setAppliedCouponCode(validated.data.code, product);
+            if (validated.data?.visibility === "private") setLastValidatedCoupon(validated.data);
+            setPrivateCode(validated.data?.visibility === "private" ? storedCode : "");
+            return;
+          } catch (_invalidStoredCoupon) {
+            // A coupon for another product should not block this product's best public offer.
+          }
+        }
+        const bestOffer = offers[0] || null;
+        setAppliedCoupon(bestOffer);
+        setAppliedCouponCode(bestOffer?.code || "", product);
+      } catch (_couponLoadError) {
+        if (mounted) setPublicOffers([]);
+      }
+    }
+    loadCoupons();
+    return () => { mounted = false; };
+  }, [product, source]);
+
+  useEffect(() => {
+    if (product) {
+      applyProductPageMeta(product, publicOffers);
+    }
+  }, [product, publicOffers]);
+
+  useEffect(() => {
+    if (product) trackProductPageView(product);
   }, [product]);
+
+  const applyPublicOffer = (offer) => {
+    setAppliedCoupon(offer);
+    setAppliedCouponCode(offer.code, product);
+    setPrivateCode("");
+    setCouponError("");
+  };
+
+  const changePrivateCouponCode = (value) => {
+    const safeCode = String(value || "").toUpperCase().replace(/\s+/g, "");
+    setPrivateCode(safeCode);
+    setCouponError("");
+    if (lastValidatedCoupon?.code === safeCode) {
+      setAppliedCoupon(lastValidatedCoupon);
+      setAppliedCouponCode(lastValidatedCoupon.code, product);
+      return;
+    }
+    if (appliedCoupon?.visibility === "private") {
+      const fallback = publicOffers[0] || null;
+      setAppliedCoupon(fallback);
+      setAppliedCouponCode(fallback?.code || "", product);
+    }
+  };
+
+  const applyPrivateCoupon = async (event) => {
+    event.preventDefault();
+    if (!product || !privateCode.trim()) return;
+    setCouponApplying(true);
+    setCouponError("");
+    try {
+      const response = await apiRequest("/coupons/validate", { method: "POST", cache: "no-store", body: JSON.stringify({ productId: product._id || product.slug, code: privateCode }) });
+      setAppliedCoupon(response.data);
+      setLastValidatedCoupon(response.data);
+      setAppliedCouponCode(response.data.code, product);
+      toast.success(`${response.data.code} applied. You saved ${formatINR(response.data.discountAmount)}.`, { id: "coupon-apply" });
+      setShowCouponSuccess(true);
+    } catch (couponApplyError) {
+      setCouponError(couponApplyError.message || "This coupon could not be applied.");
+      toast.error(couponApplyError.message || "This coupon could not be applied.", { id: "coupon-apply" });
+    } finally {
+      setCouponApplying(false);
+    }
+  };
 
   const bookNow = () => {
     if (!product) return;
@@ -529,10 +768,31 @@ export function ProductDetailPage() {
     sourceType: source === "project-part" || product.sourceType === "project-part" ? "project-part" : "shop-product",
   }) : 0;
   const detailStockLimit = product ? getCartStockLimit(product) : 0;
+  const displayedProduct = useMemo(() => {
+    if (!product || !appliedCoupon || !Number.isFinite(Number(appliedCoupon.finalPrice))) return product;
+    const basePricing = resolveProductPricing(product);
+    const finalPrice = Number(appliedCoupon.finalPrice);
+    const comparisonPrice = Number.isFinite(Number(basePricing.mrp)) && Number(basePricing.mrp) > finalPrice
+      ? Number(basePricing.mrp)
+      : Number(basePricing.price);
+    return {
+      ...product,
+      mrp: Number.isFinite(comparisonPrice) && comparisonPrice > finalPrice ? comparisonPrice : product.mrp,
+      price: finalPrice,
+      discountPercent: null,
+    };
+  }, [appliedCoupon, product]);
 
   return (
     <div className="App project-parts-page shop-products-page">
       <Navbar />
+      <SuccessCelebrationOverlay
+        open={showCouponSuccess}
+        onDone={() => setShowCouponSuccess(false)}
+        title="Coupon applied successfully"
+        subtitle={appliedCoupon ? `You saved ${formatINR(appliedCoupon.discountAmount)} with ${appliedCoupon.code}.` : "Your discount is ready."}
+        ariaLabel="Coupon applied successfully"
+      />
       <main className="part-detail-wrap">
         <div className="detail-header-row">
           <a
@@ -543,6 +803,7 @@ export function ProductDetailPage() {
             <span>Back to {source === "shop" ? "products" : "wiring accessories"}</span>
           </a>
         </div>
+        {product && !loading && <nav className="product-breadcrumbs" aria-label="Breadcrumb"><a href="/">Home</a><span>/</span><a href={source === "shop" ? "/products" : CANONICAL_WIRING_PARTS_PATH}>{source === "shop" ? "Products" : "Wiring accessories"}</a><span>/</span><strong>{product.name}</strong></nav>}
         {loading && <LoadingState message="Loading product details..." className="site-state-lottie--detail" />}
         {error && !loading && <div className="parts-state">{error}</div>}
 
@@ -550,18 +811,7 @@ export function ProductDetailPage() {
           <section className="part-detail-panel">
             <div className="part-detail-media">
               <ProductShareButton product={product} compact />
-              {product.imageUrl ? (
-                <OptimizedImage
-                  src={product.imageUrl}
-                  alt={product.name}
-                  className="part-detail-image"
-                  width={720}
-                  height={540}
-                  decoding="async"
-                  fetchPriority="high"
-                  sizes="(min-width: 1024px) 42vw, 100vw"
-                />
-              ) : <PackageSearch size={70} />}
+              <ProductGallery product={product} />
               <span className={`part-status ${String(product.availability || "").toLowerCase().replace(/\s+/g, "-")}`}>{product.availability || "Available"}</span>
             </div>
 
@@ -632,7 +882,7 @@ export function ProductDetailPage() {
               )}
          
               <div className="detail-action-bar">
-                <ProductPriceDisplay product={product} size="detail" showDiscountBadge />
+                <ProductPriceDisplay product={displayedProduct} className={appliedCoupon ? "coupon-price-applied" : ""} size="detail" showDiscountBadge />
                 <div className="detail-button-group">
                   <button
                     className="book-now-button cart-secondary-button"
@@ -650,6 +900,21 @@ export function ProductDetailPage() {
             </div>
           </section>
         )}
+
+        {product && !loading && source === "shop" ? (
+          <ProductCouponOffers
+            offers={publicOffers}
+            appliedCoupon={appliedCoupon}
+            onApply={applyPublicOffer}
+            privateCode={privateCode}
+            onPrivateCodeChange={changePrivateCouponCode}
+            onApplyPrivate={applyPrivateCoupon}
+            applying={couponApplying}
+            error={couponError}
+          />
+        ) : null}
+
+        {product && !loading ? <ProductInformation product={product} /> : null}
 
         {product && !loading ? (
           <RelatedProductsSection

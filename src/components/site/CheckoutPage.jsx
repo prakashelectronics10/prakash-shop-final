@@ -1,11 +1,13 @@
-import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Check, Copy, CreditCard, LockKeyhole, MapPin, PackageCheck, ShieldCheck } from "lucide-react";
+import { useEffect, useState } from "react";
+import { ArrowLeft, BadgePercent, Check, Copy, CreditCard, LockKeyhole, MapPin, PackageCheck, ShieldCheck } from "lucide-react";
 import toast from "react-hot-toast";
 import { apiRequest } from "../../api/client";
 import { useCart } from "../../context/CartContext";
 import { Navbar } from "./Navbar";
 import { Footer } from "./Footer";
 import { OptimizedImage } from "./OptimizedImage";
+import { clearAppliedCouponCode } from "../../utils/coupons";
+import { useOrderQuote } from "../../hooks/useOrderQuote";
 import "./OrderExperience.css";
 
 let razorpayScriptPromise;
@@ -70,31 +72,19 @@ export function CheckoutPage() {
   const [fieldErrors, setFieldErrors] = useState({});
   const [busy, setBusy] = useState(false);
   const [confirmedOrder, setConfirmedOrder] = useState(null);
-  const [additionalCharges, setAdditionalCharges] = useState([]);
-  const [chargesLoading, setChargesLoading] = useState(true);
-  const [chargesError, setChargesError] = useState("");
+  const { quote, loading: chargesLoading, error: chargesError, payload, refresh: loadAdditionalCharges } = useOrderQuote(items);
+  const [paymentQuote, setPaymentQuote] = useState(null);
+  const currentQuote = paymentQuote || quote;
+  const additionalCharges = currentQuote?.additionalCharges || [];
+  const quotedItems = currentQuote?.items || [];
+  const checkoutTotal = currentQuote?.total;
+  const discountTotal = currentQuote?.discountTotal || 0;
 
-  const pricedItems = useMemo(() => items.filter((item) => Number(item.price) > 0), [items]);
-  const additionalChargesTotal = useMemo(
-    () => Number(additionalCharges.reduce((sum, charge) => sum + Number(charge.amount || 0), 0).toFixed(2)),
-    [additionalCharges],
-  );
-  const checkoutTotal = Number((Number(totals.amount || 0) + additionalChargesTotal).toFixed(2));
+  useEffect(() => { setPaymentQuote(null); }, [quote]);
 
-  const loadAdditionalCharges = async () => {
-    setChargesLoading(true);
-    setChargesError("");
-    try {
-      const response = await apiRequest("/orders/charges", { cache: "no-store" });
-      setAdditionalCharges(Array.isArray(response.data) ? response.data : []);
-    } catch (error) {
-      setChargesError(error.message || "Additional charges could not be loaded");
-    } finally {
-      setChargesLoading(false);
-    }
-  };
-
-  useEffect(() => { loadAdditionalCharges(); }, []);
+  useEffect(() => {
+    if (!items.length && !confirmedOrder) window.location.replace("/cart");
+  }, [confirmedOrder, items.length]);
 
   const update = (key, value) => {
     const nextValue = key === "pincode" ? value.replace(/\D/g, "").slice(0, 6) : value;
@@ -114,11 +104,7 @@ export function CheckoutPage() {
 
   const beginPayment = async (event) => {
     event.preventDefault();
-    if (!items.length || !validate()) return;
-    if (pricedItems.length !== items.length) {
-      toast.error("A cart item does not have an online price. Please remove it or contact the shop.");
-      return;
-    }
+    if (!items.length || chargesLoading || chargesError || !quote || !validate()) return;
     setBusy(true);
     try {
       await loadRazorpayCheckout();
@@ -127,11 +113,11 @@ export function CheckoutPage() {
         cache: "no-store",
         body: JSON.stringify({
           customer: form,
-          items: items.map(({ sourceType, sourceId, productId, productSlug, quantity }) => ({ sourceType, sourceId, productId, productSlug, quantity })),
+          ...payload,
         }),
       });
       const payment = created.data;
-      if (Array.isArray(payment.additionalCharges)) setAdditionalCharges(payment.additionalCharges);
+      setPaymentQuote(payment);
       const razorpay = new window.Razorpay({
         key: payment.keyId,
         amount: payment.amount,
@@ -157,6 +143,7 @@ export function CheckoutPage() {
               }),
             });
             clearCart();
+            clearAppliedCouponCode();
             setConfirmedOrder(verified.data);
             await copyOrderId(verified.data.orderId, true);
             window.scrollTo({ top: 0, behavior: "smooth" });
@@ -183,18 +170,7 @@ export function CheckoutPage() {
   }
 
   if (!items.length) {
-    return (
-      <div className="App order-page">
-        <Navbar />
-        <main className="checkout-empty">
-          <PackageCheck size={48} />
-          <h1>Your cart is empty</h1>
-          <p>Add products to your cart before opening checkout.</p>
-          <a href="/products">Browse products</a>
-        </main>
-        <Footer />
-      </div>
-    );
+    return null;
   }
 
   return (
@@ -251,16 +227,32 @@ export function CheckoutPage() {
           <aside className="checkout-summary-card">
             <div className="checkout-card-title"><span><PackageCheck size={21} /></span><div><h2>Order summary</h2><p>{totals.quantity} items</p></div></div>
             <div className="checkout-summary-items">
-              {items.map((item) => (
-                <article key={item.cartId}>
+              {items.map((item, index) => {
+                const quoteItem = quotedItems[index];
+                const hasDiscount = Number(quoteItem?.discountAmount || 0) > 0;
+                const unitPrice = quoteItem?.discountedUnitPrice ?? item.price;
+                const linePrice = quoteItem?.discountedLineTotal ?? Number(item.price) * Number(item.quantity);
+                return (
+                <article className={hasDiscount ? "has-coupon-discount" : ""} key={item.cartId}>
                   <div>{item.productImageUrl ? <OptimizedImage src={item.productImageUrl} alt={item.productName} width={64} height={64} /> : <PackageCheck size={24} />}</div>
-                  <span><strong>{item.productName}</strong><small>{formatINR(item.price)} × {item.quantity}</small></span>
-                  <b>{formatINR(Number(item.price) * Number(item.quantity))}</b>
+                  <span>
+                    <strong>{item.productName}</strong>
+                    <small className="checkout-item-unit-price">
+                      {hasDiscount && <del>{formatINR(quoteItem.unitPrice)}</del>}
+                      <span>{formatINR(unitPrice)} × {item.quantity}</span>
+                    </small>
+                    {hasDiscount && <small>{quoteItem.couponCode} applied</small>}
+                  </span>
+                  <b className="checkout-item-line-price">
+                    {hasDiscount && <del>{formatINR(quoteItem.lineTotal)}</del>}
+                    <span>{formatINR(linePrice)}</span>
+                  </b>
                 </article>
-              ))}
+                );
+              })}
             </div>
             <div className="checkout-totals">
-              <p><span>Subtotal</span><strong>{formatINR(totals.amount)}</strong></p>
+              <p><span>Subtotal</span><strong>{currentQuote ? formatINR(currentQuote.discountedSubtotal) : chargesLoading ? "Calculating…" : "Unavailable"}</strong></p>
               {additionalCharges.map((charge) => (
                 <p key={charge._id || charge.slug || charge.name}>
                   <span>{charge.name}</span>
@@ -269,8 +261,9 @@ export function CheckoutPage() {
                   </strong>
                 </p>
               ))}
-              <p className="checkout-grand-total"><span>Total</span><strong>{formatINR(checkoutTotal)}</strong></p>
+              <p className="checkout-grand-total"><span>Total</span><strong>{currentQuote ? formatINR(checkoutTotal) : chargesLoading ? "Calculating…" : "Unavailable"}</strong></p>
             </div>
+            {discountTotal > 0 && <p className="checkout-coupon-notice success"><BadgePercent size={15} /> Coupon savings included in product prices.</p>}
             {chargesError && (
               <div className="checkout-charge-error" role="alert">
                 <span>{chargesError}</span>

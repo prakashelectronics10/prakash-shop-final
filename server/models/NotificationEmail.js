@@ -20,6 +20,11 @@ const notificationEmailSchema = new mongoose.Schema(
       default: true,
       index: true,
     },
+    receivePulseAIUnavailableAlerts: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
     source: {
       type: String,
       enum: ["manual", "adminAccount"],
@@ -31,5 +36,6 @@ const notificationEmailSchema = new mongoose.Schema(
 );
 
 notificationEmailSchema.index({ isEnabled: 1, email: 1 });
+notificationEmailSchema.index({ receivePulseAIUnavailableAlerts: 1, source: 1, email: 1 });
 
 module.exports = mongoose.model("NotificationEmail", notificationEmailSchema);

@@ -165,7 +165,7 @@ function normalizeProjectPart(part) {
     sourceType: "project-part",
     sourceCollection: "project-parts",
     sourceId: String(part._id || ""),
-    specifications: [],
+    specifications: Array.isArray(part.specifications) ? part.specifications : [],
     tags: unique([SCIENCE_PROJECTS_CATEGORY, originalCategory, originalSubCategory, ...(part.tags || [])]),
   };
 }
@@ -482,9 +482,14 @@ exports.listShopProducts = catchAsync(async (req, res) => {
 });
 
 exports.createShopProduct = catchAsync(async (req, res) => {
+  const gtin = String(req.body.gtin || "").replace(/\s+/g, "");
+  if (gtin && !/^(?:\d{8}|\d{12}|\d{13}|\d{14})$/.test(gtin)) {
+    throw new AppError("GTIN must contain 8, 12, 13, or 14 digits", 400);
+  }
   const pricing = applyPricingFields(req.body);
   const product = await ShopProduct.create({
     ...req.body,
+    gtin,
     ...pricing,
     slug: req.body.slug || slugify(req.body.name),
     category: req.body.category || "Electronics",
@@ -501,10 +506,16 @@ exports.updateShopProduct = catchAsync(async (req, res) => {
   const existing = await ShopProduct.findById(req.params.id);
   if (!existing) throw new AppError("Shop product not found", 404);
   const pricing = applyPricingFields(req.body);
+  const gtin = String(req.body.gtin || "").replace(/\s+/g, "");
+  if (gtin && !/^(?:\d{8}|\d{12}|\d{13}|\d{14})$/.test(gtin)) {
+    throw new AppError("GTIN must contain 8, 12, 13, or 14 digits", 400);
+  }
   const payload = {
     ...req.body,
+    gtin,
     ...pricing,
     slug: req.body.slug || slugify(req.body.name),
+    sku: String(req.body.sku || existing.sku || `PE-${String(existing._id).slice(-10)}`).trim().toUpperCase(),
     category: req.body.category || "Electronics",
     quantity: normalizeStockQuantity(req.body.quantity, 1),
     tags: req.body.tags || [],

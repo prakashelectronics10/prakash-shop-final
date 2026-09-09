@@ -15,6 +15,7 @@ const allPermissions = [
   "admins",
   "bookings",
   "offers",
+  "coupons",
   "shopHighlights",
   "services",
   "gallery",
@@ -31,6 +32,7 @@ const allPermissions = [
   "notificationEmails",
   "invoices",
   "orders",
+  "pulseAI",
 ];
 
 const normalizeEmail = (email) => String(email || "").trim().toLowerCase();

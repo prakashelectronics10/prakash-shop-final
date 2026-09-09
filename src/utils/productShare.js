@@ -1,4 +1,4 @@
-const PRODUCT_DETAIL_BASE = "/product-detail";
+const PRODUCT_DETAIL_BASE = "/product";
 const SITE_NAME = "Prakash Electronics";
 
 function productIdentifier(product = {}) {
@@ -58,25 +58,45 @@ function productPrice(product = {}) {
   return Number.isFinite(storedPrice) && storedPrice >= 0 ? storedPrice : null;
 }
 
-function applyProductStructuredData(product, { description, image, url }) {
-  const price = productPrice(product);
+function applyProductStructuredData(product, { description, image, url, publicOffers = [] }) {
+  const bestOffer = publicOffers.find((offer) => offer?.visibility === "public" && Number.isFinite(Number(offer.finalPrice)));
+  const price = bestOffer ? Number(bestOffer.finalPrice) : productPrice(product);
   const productSchema = {
     "@type": "Product",
     name: product.name,
     description,
     image: [image],
     url,
-    sku: String(product._id || product.id || product.slug || ""),
+    sku: String(product.sku || product._id || product.id || product.slug || ""),
     category: product.category || undefined,
-    brand: { "@type": "Brand", name: SITE_NAME },
+    brand: product.brand ? { "@type": "Brand", name: product.brand } : undefined,
+    gtin: product.gtin || undefined,
+    mpn: product.mpn || undefined,
+    model: product.modelNumber || undefined,
     offers: price === null ? undefined : {
       "@type": "Offer",
       url,
       priceCurrency: "INR",
       price: String(price),
       availability: productAvailability(product),
-      itemCondition: "https://schema.org/NewCondition",
+      itemCondition: `https://schema.org/${product.condition === "used" ? "UsedCondition" : product.condition === "refurbished" ? "RefurbishedCondition" : "NewCondition"}`,
       seller: { "@type": "Organization", name: SITE_NAME },
+      ...(bestOffer ? {
+        name: bestOffer.title,
+        description: bestOffer.description || undefined,
+        identifier: bestOffer.code,
+        validFrom: bestOffer.startsAt || undefined,
+        priceValidUntil: bestOffer.endsAt ? String(bestOffer.endsAt).slice(0, 10) : undefined,
+        image: bestOffer.bannerImageUrl || undefined,
+        priceSpecification: {
+          "@type": "UnitPriceSpecification",
+          price: String(price),
+          priceCurrency: "INR",
+          name: bestOffer.title,
+          validFrom: bestOffer.startsAt || undefined,
+          validThrough: bestOffer.endsAt || undefined,
+        },
+      } : {}),
     },
   };
   const schema = {
@@ -103,13 +123,14 @@ function applyProductStructuredData(product, { description, image, url }) {
   script.textContent = JSON.stringify(schema).replace(/</g, "\\u003c");
 }
 
-export function applyProductPageMeta(product = {}) {
+export function applyProductPageMeta(product = {}, publicOffers = []) {
   if (typeof document === "undefined" || !product?.name) return;
-  const title = `${product.name} | Prakash Electronics`;
+  const title = `${product.seoTitle || product.name} | Prakash Electronics`;
   const description = getProductShareText(product);
   const url = getProductShareUrl(product);
   const image = absoluteProductImage(product);
-  const price = productPrice(product);
+  const bestOffer = publicOffers.find((offer) => offer?.visibility === "public" && Number.isFinite(Number(offer.finalPrice)));
+  const price = bestOffer ? Number(bestOffer.finalPrice) : productPrice(product);
   let canonical = document.head.querySelector('link[rel="canonical"]');
   if (!canonical) {
     canonical = document.createElement("link");
@@ -157,5 +178,5 @@ export function applyProductPageMeta(product = {}) {
   setMeta('meta[name="twitter:title"]', "name", "twitter:title", title);
   setMeta('meta[name="twitter:description"]', "name", "twitter:description", description);
   setMeta('meta[name="twitter:image"]', "name", "twitter:image", image);
-  applyProductStructuredData(product, { description, image, url });
+  applyProductStructuredData(product, { description, image, url, publicOffers });
 }

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { CalendarDays, ChevronRight, Edit3, LoaderCircle, PackageCheck, Plus, ReceiptIndianRupee, Search, ShoppingBag, Trash2, Truck, X } from "lucide-react";
+import { AlertTriangle, CalendarDays, Check, ChevronRight, Edit3, LoaderCircle, PackageCheck, Plus, ReceiptIndianRupee, Search, ShoppingBag, Trash2, Truck, X } from "lucide-react";
 import "./OrdersModule.css";
 
 const STATUS_OPTIONS = [
@@ -117,6 +117,28 @@ export default function OrdersModule({ apiFetch }) {
       setOrders((current) => current.map((order) => order._id === response.data._id ? response.data : order));
     } catch (requestError) {
       setError(requestError.message || "Status could not be updated");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const resolveCancellation = async (decision) => {
+    if (!selected || saving) return;
+    const message = decision === "accept"
+      ? "Accept this cancellation and initiate the full Razorpay refund?"
+      : "Reject this cancellation request?";
+    if (!window.confirm(message)) return;
+    setSaving(true);
+    setError("");
+    try {
+      const response = await apiFetch(`/orders/admin/${selected._id}/cancellation`, {
+        method: "PATCH",
+        body: JSON.stringify({ decision }),
+      });
+      setSelected(response.data);
+      setOrders((current) => current.map((order) => order._id === response.data._id ? response.data : order));
+    } catch (requestError) {
+      setError(requestError.message || "Cancellation request could not be updated");
     } finally {
       setSaving(false);
     }
@@ -240,13 +262,28 @@ export default function OrdersModule({ apiFetch }) {
             <section className="drawer-order-items">
               <h3>Items ({selected.itemCount})</h3>
               {selected.items.map((item) => (
-                <a href={`/product-detail/${encodeURIComponent(item.productSlug || item.productId)}`} target="_blank" rel="noreferrer" key={`${item.productId}-${item.productName}`}>
+                <a href={`/product/${encodeURIComponent(item.productSlug || item.productId)}`} target="_blank" rel="noreferrer" key={`${item.productId}-${item.productName}`}>
                   <span>{item.productImageUrl ? <img src={item.productImageUrl} alt={item.productName} /> : <PackageCheck size={24} />}</span>
                   <div><strong>{item.productName}</strong><small>{item.productCategory}</small><em>{money(item.unitPrice)} × {item.quantity}</em></div>
                   <b>{money(item.lineTotal)}</b>
                 </a>
               ))}
             </section>
+
+            {selected.cancellationRequest?.status && selected.cancellationRequest.status !== "none" && (
+              <section className={`drawer-cancellation-request ${selected.cancellationRequest.status}`}>
+                <div><AlertTriangle size={19} /><span><strong>Cancellation {selected.cancellationRequest.status}</strong><small>{dateTime(selected.cancellationRequest.requestedAt)}</small></span></div>
+                <p>{selected.cancellationRequest.reason || "No reason provided."}</p>
+                {selected.cancellationRequest.adminNote && <small>{selected.cancellationRequest.adminNote}</small>}
+                {selected.cancellationRequest.status === "requested" && (
+                  <div className="drawer-cancellation-actions">
+                    <button type="button" className="secondary" disabled={saving} onClick={() => resolveCancellation("reject")}><X size={16} /> Reject</button>
+                    <button type="button" disabled={saving} onClick={() => resolveCancellation("accept")}><Check size={16} /> Accept &amp; refund</button>
+                  </div>
+                )}
+                {selected.cancellationRequest.status === "accepted" && <small>Refund: {selected.refund?.status || "processing"} · {money(selected.refund?.amount || selected.total)}</small>}
+              </section>
+            )}
 
             <section className="drawer-status-control">
               <label htmlFor="admin-order-status"><Truck size={18} /> Customer-visible status</label>
@@ -269,6 +306,7 @@ export default function OrdersModule({ apiFetch }) {
 
             <section className="drawer-order-total">
               <p><span>Subtotal</span><strong>{money(selected.subtotal)}</strong></p>
+              {selected.coupon && Number(selected.discountTotal || 0) > 0 && <p><span>Coupon {selected.coupon.code}</span><strong>−{money(selected.discountTotal)}</strong></p>}
               {orderChargeRows(selected).map((charge) => (
                 <p key={charge.slug || charge.name}><span>{charge.name}</span><strong>{Number(charge.amount || 0) ? money(charge.amount) : "Free"}</strong></p>
               ))}

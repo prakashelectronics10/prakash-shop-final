@@ -153,6 +153,8 @@ export function Footer() {
           <nav className="footer-legal-links" aria-label="Legal information">
             <a href="/privacy-policy">Privacy Policy</a>
             <a href="/terms-and-conditions">Terms &amp; Conditions</a>
+            <a href="/shipping-policy">Shipping Policy</a>
+            <a href="/return-refund-policy">Return &amp; Refund Policy</a>
           </nav>
           <p>{footer.creditText}</p>
         </div>

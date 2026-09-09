@@ -49,6 +49,12 @@ const matchStopWords = new Set([
   "looking", "buy", "sale", "price", "rupees", "rs",
 ]);
 
+const broadProductWords = new Set([
+  "fan", "cooler", "cooling", "product", "item", "shop", "light", "led", "lamp",
+  "speaker", "wire", "cable", "switch", "socket", "plug", "mcb", "motor", "sensor",
+  "battery", "adapter", "charger", "service", "repair", "accessory", "accessories",
+]);
+
 function normalize(value) {
   return String(value || "")
     .toLowerCase()
@@ -461,6 +467,50 @@ function stripCatalogMatchLine(text) {
   return stripAiMetaLines(text);
 }
 
+function extractPriceConstraint(text) {
+  const normalized = normalize(String(text || "").replace(/,/g, ""));
+  const maxMatch = normalized.match(/(?:under|below|less than|max|maximum|upto|up to|budget)\s+(\d+(?:\.\d+)?)/)
+    || normalized.match(/(\d+(?:\.\d+)?)\s+(?:tak|ke andar|se kam)/);
+  const minMatch = normalized.match(/(?:above|over|more than|min|minimum)\s+(\d+(?:\.\d+)?)/)
+    || normalized.match(/(\d+(?:\.\d+)?)\s+(?:se upar|se jyada)/);
+  return {
+    max: maxMatch ? Number(maxMatch[1]) : null,
+    min: minMatch ? Number(minMatch[1]) : null,
+  };
+}
+
+function effectiveProductPrice(product) {
+  const price = Number(product.price);
+  if (Number.isFinite(price) && price >= 0) return price;
+  const mrp = Number(product.mrp);
+  const discount = Number(product.discountPercent);
+  if (!Number.isFinite(mrp) || mrp < 0) return null;
+  return Number.isFinite(discount) && discount > 0
+    ? Math.round(mrp * (1 - Math.min(100, discount) / 100))
+    : mrp;
+}
+
+function matchesPriceConstraint(product, constraint) {
+  if (constraint.max === null && constraint.min === null) return true;
+  const price = effectiveProductPrice(product);
+  if (price === null) return false;
+  if (constraint.max !== null && price > constraint.max) return false;
+  if (constraint.min !== null && price < constraint.min) return false;
+  return true;
+}
+
+function catalogHardTerms(intent, products) {
+  return unique((intent.keywords || []).filter((word) => {
+    if (broadProductWords.has(word) || COLOR_WORDS.includes(word)) return false;
+    return (products || []).some((product) => containsPhrase(productIdentityText(product), word));
+  }));
+}
+
+function matchesCatalogHardTerms(product, hardTerms) {
+  const text = productSearchText(product);
+  return (hardTerms || []).every((term) => containsPhrase(text, term));
+}
+
 function isGeneralProductDiscoveryRequest(text) {
   const normalized = normalize(text);
   if (!normalized) return false;
@@ -469,10 +519,23 @@ function isGeneralProductDiscoveryRequest(text) {
   return mentionsCatalog && asksForSuggestions;
 }
 
+function isServiceOnlyRequest(text) {
+  const normalized = normalize(text);
+  if (!normalized) return false;
+  const serviceSignal = /\b(repair|service|servicing|fix|fault|problem|issue|not working|kharab|banwana|thik|theek|diagnose)\b/.test(normalized);
+  const shoppingSignal = /\b(buy|purchase|kharid|chahiye|dikhao|suggest|recommend|product|item|spare|part|replacement|price)\b/.test(normalized);
+  return serviceSignal && !shoppingSignal;
+}
+
 function formatProductMemoryLine(product) {
   const colors = extractColors(productSearchText(product));
-  const tags = (product.tags || []).slice(0, 6).join(", ");
-  const desc = String(product.shortDescription || product.description || "").replace(/\s+/g, " ").trim().slice(0, 90);
+  const tags = (product.tags || []).slice(0, 8).join(", ");
+  const specs = (product.specifications || [])
+    .slice(0, 10)
+    .map((item) => `${item.label || ""}:${item.value || ""}`)
+    .filter((item) => item !== ":")
+    .join(", ");
+  const desc = String(product.shortDescription || product.description || "").replace(/\s+/g, " ").trim().slice(0, 180);
   const price = product.price === null || product.price === undefined || product.price === ""
     ? "Price on request"
     : `Rs.${Number(product.price).toLocaleString("en-IN")}`;
@@ -481,13 +544,16 @@ function formatProductMemoryLine(product) {
     ...RETAIL_COOLING_KEYS.filter((key) => containsPhrase(productIdentityText(product), key)),
     ...(product.tags || []).slice(0, 4).map((tag) => normalize(tag)),
   ]).slice(0, 8).join(",");
-  return `- ${product.name} | cat:${product.category || "General"}${product.subCategory ? `/${product.subCategory}` : ""} | ${product.availability || "In Stock"} | ${price}${colors.length ? ` | colors:${colors.join(",")}` : ""}${lookBits ? ` | look:${lookBits}` : ""}${tags ? ` | tags:${tags}` : ""}${desc ? ` | desc:${desc}` : ""}`;
+  return `- ${product.name} | cat:${product.category || "General"}${product.subCategory ? `/${product.subCategory}` : ""} | ${product.availability || "In Stock"} | ${price}${colors.length ? ` | colors:${colors.join(",")}` : ""}${lookBits ? ` | look:${lookBits}` : ""}${tags ? ` | tags:${tags}` : ""}${specs ? ` | specs:${specs}` : ""}${desc ? ` | desc:${desc}` : ""}`;
 }
 
 function rankProductsForDemand(promptText, aiText, products, deepSearch = false, options = {}) {
   const hasImages = Boolean(options.hasImages);
+  if (!hasImages && isServiceOnlyRequest(promptText)) return [];
   const intent = buildDemandIntent(promptText, aiText, hasImages);
   const findings = hasImages ? extractImageFindings(aiText) : null;
+  const hardTerms = catalogHardTerms(intent, products);
+  const priceConstraint = extractPriceConstraint(promptText);
   const catalogHits = extractCatalogMatchesFromAi(aiText, products);
   const used = new Set();
   const candidates = [];
@@ -495,8 +561,10 @@ function rankProductsForDemand(promptText, aiText, products, deepSearch = false,
   catalogHits.forEach((item) => {
     const id = String(item.product._id);
     if (used.has(id)) return;
-    // Require intent fit when user/image demand is clear
-    if (intent.families.length || intent.colors.length) {
+    if (!matchesCatalogHardTerms(item.product, hardTerms) || !matchesPriceConstraint(item.product, priceConstraint)) return;
+    // Never trust a model-emitted catalog name unless it also fits the customer's
+    // own specific demand. This blocks accidental cards on policy/contact queries.
+    if (intent.hasSpecificDemand) {
       const intentScore = scoreProductForUserIntent(item.product, intent);
       if (intentScore <= 0) return;
       item.score += intentScore;
@@ -512,6 +580,7 @@ function rankProductsForDemand(promptText, aiText, products, deepSearch = false,
   (products || []).forEach((product) => {
     const id = String(product._id);
     if (used.has(id)) return;
+    if (!matchesCatalogHardTerms(product, hardTerms) || !matchesPriceConstraint(product, priceConstraint)) return;
 
     let score = scoreProductForUserIntent(product, intent);
     if (hasImages) {
@@ -535,11 +604,14 @@ function rankProductsForDemand(promptText, aiText, products, deepSearch = false,
   const limit = deepSearch ? 10 : 6;
   const hasSpecificDemand = intent.families.length || intent.colors.length || intent.wantedComponents.length;
   if (!candidates.length && !hasImages && !hasSpecificDemand && isGeneralProductDiscoveryRequest(promptText)) {
-    return (products || []).slice(0, limit).map((product, index) => ({
+    return [...(products || [])]
+      .sort((a, b) => Number(b.isTopProduct) - Number(a.isTopProduct) || Number(b.viewCount || 0) - Number(a.viewCount || 0) || Number(a.displayOrder || 0) - Number(b.displayOrder || 0))
+      .slice(0, limit)
+      .map((product, index) => ({
       product,
       score: limit - index,
       component: "Popular shop pick",
-    }));
+      }));
   }
   return candidates
     .sort((a, b) => b.score - a.score)
@@ -559,4 +631,6 @@ module.exports = {
   rankProductsForDemand,
   isRetailCoolingProduct,
   isGeneralProductDiscoveryRequest,
+  isServiceOnlyRequest,
+  extractPriceConstraint,
 };

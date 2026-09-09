@@ -396,7 +396,7 @@ const dashboard = asyncHandler(async (_req, res) => {
 
 const listAdmins = asyncHandler(async (_req, res) => {
   const admins = await Admin.find({})
-    .select("_id name email role tag permissions adminAndroidAppAccess lastMobileLogin mobileAccessRequestedAt isActive lastLoginAt createdAt avatarUrl avatarPublicId")
+    .select("_id name email role tag permissions adminAndroidAppAccess receivePulseAIUnavailableAlerts lastMobileLogin mobileAccessRequestedAt isActive lastLoginAt createdAt avatarUrl avatarPublicId")
     .sort({ createdAt: -1 })
     .lean();
 
@@ -407,6 +407,7 @@ const listAdmins = asyncHandler(async (_req, res) => {
       tag: isSuperAdminAccount(admin) ? "main owner" : admin.tag || "admin",
       permissions: isSuperAdminAccount(admin) ? allPermissions : admin.permissions || [],
       adminAndroidAppAccess: isSuperAdminAccount(admin) ? true : Boolean(admin.adminAndroidAppAccess),
+      receivePulseAIUnavailableAlerts: admin.receivePulseAIUnavailableAlerts !== false,
       lastMobileLogin: admin.lastMobileLogin || null,
       mobileAccessRequestedAt: admin.mobileAccessRequestedAt || null,
       avatarUrl: admin.avatarUrl || "",
@@ -441,6 +442,7 @@ const requestCreateAdminOtp = asyncHandler(async (req, res) => {
       tag: req.body.tag || "employee",
       permissions: req.body.permissions || [],
       adminAndroidAppAccess: Boolean(req.body.adminAndroidAppAccess),
+      receivePulseAIUnavailableAlerts: req.body.receivePulseAIUnavailableAlerts !== false,
     },
   });
 
@@ -502,6 +504,7 @@ const createAdmin = asyncHandler(async (req, res) => {
     tag: payload.tag || "employee",
     permissions: payload.permissions || [],
     adminAndroidAppAccess: Boolean(payload.adminAndroidAppAccess),
+    receivePulseAIUnavailableAlerts: payload.receivePulseAIUnavailableAlerts !== false,
     isActive: true,
   });
 
@@ -512,6 +515,7 @@ const createAdmin = asyncHandler(async (req, res) => {
         label: payload.name || email,
         isEnabled: true,
         source: "adminAccount",
+        receivePulseAIUnavailableAlerts: false,
       },
     },
     { upsert: true, new: true, setDefaultsOnInsert: true },
@@ -527,6 +531,7 @@ const createAdmin = asyncHandler(async (req, res) => {
       tag: admin.tag,
       permissions: admin.permissions,
       adminAndroidAppAccess: admin.adminAndroidAppAccess,
+      receivePulseAIUnavailableAlerts: admin.receivePulseAIUnavailableAlerts !== false,
       isActive: admin.isActive,
       createdAt: admin.createdAt,
     },
@@ -537,7 +542,9 @@ const updateAdmin = asyncHandler(async (req, res) => {
   const admin = await Admin.findById(req.params.id).select("+passwordHash");
   if (!admin) throw new AppError("Admin not found", 404);
   if (isSuperAdminAccount(admin)) {
-    throw new AppError("Main owner account cannot be edited here", 400);
+    const requestedFields = Object.keys(req.body || {});
+    const preferenceOnly = requestedFields.length === 1 && requestedFields[0] === "receivePulseAIUnavailableAlerts";
+    if (!preferenceOnly) throw new AppError("Main owner account cannot be edited here", 400);
   }
 
   const shouldRevokeSessions = req.body.isActive === false || Boolean(req.body.password);
@@ -546,6 +553,9 @@ const updateAdmin = asyncHandler(async (req, res) => {
   if (req.body.tag !== undefined) admin.tag = req.body.tag;
   if (req.body.permissions !== undefined) admin.permissions = req.body.permissions;
   if (req.body.adminAndroidAppAccess !== undefined) admin.adminAndroidAppAccess = Boolean(req.body.adminAndroidAppAccess);
+  if (req.body.receivePulseAIUnavailableAlerts !== undefined) {
+    admin.receivePulseAIUnavailableAlerts = Boolean(req.body.receivePulseAIUnavailableAlerts);
+  }
   if (req.body.isActive !== undefined) admin.isActive = req.body.isActive;
   if (req.body.password) admin.passwordHash = await Admin.hashPassword(req.body.password);
 
@@ -564,6 +574,7 @@ const updateAdmin = asyncHandler(async (req, res) => {
       tag: admin.tag,
       permissions: admin.permissions,
       adminAndroidAppAccess: admin.adminAndroidAppAccess,
+      receivePulseAIUnavailableAlerts: admin.receivePulseAIUnavailableAlerts !== false,
       isActive: admin.isActive,
       createdAt: admin.createdAt,
       updatedAt: admin.updatedAt,

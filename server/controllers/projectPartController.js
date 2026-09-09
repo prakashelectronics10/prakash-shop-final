@@ -191,6 +191,10 @@ exports.createProjectPart = catchAsync(async (req, res) => {
     isTopProduct,
     displayOrder,
   } = req.body;
+  const gtin = String(req.body.gtin || "").replace(/\s+/g, "");
+  if (gtin && !/^(?:\d{8}|\d{12}|\d{13}|\d{14})$/.test(gtin)) {
+    throw new AppError("GTIN must contain 8, 12, 13, or 14 digits", 400);
+  }
   const pricing = applyPricingFields(req.body);
 
   const part = await ProjectPart.create({
@@ -206,6 +210,23 @@ exports.createProjectPart = catchAsync(async (req, res) => {
     imageUrl: imageUrl || "",
     imagePublicId: imagePublicId || "",
     tags: tags || [],
+    images: req.body.images || [],
+    specifications: req.body.specifications || [],
+    sku: req.body.sku || undefined,
+    brand: req.body.brand || subCategory || "",
+    gtin,
+    mpn: req.body.mpn || "",
+    manufacturer: req.body.manufacturer || "",
+    modelNumber: req.body.modelNumber || "",
+    condition: req.body.condition || "new",
+    productType: req.body.productType || "",
+    googleProductCategory: req.body.googleProductCategory || "",
+    warranty: req.body.warranty || "",
+    weight: req.body.weight || undefined,
+    dimensions: req.body.dimensions || undefined,
+    shipping: req.body.shipping || undefined,
+    seoTitle: req.body.seoTitle || "",
+    seoDescription: req.body.seoDescription || "",
     isActive: isActive !== false,
     isFeatured: isFeatured || false,
     isTopProduct: Boolean(isTopProduct),
@@ -225,8 +246,14 @@ exports.updateProjectPart = catchAsync(async (req, res) => {
   const existing = await ProjectPart.findById(id);
   if (!existing) throw new AppError("Project part not found", 404);
   const pricing = applyPricingFields(req.body);
+  const gtin = String(req.body.gtin || "").replace(/\s+/g, "");
+  if (gtin && !/^(?:\d{8}|\d{12}|\d{13}|\d{14})$/.test(gtin)) {
+    throw new AppError("GTIN must contain 8, 12, 13, or 14 digits", 400);
+  }
   const updateData = {
     ...req.body,
+    gtin,
+    sku: String(req.body.sku || existing.sku || `PE-WA-${String(existing._id).slice(-8)}`).trim().toUpperCase(),
     ...pricing,
     stock: normalizeStockQuantity(req.body.stock ?? req.body.quantity, 1),
   };
@@ -248,8 +275,8 @@ exports.updateProjectPart = catchAsync(async (req, res) => {
   if (!part) {
     throw new AppError("Project part not found", 404);
   }
-  const nextIds = new Set(collectPublicIdsFromSources(part.imagePublicId, part.imageUrl));
-  await deleteCloudinaryImages(collectPublicIdsFromSources(existing.imagePublicId, existing.imageUrl).filter((imageId) => !nextIds.has(imageId)));
+  const nextIds = new Set(collectPublicIdsFromSources(part.imagePublicId, part.imageUrl, part.images));
+  await deleteCloudinaryImages(collectPublicIdsFromSources(existing.imagePublicId, existing.imageUrl, existing.images).filter((imageId) => !nextIds.has(imageId)));
   await normalizeDisplayOrders(part);
 
   res.json({
@@ -269,7 +296,7 @@ exports.deleteProjectPart = catchAsync(async (req, res) => {
   }
 
   await part.deleteOne();
-  await deleteCloudinaryImages(collectPublicIdsFromSources(part.imagePublicId, part.imageUrl));
+  await deleteCloudinaryImages(collectPublicIdsFromSources(part.imagePublicId, part.imageUrl, part.images));
 
   res.json({
     success: true,

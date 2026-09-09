@@ -9,9 +9,12 @@ const { availableStockQuantity } = require("../utils/inventory");
 const { resolveProductPricing } = require("../utils/productPricing");
 const env = require("../config/env");
 const { getOrderChargeSnapshots } = require("../services/additionalChargeService");
+const { priceOrderCoupons } = require("../services/couponService");
 const {
   createRazorpayOrder,
   getRazorpayPayment,
+  refundRazorpayPayment,
+  getRazorpayPaymentRefunds,
   verifyPaymentSignature,
   verifyWebhookSignature,
 } = require("../services/razorpayService");
@@ -78,6 +81,22 @@ async function resolveOrderItems(rawItems = []) {
   }));
 }
 
+async function buildOrderQuote(rawItems, couponCode = "") {
+  const resolvedItems = await resolveOrderItems(rawItems);
+  const items = await priceOrderCoupons(resolvedItems, rawItems, couponCode);
+  const subtotal = Number(items.reduce((sum, item) => sum + item.lineTotal, 0).toFixed(2));
+  const discountedSubtotal = Number(items.reduce((sum, item) => sum + item.discountedLineTotal, 0).toFixed(2));
+  const discountTotal = Number((subtotal - discountedSubtotal).toFixed(2));
+  const additionalCharges = await getOrderChargeSnapshots();
+  const additionalChargesTotal = Number(additionalCharges.reduce((sum, charge) => sum + charge.amount, 0).toFixed(2));
+  const deliveryCharge = additionalCharges.find((charge) => charge.slug === "delivery-charge")?.amount || 0;
+  const applied = items.filter((item) => item.coupon);
+  const coupon = new Set(applied.map((item) => item.couponCode)).size === 1
+    ? { ...applied[0].coupon, discountAmount: discountTotal } : null;
+  const total = Number((discountedSubtotal + additionalChargesTotal).toFixed(2));
+  return { items, subtotal, discountedSubtotal, coupon, discountTotal, additionalCharges, additionalChargesTotal, deliveryCharge, total };
+}
+
 function newPublicOrderId() {
   const date = new Date().toISOString().slice(0, 10).replace(/-/g, "");
   return `PE-${date}-${crypto.randomBytes(6).toString("hex").toUpperCase()}`;
@@ -90,6 +109,8 @@ function publicOrder(order) {
     items: order.items,
     itemCount: order.itemCount,
     subtotal: order.subtotal,
+    coupon: order.coupon || null,
+    discountTotal: order.discountTotal || 0,
     additionalCharges: order.additionalCharges || [],
     deliveryCharge: order.deliveryCharge,
     total: order.total,
@@ -98,17 +119,26 @@ function publicOrder(order) {
     orderStatus: order.orderStatus,
     placedAt: order.paidAt || order.createdAt,
     statusUpdatedAt: order.statusUpdatedAt,
+    cancellationRequest: {
+      status: order.cancellationRequest?.status || "none",
+      reason: order.cancellationRequest?.reason || "",
+      requestedAt: order.cancellationRequest?.requestedAt || null,
+      resolvedAt: order.cancellationRequest?.resolvedAt || null,
+      adminNote: order.cancellationRequest?.adminNote || "",
+    },
+    refund: {
+      status: order.refund?.status || "not_required",
+      amount: order.refund?.amount || 0,
+      initiatedAt: order.refund?.initiatedAt || null,
+      completedAt: order.refund?.completedAt || null,
+    },
   };
 }
 
 exports.createPaymentOrder = asyncHandler(async (req, res) => {
   const customer = sanitizeCustomer(req.body.customer);
-  const items = await resolveOrderItems(req.body.items);
-  const subtotal = Number(items.reduce((sum, item) => sum + item.lineTotal, 0).toFixed(2));
-  const additionalCharges = await getOrderChargeSnapshots();
-  const additionalChargesTotal = Number(additionalCharges.reduce((sum, charge) => sum + charge.amount, 0).toFixed(2));
-  const deliveryCharge = additionalCharges.find((charge) => charge.slug === "delivery-charge")?.amount || 0;
-  const total = Number((subtotal + additionalChargesTotal).toFixed(2));
+  const { items, subtotal, discountedSubtotal, coupon, discountTotal, additionalCharges, deliveryCharge, total } = await buildOrderQuote(req.body.items, req.body.couponCode);
+  if (total < 1) throw new AppError("Online payment requires an order total of at least Rs. 1. Please contact the shop for this order.", 400);
   const orderId = newPublicOrderId();
   const razorpayOrder = await createRazorpayOrder({
     amount: Math.round(total * 100),
@@ -121,6 +151,8 @@ exports.createPaymentOrder = asyncHandler(async (req, res) => {
     items,
     itemCount: items.reduce((sum, item) => sum + item.quantity, 0),
     subtotal,
+    coupon,
+    discountTotal,
     additionalCharges,
     deliveryCharge,
     total,
@@ -137,8 +169,29 @@ exports.createPaymentOrder = asyncHandler(async (req, res) => {
       currency: razorpayOrder.currency,
       customer: { name: customer.name, phone: customer.phone },
       additionalCharges,
+      items,
       subtotal,
+      discountedSubtotal,
+      coupon,
+      discountTotal,
       total,
+    },
+  });
+});
+
+exports.getOrderQuote = asyncHandler(async (req, res) => {
+  const quote = await buildOrderQuote(req.body.items, req.body.couponCode);
+  res.set("Cache-Control", "no-store");
+  res.json({
+    success: true,
+    data: {
+      items: quote.items,
+      subtotal: quote.subtotal,
+      discountedSubtotal: quote.discountedSubtotal,
+      coupon: quote.coupon,
+      discountTotal: quote.discountTotal,
+      additionalCharges: quote.additionalCharges,
+      total: quote.total,
     },
   });
 });
@@ -150,7 +203,7 @@ exports.verifyPayment = asyncHandler(async (req, res) => {
   const signature = String(req.body.razorpaySignature || "").trim();
   const order = await Order.findOne({ orderId });
   if (!order || order.razorpayOrderId !== razorpayOrderId) throw new AppError("Order verification failed", 400);
-  if (order.paymentStatus === "paid") return res.json({ success: true, data: publicOrder(order) });
+  if (["paid", "refunded"].includes(order.paymentStatus)) return res.json({ success: true, data: publicOrder(order) });
   if (!verifyPaymentSignature({ razorpayOrderId, razorpayPaymentId, signature })) {
     order.paymentStatus = "failed";
     await order.save();
@@ -186,7 +239,7 @@ exports.handleRazorpayWebhook = asyncHandler(async (req, res) => {
         order
         && payment.currency === "INR"
         && Number(payment.amount) === Math.round(order.total * 100)
-        && order.paymentStatus !== "paid"
+        && !["paid", "refunded"].includes(order.paymentStatus)
       ) {
         order.paymentStatus = "paid";
         order.orderStatus = "confirmed";
@@ -197,21 +250,76 @@ exports.handleRazorpayWebhook = asyncHandler(async (req, res) => {
       }
     }
   }
+  if (["refund.processed", "refund.failed"].includes(event.event)) {
+    const refund = event.payload?.refund?.entity;
+    if (refund?.payment_id) {
+      const processed = event.event === "refund.processed";
+      await Order.findOneAndUpdate(
+        {
+          razorpayPaymentId: refund.payment_id,
+          $or: [
+            { "refund.providerRefundId": refund.id },
+            { "refund.providerRefundId": "" },
+          ],
+        },
+        {
+          $set: {
+            "refund.providerRefundId": String(refund.id || ""),
+            "refund.status": processed ? "processed" : "failed",
+            "refund.amount": Number(refund.amount || 0) / 100,
+            "refund.completedAt": processed ? new Date() : null,
+            "refund.failureMessage": processed ? "" : String(refund.error_description || "Refund processing failed").slice(0, 300),
+            ...(processed ? { paymentStatus: "refunded" } : {}),
+          },
+        },
+      );
+    }
+  }
   res.json({ success: true });
 });
 
 exports.getPublicOrder = asyncHandler(async (req, res) => {
   const orderId = String(req.params.orderId || "").trim().toUpperCase();
-  const order = await Order.findOne({ orderId, paymentStatus: "paid" }).lean();
+  const order = await Order.findOne({ orderId, paymentStatus: { $in: ["paid", "refunded"] } }).lean();
   if (!order) throw new AppError("No confirmed order was found with this Order ID", 404);
   res.set("Cache-Control", "no-store");
   res.json({ success: true, data: publicOrder(order) });
 });
 
+exports.requestOrderCancellation = asyncHandler(async (req, res) => {
+  const orderId = String(req.params.orderId || "").trim().toUpperCase();
+  const phone = cleanText(req.body.phone, 15, true).replace(/[^\d]/g, "").slice(-10);
+  const reason = cleanText(req.body.reason, 500, true);
+  if (!/^[6-9]\d{9}$/.test(phone)) throw new AppError("Enter the 10-digit phone number used for this order", 400);
+
+  const order = await Order.findOne({ orderId, paymentStatus: "paid" });
+  if (!order || String(order.customer?.phone || "").replace(/[^\d]/g, "").slice(-10) !== phone) {
+    throw new AppError("Order ID and phone number do not match", 404);
+  }
+  if (order.orderStatus !== "confirmed") {
+    throw new AppError("Cancellation is only available before an order is shipped", 409);
+  }
+  if (["requested", "processing", "accepted"].includes(order.cancellationRequest?.status)) {
+    res.set("Cache-Control", "no-store");
+    return res.json({ success: true, data: publicOrder(order) });
+  }
+  order.cancellationRequest = {
+    status: "requested",
+    reason,
+    requestedAt: new Date(),
+    resolvedAt: null,
+    resolvedBy: null,
+    adminNote: "",
+  };
+  await order.save();
+  res.set("Cache-Control", "no-store");
+  return res.status(201).json({ success: true, data: publicOrder(order) });
+});
+
 exports.listOrders = asyncHandler(async (req, res) => {
   const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
   const limit = Math.min(50, Math.max(10, Number.parseInt(req.query.limit, 10) || 20));
-  const filter = { paymentStatus: "paid" };
+  const filter = { paymentStatus: { $in: ["paid", "refunded"] } };
   const search = String(req.query.search || "").trim();
   if (search) {
     const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -237,13 +345,101 @@ exports.listOrders = asyncHandler(async (req, res) => {
 exports.updateOrderStatus = asyncHandler(async (req, res) => {
   const orderStatus = String(req.body.orderStatus || "").trim();
   if (!ORDER_STATUSES.includes(orderStatus)) throw new AppError("Invalid order status", 400);
+  const update = { orderStatus, statusUpdatedAt: new Date() };
+  if (orderStatus !== "confirmed") {
+    update["cancellationRequest.status"] = "rejected";
+    update["cancellationRequest.resolvedAt"] = new Date();
+    update["cancellationRequest.adminNote"] = "Order fulfilment had already progressed.";
+  }
   const order = await Order.findByIdAndUpdate(
     req.params.id,
-    { orderStatus, statusUpdatedAt: new Date() },
+    update,
     { new: true, runValidators: true },
   ).lean();
   if (!order) throw new AppError("Order not found", 404);
   res.json({ success: true, data: order });
+});
+
+exports.resolveOrderCancellation = asyncHandler(async (req, res) => {
+  const decision = String(req.body.decision || "").trim().toLowerCase();
+  const adminNote = cleanText(req.body.adminNote, 500);
+  if (!["accept", "reject"].includes(decision)) throw new AppError("Choose accept or reject", 400);
+
+  if (decision === "reject") {
+    const rejected = await Order.findOneAndUpdate(
+      { _id: req.params.id, "cancellationRequest.status": "requested" },
+      {
+        $set: {
+          "cancellationRequest.status": "rejected",
+          "cancellationRequest.resolvedAt": new Date(),
+          "cancellationRequest.resolvedBy": req.admin?._id,
+          "cancellationRequest.adminNote": adminNote || "Cancellation request was not approved.",
+        },
+      },
+      { new: true, runValidators: true },
+    ).lean();
+    if (!rejected) throw new AppError("This cancellation request is no longer pending", 409);
+    return res.json({ success: true, data: rejected });
+  }
+
+  const order = await Order.findOneAndUpdate(
+    {
+      _id: req.params.id,
+      paymentStatus: "paid",
+      orderStatus: "confirmed",
+      "cancellationRequest.status": "requested",
+    },
+    {
+      $set: {
+        "cancellationRequest.status": "processing",
+        "cancellationRequest.resolvedBy": req.admin?._id,
+        "cancellationRequest.adminNote": adminNote,
+        "refund.status": "processing",
+        "refund.amount": 0,
+        "refund.initiatedAt": new Date(),
+        "refund.failureMessage": "",
+      },
+    },
+    { new: true, runValidators: true },
+  );
+  if (!order) throw new AppError("Only a paid, confirmed order with a pending request can be cancelled", 409);
+
+  try {
+    if (!order.razorpayPaymentId) throw new AppError("This order has no verified payment ID", 409);
+    const receipt = `cancel-${String(order._id)}`;
+    const existingRefunds = await getRazorpayPaymentRefunds(order.razorpayPaymentId).catch(() => null);
+    const existingProviderRefund = existingRefunds?.items?.find((item) => item.receipt === receipt || item.notes?.orderId === order.orderId);
+    const providerRefund = existingProviderRefund || await refundRazorpayPayment(order.razorpayPaymentId, {
+      amount: Math.round(Number(order.total) * 100),
+      receipt,
+      notes: { orderId: order.orderId, reason: order.cancellationRequest.reason.slice(0, 240) },
+    });
+    const completed = providerRefund.status === "processed";
+    order.orderStatus = "cancelled";
+    order.statusUpdatedAt = new Date();
+    order.cancellationRequest.status = "accepted";
+    order.cancellationRequest.resolvedAt = new Date();
+    order.refund.status = completed ? "processed" : "processing";
+    order.refund.providerRefundId = String(providerRefund.id || "");
+    order.refund.amount = Number(providerRefund.amount || Math.round(Number(order.total) * 100)) / 100;
+    if (completed) {
+      order.paymentStatus = "refunded";
+      order.refund.completedAt = new Date();
+    }
+    await order.save();
+    return res.json({ success: true, data: order.toObject() });
+  } catch (error) {
+    const knownProviderRejection = error instanceof AppError && Number(error.statusCode) < 500;
+    await Order.updateOne({ _id: order._id, "cancellationRequest.status": "processing" }, {
+      $set: {
+        ...(knownProviderRejection ? { "cancellationRequest.status": "requested", "refund.status": "failed" } : {}),
+        "refund.failureMessage": knownProviderRejection
+          ? String(error.message || "Refund initiation failed").slice(0, 300)
+          : "Refund request outcome is awaiting Razorpay webhook verification. Check the Razorpay dashboard before retrying.",
+      },
+    });
+    throw error;
+  }
 });
 
 exports.ORDER_STATUSES = ORDER_STATUSES;

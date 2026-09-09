@@ -101,7 +101,7 @@ function isCurrentRoute(href) {
   const [pathPart, hashPart] = String(href || "").split("#");
   const targetPath = (pathPart || "/").replace(/\/$/, "") || "/";
 
-  if (targetPath === "/products" && currentPath.startsWith("/product-detail/")) return true;
+  if (targetPath === "/products" && (currentPath.startsWith("/product/") || currentPath.startsWith("/product-detail/"))) return true;
   if (
     targetPath === CANONICAL_WIRING_PARTS_PATH
     && currentPath.startsWith(`${CANONICAL_WIRING_PARTS_PATH}/`)

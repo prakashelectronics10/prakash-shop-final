@@ -40,6 +40,11 @@ const adminSchema = new mongoose.Schema(
       default: false,
       index: true,
     },
+    receivePulseAIUnavailableAlerts: {
+      type: Boolean,
+      default: true,
+      index: true,
+    },
     lastMobileLogin: Date,
     mobileAccessRequestedAt: Date,
     avatarUrl: {

@@ -283,7 +283,7 @@ async function getSitePayload() {
           title: product.name,
           alt: product.name,
           description: product.shortDescription,
-          link: productId ? `/product-detail/${encodeURIComponent(productId)}` : "",
+          link: productId ? `/product/${encodeURIComponent(productId)}` : "",
           displayOrder: product.displayOrder,
           source: "product",
         };

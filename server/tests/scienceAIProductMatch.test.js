@@ -2,6 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
   isGeneralProductDiscoveryRequest,
+  isServiceOnlyRequest,
   rankProductsForDemand,
 } = require("../controllers/scienceAIProductMatch");
 
@@ -9,6 +10,49 @@ test("recognizes generic product discovery requests in conversational Hinglish",
   assert.equal(isGeneralProductDiscoveryRequest("Mujhe suggestions do products ka"), true);
   assert.equal(isGeneralProductDiscoveryRequest("products dikhao"), true);
   assert.equal(isGeneralProductDiscoveryRequest("mera fan repair kaise hoga"), false);
+});
+
+test("repair-only requests never produce retail product suggestion cards", () => {
+  const products = [{ _id: "1", name: "Ceiling Fan", category: "Cooling", availability: "In Stock" }];
+  assert.equal(isServiceOnlyRequest("mera fan kharab hai repair karwana hai"), true);
+  assert.deepEqual(rankProductsForDemand("mera fan kharab hai repair karwana hai", "Book a repair", products), []);
+});
+
+test("explicit color remains a hard constraint for product cards", () => {
+  const products = [
+    { _id: "1", name: "White Table Fan", category: "Cooling", tags: ["white", "fan"] },
+    { _id: "2", name: "Blue Table Fan", category: "Cooling", tags: ["blue", "fan"] },
+  ];
+  const results = rankProductsForDemand("blue table fan chahiye", "Blue fan available", products);
+  assert.deepEqual(results.map((item) => item.product.name), ["Blue Table Fan"]);
+});
+
+test("model output cannot inject unrelated product cards into a website-information answer", () => {
+  const products = [{ _id: "1", name: "Blue Table Fan", category: "Cooling", tags: ["blue", "fan"] }];
+  const results = rankProductsForDemand(
+    "privacy policy ki details batao",
+    "Please read the policy.\nCATALOG_MATCHES: Blue Table Fan",
+    products,
+  );
+  assert.deepEqual(results, []);
+});
+
+test("brand and subtype words found in the catalog remain hard requirements", () => {
+  const products = [
+    { _id: "1", name: "Havells Table Fan", category: "Cooling", tags: ["fan"] },
+    { _id: "2", name: "Generic Ceiling Fan", category: "Cooling", tags: ["fan"] },
+  ];
+  const results = rankProductsForDemand("Havells table fan chahiye", "Recommended fans", products);
+  assert.deepEqual(results.map((item) => item.product.name), ["Havells Table Fan"]);
+});
+
+test("explicit customer budget filters out products above the maximum", () => {
+  const products = [
+    { _id: "1", name: "Blue Table Fan Basic", category: "Cooling", tags: ["blue", "fan"], price: 900 },
+    { _id: "2", name: "Blue Table Fan Premium", category: "Cooling", tags: ["blue", "fan"], price: 1600 },
+  ];
+  const results = rankProductsForDemand("blue table fan 1000 ke andar chahiye", "Recommended fans", products);
+  assert.deepEqual(results.map((item) => item.product.name), ["Blue Table Fan Basic"]);
 });
 
 test("generic product discovery returns available catalog cards even without a strict match", () => {

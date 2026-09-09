@@ -3,7 +3,7 @@ import { useSiteData } from "../../context/SiteDataContext";
 import { Footer } from "./Footer";
 import { Navbar } from "./Navbar";
 
-const LAST_UPDATED = "7 September 2026";
+const LAST_UPDATED = "9 September 2026";
 
 function LegalPage({ eyebrow, title, intro, children }) {
   const { contact } = useSiteData();
@@ -127,6 +127,68 @@ export function TermsConditionsPage() {
         <h2>Liability and governing law</h2>
         <p>To the extent permitted by law, Prakash Electronics is not responsible for indirect losses caused by events outside reasonable control or by misuse of the website. These terms are governed by the laws of India, with disputes subject to the appropriate courts in Jharkhand.</p>
         <p className="legal-page-secondary-copy">We may revise these terms as the website and services evolve. Continued use after an update means the current published terms apply.</p>
+      </section>
+    </LegalPage>
+  );
+}
+
+export function ShippingPolicyPage() {
+  return (
+    <LegalPage
+      eyebrow="Order delivery"
+      title="Shipping Policy"
+      intro="How Prakash Electronics prepares, dispatches, and delivers paid product orders."
+    >
+      <section>
+        <h2>Service area and delivery estimate</h2>
+        <p>Delivery availability depends on the delivery address, product stock, distance, and operating conditions. Any product-specific estimate is shown on the product page when available; the shop may contact you if an address cannot be served or an estimate changes.</p>
+      </section>
+      <section>
+        <h2>Shipping and additional charges</h2>
+        <p>Delivery and other applicable charges are displayed in the checkout summary before payment. A charge shown as Free adds no amount to the order total.</p>
+      </section>
+      <section>
+        <h2>Order processing and tracking</h2>
+        <p>After successful payment, your Order ID can be used on the Orders page to view the latest status. Orders move from confirmed to shipped, out for delivery, and delivered as fulfilment progresses.</p>
+      </section>
+      <section>
+        <h2>Address and delivery attempts</h2>
+        <p>Please provide a complete address, reachable phone number, correct pincode, and useful landmark. A delivery may be delayed or fail when the address is incomplete, the customer cannot be reached, or access is unavailable.</p>
+      </section>
+      <section>
+        <h2>Failed delivery</h2>
+        <p>If a paid order cannot be delivered and the shop approves a refund, the refund is initiated to the original payment method. A normal Razorpay refund typically takes 5–7 working days, subject to the payment provider or bank.</p>
+      </section>
+    </LegalPage>
+  );
+}
+
+export function ReturnRefundPolicyPage() {
+  return (
+    <LegalPage
+      eyebrow="Cancellations and refunds"
+      title="Return & Refund Policy"
+      intro="The cancellation window and refund process for paid product orders placed through this website."
+    >
+      <section>
+        <h2>Cancellation before shipping</h2>
+        <p>You may submit a cancellation request from the Orders tracking page while the order status is Confirmed. The request is reviewed by an administrator and is not final until accepted.</p>
+      </section>
+      <section>
+        <h2>After shipping or delivery</h2>
+        <p>Orders cannot be cancelled, returned, or refunded after they have been shipped, are out for delivery, or have been delivered. Please review product details and delivery information before payment.</p>
+      </section>
+      <section>
+        <h2>Approved cancellation refunds</h2>
+        <p>When an administrator accepts an eligible cancellation request, the order is marked Cancelled and the approved refund is processed to the original payment method. A normal Razorpay refund typically takes 5–7 working days, subject to Razorpay and your bank.</p>
+      </section>
+      <section>
+        <h2>Incorrect or damaged item concerns</h2>
+        <p>Contact the shop promptly with your Order ID and clear supporting details. The shop will review the concern and explain any remedy required by applicable consumer law; this does not create a general return window after shipping or delivery.</p>
+      </section>
+      <section>
+        <h2>How to request help</h2>
+        <p>Use the cancellation action on the Orders tracking page before shipping, or contact Prakash Electronics with your Order ID. Never share a UPI PIN, OTP, card PIN, or banking password.</p>
       </section>
     </LegalPage>
   );

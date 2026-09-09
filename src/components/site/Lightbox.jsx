@@ -11,6 +11,8 @@ export function Lightbox({ items, index, onClose, onIndexChange }) {
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const dragging = useRef(false);
   const last = useRef({ x: 0, y: 0 });
+  const swipeStart = useRef(null);
+  const suppressClick = useRef(false);
   const imgWrapRef = useRef(null);
 
   const reset = useCallback(() => {
@@ -83,9 +85,12 @@ export function Lightbox({ items, index, onClose, onIndexChange }) {
     : Math.min(1920, Math.max(960, Math.ceil(window.innerWidth * Math.min(window.devicePixelRatio || 1, 2))));
 
   const onPointerDown = (e) => {
-    if (zoom <= 1) return;
-    dragging.current = true;
-    last.current = { x: e.clientX, y: e.clientY };
+    suppressClick.current = false;
+    swipeStart.current = { x: e.clientX, y: e.clientY };
+    if (zoom > 1) {
+      dragging.current = true;
+      last.current = { x: e.clientX, y: e.clientY };
+    }
     e.currentTarget.setPointerCapture?.(e.pointerId);
   };
   const onPointerMove = (e) => {
@@ -96,7 +101,23 @@ export function Lightbox({ items, index, onClose, onIndexChange }) {
     }));
     last.current = { x: e.clientX, y: e.clientY };
   };
-  const onPointerUp = () => {
+  const onPointerUp = (e) => {
+    const start = swipeStart.current;
+    swipeStart.current = null;
+    dragging.current = false;
+    if (zoom > 1 || !start || items.length < 2) return;
+
+    const deltaX = e.clientX - start.x;
+    const deltaY = e.clientY - start.y;
+    if (Math.abs(deltaX) < 48 || Math.abs(deltaX) <= Math.abs(deltaY)) return;
+
+    suppressClick.current = true;
+    if (deltaX < 0) next();
+    else prev();
+  };
+
+  const onPointerCancel = () => {
+    swipeStart.current = null;
     dragging.current = false;
   };
 
@@ -180,13 +201,17 @@ export function Lightbox({ items, index, onClose, onIndexChange }) {
                 }}
                 onClick={(e) => {
                   e.stopPropagation();
+                  if (suppressClick.current) {
+                    suppressClick.current = false;
+                    return;
+                  }
                   setZoom((z) => (z === 1 ? 2 : 1));
                   if (zoom !== 1) setPan({ x: 0, y: 0 });
                 }}
                 onPointerDown={onPointerDown}
                 onPointerMove={onPointerMove}
                 onPointerUp={onPointerUp}
-                onPointerCancel={onPointerUp}
+                onPointerCancel={onPointerCancel}
                 className="lightbox-image select-none"
                 draggable={false}
               />

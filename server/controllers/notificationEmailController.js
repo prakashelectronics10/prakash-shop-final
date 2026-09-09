@@ -32,6 +32,7 @@ const createNotificationEmail = asyncHandler(async (req, res) => {
     email,
     label: req.body.label || "",
     isEnabled: req.body.isEnabled !== false,
+    receivePulseAIUnavailableAlerts: req.body.receivePulseAIUnavailableAlerts === true,
     source: "manual",
   });
 
@@ -44,6 +45,9 @@ const updateNotificationEmail = asyncHandler(async (req, res) => {
     label: req.body.label || "",
     isEnabled: req.body.isEnabled !== false,
   };
+  if (req.body.receivePulseAIUnavailableAlerts !== undefined) {
+    payload.receivePulseAIUnavailableAlerts = req.body.receivePulseAIUnavailableAlerts === true;
+  }
 
   if (req.body.email) {
     const email = normalizeEmail(req.body.email);

@@ -16,7 +16,48 @@ const projectPartSchema = new mongoose.Schema(
     availability: { type: String, default: "In Stock", enum: ["In Stock", "Low Stock", "Out of Stock", "Not Available"] },
     imageUrl: { type: String, default: "" },
     imagePublicId: { type: String, default: "" },
+    images: [
+      {
+        url: { type: String, default: "" },
+        publicId: { type: String, default: "" },
+        alt: { type: String, default: "" },
+      },
+    ],
     tags: [{ type: String, trim: true }],
+    specifications: [
+      {
+        label: { type: String, trim: true },
+        value: { type: String, trim: true },
+      },
+    ],
+    sku: { type: String, trim: true, uppercase: true, sparse: true, unique: true, index: true },
+    brand: { type: String, trim: true, default: "" },
+    gtin: { type: String, trim: true, default: "" },
+    mpn: { type: String, trim: true, default: "" },
+    manufacturer: { type: String, trim: true, default: "" },
+    modelNumber: { type: String, trim: true, default: "" },
+    condition: { type: String, enum: ["new", "refurbished", "used"], default: "new" },
+    productType: { type: String, trim: true, default: "" },
+    googleProductCategory: { type: String, trim: true, default: "" },
+    warranty: { type: String, trim: true, default: "" },
+    weight: {
+      value: { type: Number, min: 0, default: null },
+      unit: { type: String, enum: ["g", "kg"], default: "kg" },
+    },
+    dimensions: {
+      length: { type: Number, min: 0, default: null },
+      width: { type: Number, min: 0, default: null },
+      height: { type: Number, min: 0, default: null },
+      unit: { type: String, enum: ["cm", "in"], default: "cm" },
+    },
+    shipping: {
+      serviceArea: { type: String, trim: true, default: "" },
+      dispatchTime: { type: String, trim: true, default: "" },
+      deliveryEstimate: { type: String, trim: true, default: "" },
+      chargeNote: { type: String, trim: true, default: "" },
+    },
+    seoTitle: { type: String, trim: true, default: "" },
+    seoDescription: { type: String, trim: true, default: "" },
     isActive: { type: Boolean, default: true, index: true },
     isFeatured: { type: Boolean, default: false, index: true },
     isTopProduct: { type: Boolean, default: false, index: true },
@@ -28,6 +69,7 @@ const projectPartSchema = new mongoose.Schema(
 
 projectPartSchema.pre("validate", function setSlug(next) {
   if (!this.slug && this.name) this.slug = slugify(this.name);
+  if (!this.sku && this._id) this.sku = `PE-WA-${String(this._id).slice(-8).toUpperCase()}`;
   next();
 });
 

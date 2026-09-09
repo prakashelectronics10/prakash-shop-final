@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowUpRight, Bot, Camera, Check, ImagePlus, Images, Moon, PackageSearch, PanelLeftClose, PanelLeftOpen, Plus, ShoppingCart, Sun, Trash2, Wrench } from "lucide-react";
-import { apiRequest } from "../../api/client";
+import { ArrowUpRight, Bot, Camera, Check, ImagePlus, Images, Link2, Moon, PackageSearch, PanelLeftClose, PanelLeftOpen, Plus, ShoppingCart, Sun, Trash2, Wrench } from "lucide-react";
+import { apiRequest, apiUrl } from "../../api/client";
 import { SCIENCE_PROJECTS_CATEGORY, getCartStockLimit, useCart } from "../../context/CartContext";
 import { notifyCartResult } from "../../utils/cartToast";
 import { AIChatInput } from "../ui/AIChatInput";
@@ -13,7 +13,90 @@ const welcomeMessage = {
   text: "Hello, I am Pulse AI — your assistant for Prakash Electronics and Electricals. Ask about products, wiring accessories, RGB lights, home appliance repair, AC/cooler service, bookings, offers, or upload a photo and I will help with clear guidance and matching shop suggestions.",
 };
 
-const SCIENCE_AI_SESSION_KEY = "prakash:pulse-ai-session:v1";
+const SCIENCE_AI_SESSIONS_KEY = "prakash:pulse-ai-sessions:v2";
+const LEGACY_SCIENCE_AI_SESSION_KEY = "prakash:pulse-ai-session:v1";
+const SCIENCE_AI_CUSTOMER_KEY = "prakash:pulse-ai-customer:v1";
+const MAX_TEMPORARY_CHAT_SESSIONS = 25;
+
+function getPulseAICustomerId() {
+  if (typeof window === "undefined") return "";
+  try {
+    const existing = window.localStorage.getItem(SCIENCE_AI_CUSTOMER_KEY);
+    if (existing) return existing;
+    const randomPart = typeof window.crypto?.randomUUID === "function"
+      ? window.crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(16).slice(2)}-${Math.random().toString(16).slice(2)}`;
+    const value = `customer-${randomPart}`;
+    window.localStorage.setItem(SCIENCE_AI_CUSTOMER_KEY, value);
+    return value;
+  } catch (_error) {
+    return "";
+  }
+}
+
+function normalizeLinkCards(cards) {
+  return (Array.isArray(cards) ? cards : []).reduce((safe, card) => {
+    const url = String(card?.url || "").trim();
+    const valid = (url.startsWith("/") && !url.startsWith("//")) || /^https?:\/\//i.test(url);
+    let pathname = url;
+    try { pathname = new URL(url, window.location.origin).pathname; } catch (_error) { /* handled by valid */ }
+    if (!valid || /^\/product-detail(?:\/|$)/i.test(pathname) || safe.some((item) => item.url === url)) return safe;
+    const type = ["internal", "external"].includes(card?.type)
+      ? card.type
+      : url.startsWith("/")
+        ? "internal"
+        : "external";
+    safe.push({
+      id: String(card?.id || `link:${url}`),
+      title: String(card?.title || "Open link").trim().slice(0, 120),
+      description: String(card?.description || "").trim().slice(0, 240),
+      url,
+      type,
+      ctaLabel: String(card?.ctaLabel || (type === "internal" ? "View Page" : "Open Link")).trim().slice(0, 40),
+      openInNewTab: type === "external" && card?.openInNewTab !== false,
+    });
+    return safe;
+  }, []).slice(0, 4);
+}
+
+function faviconUrlForLink(link = {}) {
+  if (typeof window === "undefined") return "";
+  if (link.type === "internal") {
+    return document.querySelector('link[rel="icon"], link[rel="shortcut icon"]')?.href
+      || `${window.location.origin}/favicon.ico`;
+  }
+  try {
+    const destination = new URL(link.url);
+    if (!/^https?:$/.test(destination.protocol)) return "";
+    return apiUrl(`/science-ai/favicon?url=${encodeURIComponent(destination.origin)}`);
+  } catch (_error) {
+    return "";
+  }
+}
+
+function WebsiteLinkIcon({ link }) {
+  const faviconUrl = faviconUrlForLink(link);
+  const [failed, setFailed] = useState(!faviconUrl);
+
+  useEffect(() => {
+    setFailed(!faviconUrl);
+  }, [faviconUrl]);
+
+  return (
+    <span className={`ai-website-link-icon ${!failed ? "has-favicon" : "fallback"}`}>
+      {!failed ? (
+        <img
+          src={faviconUrl}
+          alt=""
+          aria-hidden="true"
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          onError={() => setFailed(true)}
+        />
+      ) : <Link2 size={17} />}
+    </span>
+  );
+}
 
 function useScienceAIHeroAnimationData(enabled) {
   const [animationData, setAnimationData] = useState(null);
@@ -70,6 +153,7 @@ function normalizeStoredMessage(message = {}) {
       mimeType: image.mimeType || "image/jpeg",
     })),
     suggestions: Array.isArray(message.suggestions) ? message.suggestions : [],
+    linkCards: normalizeLinkCards(message.linkCards),
     warning: message.warning || "",
     isError: Boolean(message.isError),
     isStreaming: false,
@@ -89,21 +173,41 @@ function normalizeStoredSession(session = {}) {
   };
 }
 
-function loadScienceAISession() {
-  if (typeof window === "undefined") return createSession();
+function normalizeStoredChatState(value = {}) {
+  const sessions = (Array.isArray(value.sessions) ? value.sessions : [])
+    .map((session) => normalizeStoredSession(session))
+    .slice(0, MAX_TEMPORARY_CHAT_SESSIONS);
+  const safeSessions = sessions.length ? sessions : [createSession()];
+  const requestedActiveId = String(value.activeSessionId || "");
+  const activeSessionId = safeSessions.some((session) => session.id === requestedActiveId)
+    ? requestedActiveId
+    : safeSessions[0].id;
+  return { sessions: safeSessions, activeSessionId };
+}
+
+function loadScienceAIState() {
+  if (typeof window === "undefined") return normalizeStoredChatState();
   try {
-    const parsed = JSON.parse(window.sessionStorage.getItem(SCIENCE_AI_SESSION_KEY) || "null");
-    if (!parsed || typeof parsed !== "object") return createSession();
-    return normalizeStoredSession(parsed);
+    const parsed = JSON.parse(window.sessionStorage.getItem(SCIENCE_AI_SESSIONS_KEY) || "null");
+    if (parsed && typeof parsed === "object") return normalizeStoredChatState(parsed);
+
+    const legacy = JSON.parse(window.sessionStorage.getItem(LEGACY_SCIENCE_AI_SESSION_KEY) || "null");
+    if (legacy && typeof legacy === "object") {
+      const session = normalizeStoredSession(legacy);
+      return { sessions: [session], activeSessionId: session.id };
+    }
+    return normalizeStoredChatState();
   } catch (_error) {
-    return createSession();
+    return normalizeStoredChatState();
   }
 }
 
-function saveScienceAISession(session) {
+function saveScienceAIState(state) {
   if (typeof window === "undefined") return;
   try {
-    window.sessionStorage.setItem(SCIENCE_AI_SESSION_KEY, JSON.stringify(normalizeStoredSession(session)));
+    const normalized = normalizeStoredChatState(state);
+    window.sessionStorage.setItem(SCIENCE_AI_SESSIONS_KEY, JSON.stringify(normalized));
+    window.sessionStorage.removeItem(LEGACY_SCIENCE_AI_SESSION_KEY);
   } catch (_error) {
     // Session storage can be unavailable or full; chat still works in memory.
   }
@@ -204,8 +308,47 @@ function renderInlineMarkdown(text, keyPrefix) {
     if (part.type === "strong") return <strong key={key}>{renderInlineMarkdown(part.content, key)}</strong>;
     if (part.type === "em") return <em key={key}>{renderInlineMarkdown(part.content, key)}</em>;
     if (part.type === "code") return <code key={key}>{part.content}</code>;
-    return <span key={key}>{part.content}</span>;
+    return <span key={key}>{renderLinkifiedText(part.content, key)}</span>;
   });
+}
+
+function renderLinkifiedText(text, keyPrefix) {
+  const value = String(text || "");
+  const linkPattern = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)|((?:https?:\/\/|www\.)[^\s<]+)/gi;
+  const rendered = [];
+  let cursor = 0;
+  let match;
+  while ((match = linkPattern.exec(value)) !== null) {
+    if (match.index > cursor) rendered.push(value.slice(cursor, match.index));
+    const markdownUrl = match[2] || "";
+    const rawUrl = markdownUrl || match[3] || "";
+    const trailing = markdownUrl ? "" : (rawUrl.match(/[\])},.!?;:]+$/)?.[0] || "");
+    const cleanUrl = rawUrl.slice(0, rawUrl.length - trailing.length);
+    const href = cleanUrl.startsWith("www.") ? `https://${cleanUrl}` : cleanUrl;
+    let external = true;
+    try {
+      const parsed = new URL(href);
+      external = parsed.hostname !== window.location.hostname && !/^(www\.)?prakashshop\.in$/i.test(parsed.hostname);
+    } catch (_error) {
+      external = true;
+    }
+    rendered.push(
+      <a
+        className={`ai-response-link ${external ? "external" : "internal"}`}
+        href={href}
+        key={`${keyPrefix}-link-${match.index}`}
+        target={external ? "_blank" : undefined}
+        rel={external ? "noreferrer noopener" : undefined}
+      >
+        <span>{match[1] || cleanUrl}</span>
+        {external ? <ArrowUpRight aria-hidden="true" size={14} /> : null}
+      </a>,
+    );
+    if (trailing) rendered.push(trailing);
+    cursor = match.index + match[0].length;
+  }
+  if (cursor < value.length) rendered.push(value.slice(cursor));
+  return rendered.length ? rendered : value;
 }
 
 function FormattedMessage({ text }) {
@@ -248,7 +391,7 @@ function FormattedMessage({ text }) {
 }
 
 export function ScienceAIPage() {
-  const [session, setSession] = useState(loadScienceAISession);
+  const [chatState, setChatState] = useState(loadScienceAIState);
   const [input, setInput] = useState("");
   const [images, setImages] = useState([]);
   const [busy, setBusy] = useState(false);
@@ -272,6 +415,11 @@ export function ScienceAIPage() {
   const streamTimer = useRef(null);
   const streamResolve = useRef(null);
   const streamScrollAt = useRef(0);
+  const sessions = chatState.sessions;
+  const session = useMemo(
+    () => sessions.find((item) => item.id === chatState.activeSessionId) || sessions[0],
+    [chatState.activeSessionId, sessions],
+  );
   const messages = useMemo(() => session.messages || [welcomeMessage], [session.messages]);
   const hasStarted = useMemo(() => messages.some((message) => message.role === "user"), [messages]);
   const heroAnimationData = useScienceAIHeroAnimationData(!hasStarted);
@@ -305,9 +453,9 @@ export function ScienceAIPage() {
   }, [streamingTextLength]);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => saveScienceAISession(session), 500);
+    const timer = window.setTimeout(() => saveScienceAIState(chatState), 500);
     return () => window.clearTimeout(timer);
-  }, [session]);
+  }, [chatState]);
 
   useEffect(() => {
     localStorage.setItem("pulse-ai-theme", theme);
@@ -382,8 +530,13 @@ export function ScienceAIPage() {
     if (streamTimer.current) window.clearInterval(streamTimer.current);
   }, []);
 
-  const updateActiveSession = (updater) => {
-    setSession((current) => ({ ...updater(current), updatedAt: Date.now() }));
+  const updateSessionById = (sessionId, updater) => {
+    setChatState((current) => ({
+      ...current,
+      sessions: current.sessions.map((item) => (
+        item.id === sessionId ? { ...updater(item), updatedAt: Date.now() } : item
+      )),
+    }));
   };
 
   const conversationHistory = useMemo(
@@ -439,16 +592,16 @@ export function ScienceAIPage() {
     if (typeof window !== "undefined" && window.innerWidth <= 860) setNavOpen(false);
   };
 
-  const revealAssistantMessage = ({ text, suggestions, warning, isError = false }) => new Promise((resolve) => {
+  const revealAssistantMessage = ({ text, suggestions, linkCards = [], warning, isError = false, targetSessionId = session.id }) => new Promise((resolve) => {
     stopStreaming();
     streamResolve.current = resolve;
     const id = createMessageId("ai");
     const chunks = textChunks(text);
     let index = 0;
 
-    updateActiveSession((session) => ({
-      ...session,
-      messages: [...session.messages, { id, role: "ai", text: "", isStreaming: true, isError }],
+    updateSessionById(targetSessionId, (targetSession) => ({
+      ...targetSession,
+      messages: [...targetSession.messages, { id, role: "ai", text: "", isStreaming: true, isError }],
     }));
 
     streamTimer.current = window.setInterval(() => {
@@ -456,15 +609,16 @@ export function ScienceAIPage() {
       const partial = chunks.slice(0, index).join("");
       const done = index >= chunks.length;
 
-      updateActiveSession((session) => ({
-        ...session,
-        messages: session.messages.map((message) => (
+      updateSessionById(targetSessionId, (targetSession) => ({
+        ...targetSession,
+        messages: targetSession.messages.map((message) => (
           message.id === id
             ? {
                 ...message,
                 text: partial,
                 isStreaming: !done,
                 suggestions: done ? suggestions : [],
+                linkCards: done ? normalizeLinkCards(linkCards) : [],
                 warning: done ? warning : "",
               }
             : message
@@ -481,9 +635,11 @@ export function ScienceAIPage() {
   });
 
   const newChat = () => {
-    stopStreaming();
-    setBusy(false);
-    setSession(createSession());
+    const nextSession = createSession();
+    setChatState((current) => ({
+      activeSessionId: nextSession.id,
+      sessions: [nextSession, ...current.sessions].slice(0, MAX_TEMPORARY_CHAT_SESSIONS),
+    }));
     setInput("");
     setImages([]);
     setError("");
@@ -493,7 +649,21 @@ export function ScienceAIPage() {
   const deleteChat = () => {
     stopStreaming();
     setBusy(false);
-    setSession((current) => ({ ...current, title: "New Chat", messages: [welcomeMessage], updatedAt: Date.now() }));
+    setChatState((current) => {
+      const remaining = current.sessions.filter((item) => item.id !== current.activeSessionId);
+      if (remaining.length) return { sessions: remaining, activeSessionId: remaining[0].id };
+      const nextSession = createSession();
+      return { sessions: [nextSession], activeSessionId: nextSession.id };
+    });
+    setInput("");
+    setImages([]);
+    setError("");
+    closeNavOnMobile();
+  };
+
+  const selectChat = (sessionId) => {
+    if (!sessions.some((item) => item.id === sessionId)) return;
+    setChatState((current) => ({ ...current, activeSessionId: sessionId }));
     setInput("");
     setImages([]);
     setError("");
@@ -504,12 +674,13 @@ export function ScienceAIPage() {
     const text = String(overrideText ?? input).trim();
     if ((!text && images.length === 0) || busy) return;
 
+    const targetSessionId = session.id;
     const userMessage = { id: createMessageId("user"), role: "user", text, images };
     const shouldTitle = session.title === "New Chat";
-    updateActiveSession((session) => ({
-      ...session,
-      title: shouldTitle ? titleFrom(text) : session.title,
-      messages: [...session.messages, userMessage],
+    updateSessionById(targetSessionId, (targetSession) => ({
+      ...targetSession,
+      title: shouldTitle ? titleFrom(text) : targetSession.title,
+      messages: [...targetSession.messages, userMessage],
     }));
     setInput("");
     setImages([]);
@@ -519,21 +690,28 @@ export function ScienceAIPage() {
     try {
       const response = await apiRequest("/science-ai/chat", {
         method: "POST",
-        timeout: 45000,
+        timeout: 65000,
         body: JSON.stringify({
           message: text,
-          images: images.map((image) => ({ base64: image.base64, mimeType: image.mimeType })),
+          images: images.map((image) => ({
+            base64: image.base64,
+            mimeType: image.mimeType,
+            name: image.name,
+          })),
           conversationHistory,
+          customerId: getPulseAICustomerId(),
+          sessionId: targetSessionId,
         }),
       });
       const answer = response.data?.response || "I could not generate a response. Please try again.";
       const suggestions = response.data?.suggestions || [];
+      const linkCards = normalizeLinkCards(response.data?.linkCards);
       const warning = response.data?.warning || "";
-      await revealAssistantMessage({ text: answer, suggestions, warning });
+      await revealAssistantMessage({ text: answer, suggestions, linkCards, warning, targetSessionId });
     } catch (err) {
       const message = err.message || "Pulse AI is unavailable right now.";
       setError(message);
-      await revealAssistantMessage({ text: message, suggestions: [], warning: "", isError: true });
+      await revealAssistantMessage({ text: message, suggestions: [], linkCards: [], warning: "", isError: true, targetSessionId });
     } finally {
       setBusy(false);
     }
@@ -620,12 +798,25 @@ export function ScienceAIPage() {
           </button>
         </div>
         <button type="button" onClick={newChat}><Plus size={16} /> New Chat</button>
-        <button type="button" onClick={deleteChat} className="ai-delete-chat"><Trash2 size={16} /> Delete Chat</button>
-        <div className="ai-session-list single">
-          <div className="ai-session-item active">
-            <span>{session.title}</span>
-            <small>Saved in this tab. Clears when the tab is closed.</small>
-          </div>
+        <button type="button" onClick={deleteChat} className="ai-delete-chat"><Trash2 size={16} /> Delete Current Chat</button>
+        <p className="ai-session-storage-note">Temporary chats stay in this tab and clear when the tab is closed.</p>
+        <div className="ai-session-list" aria-label="Temporary chats">
+          {sessions.map((item) => {
+            const isActive = item.id === session.id;
+            const queryCount = item.messages.filter((message) => message.role === "user").length;
+            return (
+              <button
+                type="button"
+                className={`ai-session-item${isActive ? " active" : ""}`}
+                onClick={() => selectChat(item.id)}
+                aria-current={isActive ? "true" : undefined}
+                key={item.id}
+              >
+                <span>{item.title}</span>
+                <small>{isActive ? "Current chat" : `${queryCount} ${queryCount === 1 ? "query" : "queries"}`}</small>
+              </button>
+            );
+          })}
         </div>
         <div className="ai-sidebar-card">
           <span>Product help</span>
@@ -656,31 +847,9 @@ export function ScienceAIPage() {
               <div className="ai-avatar">{message.role === "user" ? "You" : <Bot size={18} />}</div>
               <div
                 className={`ai-bubble-pro ${message.role === 'user' ? 'ai-bubble-user' : 'ai-bubble-ai'}${message.isError ? ' ai-bubble-error' : ''}`}
-                style={{
-                  maxWidth: '620px',
-                  margin: message.role === "user" ? "8px 0 8px auto" : "8px auto 8px 0",
-                  background: message.role === "user"
-                    ? "linear-gradient(135deg, #ebf4ff 55%, #dbeafe 100%)"
-                    : "linear-gradient(135deg, #fdf6e3 50%, #f8fafc 100%)",
-                  borderRadius: message.role === "user"
-                    ? "20px 20px 0px 20px"
-                    : "20px 20px 20px 0px",
-                  border: message.isError ? "1.5px solid #ef4444" : "1.5px solid #ddd",
-                  boxShadow:
-                    message.role === "user"
-                      ? "0 6px 28px 0 rgba(96, 165, 250, 0.14)"
-                      : "0 6px 28px 0 rgba(253, 224, 71, 0.09)",
-                  padding: "22px 28px 18px 28px",
-                  position: "relative",
-                  transition: "background 0.2s, box-shadow 0.2s",
-                }}
               >
                 {message.images?.length > 0 && (
-                  <div className="ai-message-images-pro" style={{
-                    display: 'flex',
-                    gap: '10px',
-                    marginBottom: '12px',
-                  }}>
+                  <div className="ai-message-images-pro">
                     {message.images
                       .filter((image) => image.preview)
                       .map((image) => (
@@ -688,65 +857,29 @@ export function ScienceAIPage() {
                           src={image.preview}
                           alt={image.name || "Uploaded"}
                           key={image.id || image.preview}
-                          style={{
-                            width: '54px',
-                            height: '54px',
-                            objectFit: 'cover',
-                            borderRadius: '10px',
-                            border: '1.5px solid #eee',
-                            boxShadow: '0 2px 10px 0 rgba(0,0,0,0.07)'
-                          }}
+                          className="ai-message-image-pro"
                         />
                     ))}
                   </div>
                 )}
-                <div style={{
-                  fontSize: '1.06rem',
-                  color: "#18314f",
-                  wordBreak: "break-word",
-                  lineHeight: 1.75,
-                  fontWeight: message.role === "user" ? 500 : 400,
-                  marginBottom: message.warning || (!message.isStreaming && message.suggestions?.length > 0) ? 7 : 0,
-                  minHeight: 22,
-                  letterSpacing: 0.02,
-                }}>
+                <div className="ai-message-body">
                   <FormattedMessage text={message.text} />
                 </div>
                 {message.isStreaming && (
-                  <span className="ai-stream-cursor-pro" aria-hidden="true"
-                    style={{
-                      display: 'inline-block',
-                      width: '16px',
-                      height: '23px',
-                      background: 'linear-gradient(135deg,#dbeafe 60%,#fff 100%)',
-                      borderRadius: '3px',
-                      marginLeft: '5px',
-                      animation: 'blinker 1s steps(2, start) infinite'
-                    }}
-                  />
+                  <span className="ai-stream-cursor-pro" aria-hidden="true" />
                 )}
                 {message.warning && (
-                  <small
-                    className="ai-response-warning-pro"
-                    style={{
-                      display: 'block',
-                      color: "#dc2626",
-                      background: "#fef2f2",
-                      borderRadius: "7px",
-                      padding: "7px 12px",
-                      fontSize: "0.95em",
-                      marginTop: "10px",
-                      maxWidth: 360,
-                      fontWeight: 500,
-                    }}
-                  >
+                  <small className="ai-response-warning-pro">
                     {message.warning}
                   </small>
                 )}
                 {!message.isStreaming && message.suggestions?.length > 0 && (
-                  <div style={{ marginTop: 16 }}>
+                  <div className="ai-suggestion-block">
                     <SuggestionCards suggestions={message.suggestions} />
                   </div>
+                )}
+                {!message.isStreaming && message.linkCards?.length > 0 && (
+                  <WebsiteLinkCards links={message.linkCards} />
                 )}
               </div>
        
@@ -887,8 +1020,8 @@ function SuggestionCards({ suggestions }) {
   return (
     <div className="ai-suggestions">
       <div className="ai-suggestions-head">
-        <strong style={{ color: "#18314f" }}>Suggested for you</strong>
-        <span style={{ color: "#64748b" }}>{availableSuggestions.length} available</span>
+        <strong>Suggested for you</strong>
+        <span>{availableSuggestions.length} available</span>
       </div>
       <div className="ai-suggestion-grid">
         {availableSuggestions.map((item) => (
@@ -905,7 +1038,7 @@ function SuggestionCards({ suggestions }) {
               <small>{item.component}</small>
               <p>{item.shortDescription}</p>
               <div className="ai-suggestion-actions">
-                <a href={`/product-detail/${encodeURIComponent(item.productId || item.slug)}`}>
+                <a href={`/product/${encodeURIComponent(item.slug || item.productId)}`}>
                   View Product
                   <ArrowUpRight size={15} />
                 </a>
@@ -925,6 +1058,40 @@ function SuggestionCards({ suggestions }) {
           </article>
         ))}
       </div>
+    </div>
+  );
+}
+
+function WebsiteLinkCards({ links }) {
+  const safeLinks = normalizeLinkCards(links);
+  if (!safeLinks.length) return null;
+
+  return (
+    <div className="ai-website-links" aria-label="Helpful website links">
+      {safeLinks.map((link) => {
+        const external = link.type === "external";
+        return (
+          <a
+            className={`ai-website-link-card ${link.type}`}
+            href={link.url}
+            key={link.id || link.url}
+            target={external && link.openInNewTab ? "_blank" : undefined}
+            rel={external && link.openInNewTab ? "noreferrer noopener" : undefined}
+            title={link.url}
+          >
+            <WebsiteLinkIcon link={link} />
+            <span className="ai-website-link-copy">
+              <strong>{link.title}</strong>
+              {link.description ? <span>{link.description}</span> : null}
+              <small title={link.url}>{link.url}</small>
+            </span>
+            <span className="ai-website-link-cta">
+              {link.ctaLabel}
+              <ArrowUpRight className="ai-website-link-arrow" size={15} />
+            </span>
+          </a>
+        );
+      })}
     </div>
   );
 }

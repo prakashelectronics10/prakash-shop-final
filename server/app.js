@@ -15,6 +15,7 @@ const { requireAdmin } = require("./middleware/auth");
 const { notFound, errorHandler } = require("./middleware/errorHandler");
 const authRoutes = require("./routes/authRoutes");
 const adminRoutes = require("./routes/adminRoutes");
+const couponRoutes = require("./routes/couponRoutes");
 const mobileAuthRoutes = require("./routes/mobileAuthRoutes");
 const mobileRoutes = require("./routes/mobileRoutes");
 const discussionRoutes = require("./routes/discussionRoutes");
@@ -33,6 +34,7 @@ const { getSitePayload, getHtmlShellSiteMeta } = require("./services/siteService
 const { isEmailConfigured } = require("./services/mailService");
 const { configureCloudinary } = require("./config/cloudinary");
 const { findProductForMetadata, absoluteUrl } = require("./services/productMetadataService");
+const { buildGoogleMerchantFeed } = require("./services/googleMerchantFeedService");
 const { handleRazorpayWebhook } = require("./controllers/orderController");
 
 const app = express();
@@ -143,6 +145,7 @@ app.use("/api/files", requireAdmin, fileRoutes);
 app.use("/api/invoices/public", invoicePublicRoutes);
 app.use("/api/invoices", requireAdmin, invoiceRoutes);
 app.use("/api/admin", requireAdmin, adminRoutes);
+app.use("/api/coupons", couponRoutes);
 app.use("/api/project-parts", projectPartRoutes);
 app.use("/api/shop-products", shopProductRoutes);
 app.use("/api/brand-sliders", brandSliderRoutes);
@@ -159,6 +162,31 @@ app.get(["/projects-parts", "/projects-parts/"], (_req, res) => {
 
 app.get(["/projects-parts/product-detail", "/projects-parts/product-detail/"], (_req, res) => {
   res.redirect(301, "/wiring-parts/product-detail");
+});
+
+app.get("/google-merchant-feed.xml", async (req, res, next) => {
+  try {
+    if (!isConnected()) throw new AppError("Product catalogue is temporarily unavailable", 503);
+    const xml = await buildGoogleMerchantFeed("https://www.prakashshop.in");
+    res.set("Cache-Control", "public, max-age=900, stale-while-revalidate=3600");
+    res.type("application/xml").send(xml);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/robots.txt", (_req, res) => {
+  res.type("text/plain").send([
+    "User-agent: *",
+    "Allow: /",
+    "Disallow: /prakash-control-panel@1999",
+    "Disallow: /checkout",
+    "Disallow: /cart",
+    "Disallow: /orders",
+    "",
+    "Sitemap: https://www.prakashshop.in/sitemap.xml",
+    "",
+  ].join("\n"));
 });
 
 function xmlEscape(value) {
@@ -209,6 +237,8 @@ app.get("/sitemap.xml", async (req, res, next) => {
       { path: "/gallery", priority: "0.7", changefreq: "weekly" },
       { path: "/privacy-policy", priority: "0.35", changefreq: "yearly" },
       { path: "/terms-and-conditions", priority: "0.35", changefreq: "yearly" },
+      { path: "/shipping-policy", priority: "0.45", changefreq: "monthly" },
+      { path: "/return-refund-policy", priority: "0.45", changefreq: "monthly" },
       { path: "/?page=learn-more&service=quick-repair-booking", priority: "0.8", changefreq: "monthly" },
       { path: "/?page=learn-more&service=lcd-led-tv-repair", priority: "0.8", changefreq: "monthly" },
       { path: "/?page=learn-more&service=ceiling-fan-repair", priority: "0.8", changefreq: "monthly" },
@@ -234,7 +264,7 @@ app.get("/sitemap.xml", async (req, res, next) => {
         const id = product.slug || product._id;
         const updated = product.updatedAt ? new Date(product.updatedAt).toISOString().slice(0, 10) : today;
         return {
-          loc: `${origin}/product-detail/${encodeURIComponent(String(id))}`,
+          loc: `${origin}/product/${encodeURIComponent(String(id))}`,
           lastmod: updated,
           changefreq: "weekly",
           priority: "0.85",
@@ -244,7 +274,7 @@ app.get("/sitemap.xml", async (req, res, next) => {
         const id = product.slug || product._id;
         const updated = product.updatedAt ? new Date(product.updatedAt).toISOString().slice(0, 10) : today;
         return {
-          loc: `${origin}/product-detail/${encodeURIComponent(String(id))}`,
+          loc: `${origin}/product/${encodeURIComponent(String(id))}`,
           lastmod: updated,
           changefreq: "weekly",
           priority: "0.8",
@@ -442,6 +472,22 @@ const ROUTE_SHARE_META = [
     canonicalPath: "/terms-and-conditions",
   },
   {
+    match: (pathname) => pathname === "/shipping-policy",
+    title: "Shipping Policy | Prakash Electronics",
+    description: "Read delivery, charges, tracking, and failed-delivery information for orders from Prakash Electronics.",
+    keywords: "Prakash Electronics shipping policy, delivery policy, order tracking",
+    ogImage: "/og-image.jpg",
+    canonicalPath: "/shipping-policy",
+  },
+  {
+    match: (pathname) => pathname === "/return-refund-policy",
+    title: "Return & Refund Policy | Prakash Electronics",
+    description: "Read order cancellation eligibility and approved refund timelines for Prakash Electronics orders.",
+    keywords: "Prakash Electronics return policy, refund policy, cancellation policy",
+    ogImage: "/og-image.jpg",
+    canonicalPath: "/return-refund-policy",
+  },
+  {
     match: (pathname) => pathname === "/cart",
     title: "Cart | Prakash Electronics",
     description: "Review your selected products before checkout.",
@@ -482,7 +528,7 @@ const ROUTE_SHARE_META = [
 function getRouteShareMeta(pathname = "") {
   const clean = String(pathname || "").split("?")[0].replace(/\/+$/, "") || "/";
   // Product detail pages keep product-specific OG images
-  if (/^\/product-detail\//i.test(clean)) return null;
+  if (/^\/(?:product|product-detail)\//i.test(clean)) return null;
   return ROUTE_SHARE_META.find((item) => item.match(clean)) || null;
 }
 
@@ -526,30 +572,48 @@ function injectProductMetadata(html, productMeta) {
   const image = productMeta.image;
   const url = productMeta.url;
   const imageAlt = productMeta.imageAlt || productMeta.title;
+  const bestPublicOffer = (productMeta.publicOffers || []).find((offer) => offer?.visibility === "public" && Number.isFinite(Number(offer.finalPrice)));
+  const effectivePrice = bestPublicOffer ? Number(bestPublicOffer.finalPrice) : productMeta.price;
   const productJsonLd = JSON.stringify({
     "@context": "https://schema.org",
     "@graph": [
       {
         "@type": "Product",
-        name: productMeta.title,
+        name: productMeta.name || productMeta.title,
         description,
-        image: [image],
+        image: productMeta.images?.length ? productMeta.images : [image],
         url,
         sku: productMeta.sku,
         category: productMeta.category,
-        brand: {
-          "@type": "Brand",
-          name: "Prakash Electronics",
-        },
-        ...(productMeta.price === null ? {} : {
+        ...(productMeta.brand ? { brand: { "@type": "Brand", name: productMeta.brand } } : {}),
+        ...(productMeta.gtin ? { gtin: productMeta.gtin } : {}),
+        ...(productMeta.mpn ? { mpn: productMeta.mpn } : {}),
+        ...(productMeta.modelNumber ? { model: productMeta.modelNumber } : {}),
+        ...(effectivePrice === null ? {} : {
           offers: {
             "@type": "Offer",
             url,
             priceCurrency: "INR",
-            price: String(productMeta.price),
+            price: String(effectivePrice),
             availability: productMeta.availability,
-            itemCondition: "https://schema.org/NewCondition",
+            itemCondition: `https://schema.org/${productMeta.condition === "used" ? "UsedCondition" : productMeta.condition === "refurbished" ? "RefurbishedCondition" : "NewCondition"}`,
             seller: { "@type": "Organization", name: "Prakash Electronics" },
+            ...(bestPublicOffer ? {
+              name: bestPublicOffer.title,
+              description: bestPublicOffer.description || undefined,
+              identifier: bestPublicOffer.code,
+              validFrom: bestPublicOffer.startsAt || undefined,
+              priceValidUntil: bestPublicOffer.endsAt ? String(bestPublicOffer.endsAt).slice(0, 10) : undefined,
+              image: bestPublicOffer.bannerImageUrl || undefined,
+              priceSpecification: {
+                "@type": "UnitPriceSpecification",
+                price: String(effectivePrice),
+                priceCurrency: "INR",
+                name: bestPublicOffer.title,
+                validFrom: bestPublicOffer.startsAt || undefined,
+                validThrough: bestPublicOffer.endsAt || undefined,
+              },
+            } : {}),
           },
         }),
       },
@@ -558,7 +622,7 @@ function injectProductMetadata(html, productMeta) {
         itemListElement: [
           { "@type": "ListItem", position: 1, name: "Home", item: `${new URL(url).origin}/` },
           { "@type": "ListItem", position: 2, name: productMeta.category || "Products", item: `${new URL(url).origin}/products` },
-          { "@type": "ListItem", position: 3, name: productMeta.title, item: url },
+          { "@type": "ListItem", position: 3, name: productMeta.name || productMeta.title, item: url },
         ],
       },
     ],
@@ -583,8 +647,8 @@ function injectProductMetadata(html, productMeta) {
   output = replaceTag(output, /<meta name="twitter:title" content="[^"]*"\s*\/?>/i, `<meta name="twitter:title" content="${escapeAttribute(title)}" />`);
   output = replaceTag(output, /<meta name="twitter:description" content="[^"]*"\s*\/?>/i, `<meta name="twitter:description" content="${escapeAttribute(description)}" />`);
   output = replaceTag(output, /<meta name="twitter:image" content="[^"]*"\s*\/?>/i, `<meta name="twitter:image" content="${escapeAttribute(image)}" />`);
-  if (productMeta.price !== null) {
-    output = replaceTag(output, /<meta property="product:price:amount" content="[^"]*"\s*\/?>/i, `<meta property="product:price:amount" content="${escapeAttribute(productMeta.price)}" />`);
+  if (effectivePrice !== null) {
+    output = replaceTag(output, /<meta property="product:price:amount" content="[^"]*"\s*\/?>/i, `<meta property="product:price:amount" content="${escapeAttribute(effectivePrice)}" />`);
     output = replaceTag(output, /<meta property="product:price:currency" content="[^"]*"\s*\/?>/i, '<meta property="product:price:currency" content="INR" />');
   }
   return replaceTag(
@@ -595,7 +659,7 @@ function injectProductMetadata(html, productMeta) {
 }
 
 function productDetailIdentifier(reqPath = "") {
-  const match = String(reqPath || "").match(/^\/product-detail\/([^/?#]+)/i);
+  const match = String(reqPath || "").match(/^\/(?:product|product-detail)\/([^/?#]+)/i);
   return match ? decodeURIComponent(match[1]) : "";
 }
 

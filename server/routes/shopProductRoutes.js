@@ -24,7 +24,7 @@ router.post("/public/products/:id/view", trackProductView);
 router.get("/public/products/:id", getShopProductById);
 
 router.use("/admin", requireAdmin);
-router.get("/admin/products", requirePermission("shopProducts"), listShopProducts);
+router.get("/admin/products", requirePermission("shopProducts", "coupons"), listShopProducts);
 router.post("/admin/products", requirePermission("shopProducts"), createShopProduct);
 router.put("/admin/products/:id", requirePermission("shopProducts"), updateShopProduct);
 router.delete("/admin/products/:id", requirePermission("shopProducts"), deleteShopProduct);

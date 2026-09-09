@@ -8,6 +8,10 @@ function buildUrl(path) {
   return `${API_BASE}${path}`;
 }
 
+export function apiUrl(path) {
+  return buildUrl(path);
+}
+
 function shouldCache(method, options) {
   return method === "GET" && options.cache !== "no-store";
 }

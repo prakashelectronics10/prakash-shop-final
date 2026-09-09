@@ -1,12 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, ArrowRight, Minus, PackageCheck, PackageSearch, Plus, ShoppingBag, Trash2 } from "lucide-react";
 import toast from "react-hot-toast";
-import { apiRequest } from "../../api/client";
 import { cartStockMessage, getCartStockLimit, useCart } from "../../context/CartContext";
 import { Footer } from "./Footer";
 import { Navbar } from "./Navbar";
 import { OptimizedImage } from "./OptimizedImage";
 import { CANONICAL_WIRING_PARTS_PATH } from "../../utils/routes";
+import { setAppliedCouponCode } from "../../utils/coupons";
+import { useOrderQuote } from "../../hooks/useOrderQuote";
 
 function priceLabel(price) {
   return price === null || price === undefined || price === "" ? "Price on request" : `Rs. ${Number(price).toLocaleString("en-IN")}`;
@@ -19,22 +19,10 @@ function lineTotal(item) {
 
 export function CartPage() {
   const { items, totals, increment, decrement, removeItem } = useCart();
-  const [additionalCharges, setAdditionalCharges] = useState([]);
-  const [chargesLoading, setChargesLoading] = useState(true);
-  const additionalTotal = useMemo(
-    () => additionalCharges.reduce((sum, charge) => sum + Number(charge.amount || 0), 0),
-    [additionalCharges],
-  );
-  const estimatedTotal = Number(totals.amount || 0) + additionalTotal;
-
-  useEffect(() => {
-    let active = true;
-    apiRequest("/orders/charges", { cache: "no-store" })
-      .then((response) => { if (active) setAdditionalCharges(Array.isArray(response.data) ? response.data : []); })
-      .catch(() => {})
-      .finally(() => { if (active) setChargesLoading(false); });
-    return () => { active = false; };
-  }, []);
+  const { quote, loading: chargesLoading, error: quoteError, refresh, payload } = useOrderQuote(items);
+  const additionalCharges = quote?.additionalCharges || [];
+  const quotedItems = quote?.items || [];
+  const estimatedTotal = quote?.total;
 
   const showCartNotice = (result) => {
     if (!result?.message) return;
@@ -80,8 +68,13 @@ export function CartPage() {
         ) : (
           <section className="cart-layout">
             <div className="cart-items-stack">
-              {items.map((item) => (
-                <article className="cart-item-card" key={item.cartId}>
+              {items.map((item, index) => {
+                const quoteItem = quotedItems[index];
+                const hasDiscount = Number(quoteItem?.discountAmount || 0) > 0;
+                const unitPrice = quoteItem?.discountedUnitPrice ?? item.price;
+                const quotedLineTotal = quoteItem?.discountedLineTotal ?? lineTotal(item);
+                return (
+                <article className={`cart-item-card ${hasDiscount ? "has-coupon-discount" : ""}`} key={item.cartId}>
                   <div className="cart-item-image">
                     {item.productImageUrl ? (
                       <OptimizedImage
@@ -100,7 +93,12 @@ export function CartPage() {
                     <h2>{item.productName}</h2>
                     {item.originalCategory && <small>Original category: {item.originalCategory}</small>}
                     <p>{item.productDescription || "Available at Prakash Electronics."}</p>
-                    <strong>{priceLabel(item.price)}</strong>
+                    <div className="cart-item-price">
+                      {hasDiscount && <del>{priceLabel(quoteItem.unitPrice)}</del>}
+                      <strong>{priceLabel(unitPrice)}</strong>
+                      {hasDiscount && <small>{quoteItem.couponCode} applied</small>}
+                    </div>
+                    {payload.items[index]?.couponCode && <button className="cart-coupon-remove" type="button" onClick={() => setAppliedCouponCode("", item)}>Remove coupon {payload.items[index].couponCode}</button>}
                     <small className="cart-stock-text">{cartStockMessage(item)}</small>
                   </div>
                   <div className="cart-item-actions">
@@ -123,13 +121,17 @@ export function CartPage() {
                         <Plus size={16} />
                       </button>
                     </div>
-                    <strong className="cart-line-total">{lineTotal(item) === null ? "Request price" : priceLabel(lineTotal(item))}</strong>
+                    <div className="cart-line-price">
+                      {hasDiscount && <del>{priceLabel(quoteItem.lineTotal)}</del>}
+                      <strong className="cart-line-total">{quotedLineTotal === null ? "Request price" : priceLabel(quotedLineTotal)}</strong>
+                    </div>
                     <button className="cart-remove-button" type="button" onClick={() => removeItem(item.cartId)}>
                       <Trash2 size={16} /> Remove
                     </button>
                   </div>
                 </article>
-              ))}
+                );
+              })}
             </div>
 
             <aside className="cart-summary">
@@ -140,8 +142,9 @@ export function CartPage() {
               </div>
               <div>
                 <span>Subtotal</span>
-                <strong>{totals.amount ? priceLabel(totals.amount) : "Price on request"}</strong>
+                <strong>{quote ? priceLabel(quote.discountedSubtotal) : chargesLoading ? "Calculating…" : "Unavailable"}</strong>
               </div>
+              {quote?.discountTotal > 0 && <small className="cart-discount-included">Coupon savings included in product prices.</small>}
               {chargesLoading ? (
                 <div className="cart-summary-charge-loading"><span>Additional charges</span><strong>Calculating…</strong></div>
               ) : additionalCharges.map((charge) => (
@@ -152,8 +155,9 @@ export function CartPage() {
               ))}
               <div className="cart-summary-total">
                 <span>Estimated total</span>
-                <strong>{totals.amount ? priceLabel(estimatedTotal) : "Price on request"}</strong>
+                <strong>{quote ? priceLabel(estimatedTotal) : chargesLoading ? "Calculating…" : "Unavailable"}</strong>
               </div>
+              {quoteError && <p className="cart-quote-error" role="alert">{quoteError} <button type="button" onClick={refresh}>Retry</button></p>}
               <button type="button" onClick={openCheckout}>
                 Checkout <ArrowRight size={18} />
               </button>

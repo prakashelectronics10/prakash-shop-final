@@ -1,14 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  BadgePercent,
+  BrainCircuit,
   Check,
   Eye,
   EyeOff,
+  ExternalLink,
   LayoutDashboard,
+  Link2,
   LogOut,
   Mail,
   Minus,
   PanelLeftClose,
   PanelLeftOpen,
+  Pencil,
   Plus,
   Send,
   ShieldCheck,
@@ -37,6 +42,7 @@ function createEmptyAdminData() {
     hero: null,
     contact: null,
     offers: [],
+    coupons: [],
     bookings: [],
     admins: [],
     notificationEmails: [],
@@ -47,6 +53,12 @@ function createEmptyAdminData() {
     brandsSlider: [],
     autoSlider: { banners: [], products: [] },
     webSettings: null,
+    pulseAIInstructions: [],
+    pulseAIUnavailableDemandSettings: {
+      minimumUniqueCustomers: 7,
+      trackingPeriodHours: 168,
+      trackedDemands: 0,
+    },
   };
 }
 
@@ -76,11 +88,13 @@ function formatAdminPriceDetail(product = {}) {
 
 const sectionCards = [
   { key: "admins", label: "Admins", note: "Manage admin accounts", superOnly: true },
-  { key: "notificationEmails", label: "Booking Notifications", note: "Email recipients and delivery health", superOnly: true },
+  { key: "pulseAI", label: "Pulse AI Instructions", note: "Train live responses with editable behavior rules" },
+  { key: "notificationEmails", label: "Email Notifications", note: "Booking and Pulse AI demand-alert recipients", superOnly: true },
   { key: "bookings", label: "Bookings", note: "Repair requests and status" },
   { key: "orders", label: "Orders", note: "Paid orders, delivery details and status" },
   { key: "invoice", permission: "invoices", label: "Invoice", note: "Create invoices, PDFs, and billing history" },
   { key: "offers", label: "Offers", note: "Image and short offer cards" },
+  { key: "coupons", label: "Coupons & offers", note: "Public offers and private checkout coupons" },
   { key: "shopHighlights", label: "Shop Highlights", note: "Sticky linked image cards" },
   { key: "services", label: "Our Services", note: "Service/product cards" },
   { key: "gallery", label: "Gallery", note: "Website gallery photos" },
@@ -420,19 +434,24 @@ function App() {
     const canProjectParts = canAccessSection(currentAdmin, "projectParts") || canAccessSection(currentAdmin, "featuredRepairs");
     const canProjectSliders = canAccessSection(currentAdmin, "projectSliders") || canAccessSection(currentAdmin, "featuredRepairs");
     const canBrandsSlider = canAccessSection(currentAdmin, "brandsSlider");
-    const canShopProducts = canAccessSection(currentAdmin, "shopProducts");
+    const canCoupons = canAccessSection(currentAdmin, "coupons");
+    const canShopProducts = canAccessSection(currentAdmin, "shopProducts") || canCoupons;
     const canWebSettings = canAccessSection(currentAdmin, "webSettings");
     const canAutoSlider = canAccessSection(currentAdmin, "autoSliderBanners") || canShopProducts;
     const canNotificationEmails = canAccessSection(currentAdmin, "notificationEmails");
+    const canPulseAI = canAccessSection(currentAdmin, "pulseAI");
 
     const requests = [
       { key: "dashboard", label: "dashboard", enabled: true, load: () => apiFetch("/admin/dashboard"), read: (result) => result.data, empty: null },
       { key: "admins", label: "admins", enabled: canAccessSection(currentAdmin, "admins"), load: () => apiFetch("/admin/admins"), read: (result) => result.data || [], empty: [] },
       { key: "notificationEmails", label: "booking notifications", enabled: canNotificationEmails, load: () => apiFetch("/admin/notification-emails"), read: (result) => result.data || [], empty: [] },
+      { key: "pulseAIUnavailableDemandSettings", label: "Pulse AI demand settings", enabled: canNotificationEmails, load: () => apiFetch("/admin/pulse-ai-demand-settings", { cache: "no-store" }), read: (result) => result.data || {}, empty: { minimumUniqueCustomers: 7, trackingPeriodHours: 168, trackedDemands: 0 } },
+      { key: "pulseAIInstructions", label: "Pulse AI instructions", enabled: canPulseAI, load: () => apiFetch("/admin/pulse-ai-instructions", { cache: "no-store" }), read: (result) => result.data || [], empty: [] },
       { key: "products", label: "services", enabled: canProducts, load: () => apiFetch("/admin/products?limit=100"), read: (result) => result.data?.items || [], empty: [] },
       { key: "categories", label: "categories", enabled: canProducts, load: () => apiFetch("/admin/categories"), read: (result) => result.data || [], empty: [] },
       { key: "contact", label: "footer contact", enabled: canAccessSection(currentAdmin, "footer"), load: () => apiFetch("/admin/contact"), read: (result) => result.data, empty: null },
       { key: "offers", label: "offers", enabled: canAccessSection(currentAdmin, "offers"), load: () => apiFetch("/admin/offers"), read: (result) => result.data || [], empty: [] },
+      { key: "coupons", label: "coupons and offers", enabled: canCoupons, load: () => apiFetch("/admin/coupons", { cache: "no-store" }), read: (result) => result.data || [], empty: [] },
       { key: "bookings", label: "bookings", enabled: canAccessSection(currentAdmin, "bookings"), load: () => apiFetch("/admin/bookings"), read: (result) => result.data || [], empty: [] },
       { key: "content", label: "site content", enabled: canContent, load: () => apiFetch("/admin/site-content"), read: (result) => result.data || [], empty: [] },
       { key: "projectParts", label: "wiring accessories", enabled: canProjectParts, load: () => apiFetch("/project-parts/admin/project-parts?limit=200"), read: (result) => result.data?.items || [], empty: [] },
@@ -718,7 +737,15 @@ function App() {
           <AdminManager admins={data.admins} currentAdmin={admin} runAction={runAction} busy={busy} />
         )}
         {active === "notificationEmails" && (
-          <NotificationEmailManager emails={data.notificationEmails} runAction={runAction} busy={busy} />
+          <NotificationEmailManager
+            emails={data.notificationEmails}
+            demandSettings={data.pulseAIUnavailableDemandSettings}
+            runAction={runAction}
+            busy={busy}
+          />
+        )}
+        {active === "pulseAI" && (
+          <PulseAIInstructionsManager instructions={data.pulseAIInstructions} runAction={runAction} busy={busy} />
         )}
         {active === "bookings" && (
           <BookingsManager bookings={data.bookings} runAction={runAction} busy={busy} />
@@ -753,6 +780,9 @@ function App() {
         )}
         {active === "shopProducts" && (
           <ShopProductsManager products={data.shopProducts} runAction={runAction} busy={busy} />
+        )}
+        {active === "coupons" && (
+          <CouponManager coupons={data.coupons} products={data.shopProducts} runAction={runAction} busy={busy} />
         )}
         {active === "autoSliderBanners" && (
           <AutoSliderBannerManager banners={data.autoSlider.banners} products={data.autoSlider.products} runAction={runAction} busy={busy} />
@@ -795,6 +825,362 @@ function App() {
 function pageTitle(active) {
   if (active === "dashboard") return "Dashboard";
   return sectionCards.find((item) => item.key === active)?.label || "Admin";
+}
+
+const emptyPulseAIInstruction = {
+  title: "",
+  instruction: "",
+  scope: "general",
+  target: "",
+  priority: 100,
+  isActive: true,
+  linkAction: {
+    enabled: false,
+    title: "",
+    description: "",
+    url: "",
+    type: "auto",
+    trigger: "",
+    ctaLabel: "Open Link",
+    openInNewTab: true,
+  },
+};
+
+function pulseAILinkActionError(linkAction = {}) {
+  if (!linkAction.enabled) return "";
+  if (!String(linkAction.title || "").trim()) return "Add a heading for the link card.";
+  if (!String(linkAction.trigger || "").trim()) return "Describe exactly when this link should appear.";
+  const url = String(linkAction.url || "").trim();
+  if (!url) return "Add the destination URL or internal route.";
+  try {
+    if (/^\/(?:product|product-detail)(?:\/|$)/i.test(new URL(url, window.location.origin).pathname)) {
+      return "Product detail links are shown through Pulse AI product suggestion cards only.";
+    }
+  } catch (_error) {
+    // The URL-specific validation below supplies the actionable error.
+  }
+  if (url.startsWith("/") && !url.startsWith("//")) {
+    return linkAction.type === "external" ? "External links need a full HTTPS URL." : "";
+  }
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:") return "Only HTTPS external URLs are allowed.";
+    if (linkAction.type === "internal" && parsed.hostname !== window.location.hostname && !/^(www\.)?prakashshop\.in$/i.test(parsed.hostname)) {
+      return "Internal absolute URLs must use the Prakash Shop domain.";
+    }
+  } catch (_error) {
+    return "Use an internal route beginning with / or a full HTTPS URL.";
+  }
+  return "";
+}
+
+function detectedPulseAILinkType(linkAction = {}) {
+  if (linkAction.type && linkAction.type !== "auto") return linkAction.type;
+  const url = String(linkAction.url || "").trim();
+  if (url.startsWith("/") && !url.startsWith("//")) return "internal";
+  try {
+    const hostname = new URL(url).hostname;
+    return hostname === window.location.hostname || /^(www\.)?prakashshop\.in$/i.test(hostname) ? "internal" : "external";
+  } catch (_error) {
+    return "external";
+  }
+}
+
+function PulseAIInstructionsManager({ instructions = [], runAction, busy }) {
+  const [form, setForm] = useState(emptyPulseAIInstruction);
+  const [editingId, setEditingId] = useState("");
+  const linkActionError = pulseAILinkActionError(form.linkAction);
+
+  const setLinkAction = (patch) => setForm((current) => ({
+    ...current,
+    linkAction: { ...current.linkAction, ...patch },
+  }));
+
+  const reset = () => {
+    setEditingId("");
+    setForm(emptyPulseAIInstruction);
+  };
+
+  const edit = (item) => {
+    setEditingId(recordId(item));
+    setForm({
+      title: item.title || "",
+      instruction: item.instruction || "",
+      scope: item.scope || "general",
+      target: item.target || "",
+      priority: Number(item.priority ?? 100),
+      isActive: item.isActive !== false,
+      linkAction: {
+        enabled: item.linkAction?.enabled === true,
+        title: item.linkAction?.title || "",
+        description: item.linkAction?.description || "",
+        url: item.linkAction?.url || "",
+        type: item.linkAction?.type || "auto",
+        trigger: item.linkAction?.trigger || "",
+        ctaLabel: item.linkAction?.ctaLabel || "Open Link",
+        openInNewTab: item.linkAction?.openInNewTab !== false,
+      },
+    });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const payloadFor = (item) => ({
+    title: String(item.title || "").trim(),
+    instruction: String(item.instruction || "").trim(),
+    scope: item.scope || "general",
+    target: String(item.target || "").trim(),
+    priority: Number(item.priority ?? 100),
+    isActive: item.isActive !== false,
+    linkAction: {
+      enabled: item.linkAction?.enabled === true,
+      title: String(item.linkAction?.title || "").trim(),
+      description: String(item.linkAction?.description || "").trim(),
+      url: String(item.linkAction?.url || "").trim(),
+      type: item.linkAction?.type || "auto",
+      trigger: String(item.linkAction?.trigger || "").trim(),
+      ctaLabel: String(item.linkAction?.ctaLabel || "Open Link").trim() || "Open Link",
+      openInNewTab: item.linkAction?.openInNewTab !== false,
+    },
+  });
+
+  const save = (event) => {
+    event.preventDefault();
+    if (!form.title.trim() || !form.instruction.trim() || linkActionError) return;
+    runAction(async () => {
+      await apiFetch(editingId ? `/admin/pulse-ai-instructions/${editingId}` : "/admin/pulse-ai-instructions", {
+        method: editingId ? "PUT" : "POST",
+        body: JSON.stringify(payloadFor(form)),
+      });
+      reset();
+    }, editingId ? "Pulse AI instruction updated. It is live for the next response." : "Pulse AI instruction saved. It is live for the next response.");
+  };
+
+  const toggle = (item) => runAction(async () => {
+    await apiFetch(`/admin/pulse-ai-instructions/${recordId(item)}`, {
+      method: "PUT",
+      body: JSON.stringify({ ...payloadFor(item), isActive: item.isActive === false }),
+    });
+  }, item.isActive === false ? "Instruction activated for the next Pulse AI response." : "Instruction paused.");
+
+  const remove = (item) => {
+    if (!window.confirm(`Delete “${item.title}”? This instruction will stop affecting Pulse AI immediately.`)) return;
+    runAction(async () => {
+      await apiFetch(`/admin/pulse-ai-instructions/${recordId(item)}`, { method: "DELETE" });
+      if (editingId === recordId(item)) reset();
+    }, "Pulse AI instruction deleted.");
+  };
+
+  return (
+    <div className="manager-grid pulse-ai-admin-manager">
+      <form className="editor glass-panel pulse-ai-rule-editor" onSubmit={save}>
+        <div className="pulse-ai-admin-intro">
+          <span><BrainCircuit size={22} /></span>
+          <div>
+            <p className="eyebrow">Live behavior controls</p>
+            <h2>{editingId ? "Edit AI instruction" : "Add AI instruction"}</h2>
+            <small>Saved active rules are read from the database for every new Pulse AI reply—no deployment or model retraining is required.</small>
+          </div>
+        </div>
+        <Input
+          label="Instruction name"
+          value={form.title}
+          onChange={(title) => setForm((current) => ({ ...current, title }))}
+          placeholder="Example: Prefer Havells for premium switches"
+        />
+        <Textarea
+          label="Instruction for Pulse AI"
+          value={form.instruction}
+          onChange={(instruction) => setForm((current) => ({ ...current, instruction }))}
+          rows={8}
+        />
+        <small className="field-hint pulse-ai-instruction-hint">Be specific about when the rule applies and the response you expect. Customer requirements, real stock, and product compatibility always remain the source of truth.</small>
+        <div className="two-col">
+          <Select
+            label="Scope"
+            value={form.scope}
+            onChange={(scope) => setForm((current) => ({ ...current, scope: scope || "general" }))}
+            options={[
+              { value: "general", label: "General behavior" },
+              { value: "products", label: "Products" },
+              { value: "services", label: "Services / repairs" },
+              { value: "website", label: "Website information" },
+              { value: "page", label: "Specific page" },
+            ]}
+          />
+          <Input
+            label="Target (optional)"
+            value={form.target}
+            onChange={(target) => setForm((current) => ({ ...current, target }))}
+            placeholder="Product, category, service, or route"
+          />
+        </div>
+        <div className="two-col pulse-ai-rule-controls">
+          <Input
+            label="Priority (0–1000)"
+            type="number"
+            value={form.priority}
+            onChange={(priority) => setForm((current) => ({ ...current, priority }))}
+          />
+          <label className="toggle-line pulse-ai-active-toggle">
+            <input
+              type="checkbox"
+              checked={form.isActive}
+              onChange={(event) => setForm((current) => ({ ...current, isActive: event.target.checked }))}
+            />
+            <span>Activate immediately after save</span>
+          </label>
+        </div>
+        <section className={`pulse-ai-link-editor ${form.linkAction.enabled ? "enabled" : ""}`}>
+          <div className="pulse-ai-link-editor-head">
+            <span className="pulse-ai-link-editor-icon"><Link2 size={18} /></span>
+            <div>
+              <strong>Smart Link / Action Card</strong>
+              <small>Optionally show one trusted destination only when its intent matches the customer.</small>
+            </div>
+            <label className="toggle-line pulse-ai-link-toggle">
+              <input
+                type="checkbox"
+                checked={form.linkAction.enabled}
+                onChange={(event) => setLinkAction({ enabled: event.target.checked })}
+              />
+              <span>{form.linkAction.enabled ? "Enabled" : "Disabled"}</span>
+            </label>
+          </div>
+          {form.linkAction.enabled ? (
+            <div className="pulse-ai-link-fields">
+              <div className="two-col">
+                <Input
+                  label="Card heading"
+                  value={form.linkAction.title}
+                  onChange={(title) => setLinkAction({ title })}
+                  placeholder="Havells Fan Warranty Registration"
+                />
+                <Input
+                  label="CTA label"
+                  value={form.linkAction.ctaLabel}
+                  onChange={(ctaLabel) => setLinkAction({ ctaLabel })}
+                  placeholder="Open Link"
+                />
+              </div>
+              <Textarea
+                label="When should this link appear?"
+                value={form.linkAction.trigger}
+                onChange={(trigger) => setLinkAction({ trigger })}
+                rows={3}
+                placeholder="Show only when a customer asks to register or check warranty for a Havells fan."
+              />
+              <Textarea
+                label="Short description (optional)"
+                value={form.linkAction.description}
+                onChange={(description) => setLinkAction({ description })}
+                rows={2}
+                placeholder="Register or check your eligible fan warranty."
+              />
+              <div className="two-col pulse-ai-link-url-row">
+                <Input
+                  label="Destination URL or route"
+                  value={form.linkAction.url}
+                  onChange={(url) => setLinkAction({ url })}
+                  placeholder="/warranty or https://brand.example/register"
+                />
+                <Select
+                  label="Link type"
+                  value={form.linkAction.type}
+                  onChange={(type) => setLinkAction({ type: type || "auto" })}
+                  options={[
+                    { value: "auto", label: "Auto detect" },
+                    { value: "internal", label: "Internal website link" },
+                    { value: "external", label: "External secure link" },
+                  ]}
+                />
+              </div>
+              <div className="pulse-ai-link-safety-row">
+                <span className={`pulse-ai-link-type-preview ${detectedPulseAILinkType(form.linkAction)}`}>
+                  {detectedPulseAILinkType(form.linkAction) === "internal" ? <Link2 size={14} /> : <ExternalLink size={14} />}
+                  {detectedPulseAILinkType(form.linkAction) === "internal" ? "Internal destination" : "External destination"}
+                </span>
+                <label className="toggle-line">
+                  <input
+                    type="checkbox"
+                    checked={detectedPulseAILinkType(form.linkAction) === "external" && form.linkAction.openInNewTab}
+                    disabled={detectedPulseAILinkType(form.linkAction) === "internal"}
+                    onChange={(event) => setLinkAction({ openInNewTab: event.target.checked })}
+                  />
+                  <span>Open external link in a new tab</span>
+                </label>
+              </div>
+              {linkActionError ? <p className="form-error pulse-ai-link-error">{linkActionError}</p> : null}
+              <small className="field-hint">Pulse AI receives only this action's ID and intent. The server validates and supplies the saved URL, so the model cannot replace it.</small>
+            </div>
+          ) : null}
+        </section>
+        <div className="button-row">
+          <button className="primary-button" type="submit" disabled={busy || !form.title.trim() || !form.instruction.trim() || Boolean(linkActionError)}>
+            {busy ? "Saving..." : editingId ? "Update instruction" : "Save & activate"}
+          </button>
+          {editingId ? <button className="ghost-button" type="button" onClick={reset} disabled={busy}>Cancel edit</button> : null}
+        </div>
+      </form>
+
+      <section className="list-panel glass-panel pulse-ai-rules-list">
+        <div className="list-heading">
+          <div>
+            <p className="eyebrow">Instruction library</p>
+            <h2>Manage live rules</h2>
+          </div>
+          <span className="pulse-ai-rule-count">{instructions.length} total</span>
+        </div>
+        {!instructions.length ? (
+          <div className="pulse-ai-rules-empty">
+            <BrainCircuit size={28} />
+            <strong>No custom instructions yet</strong>
+            <p>Add the first rule to customize Pulse AI's answers.</p>
+          </div>
+        ) : (
+          <div className="pulse-ai-rule-stack">
+            {instructions.map((item) => (
+              <article className={`pulse-ai-rule-card ${item.isActive === false ? "paused" : "active"}`} key={recordId(item)}>
+                <div className="pulse-ai-rule-card-head">
+                  <div>
+                    <span className="pulse-ai-rule-status">{item.isActive === false ? "Paused" : "Live now"}</span>
+                    <h3>{item.title}</h3>
+                  </div>
+                  <b>Priority {item.priority ?? 100}</b>
+                </div>
+                <p>{item.instruction}</p>
+                <div className="pulse-ai-rule-meta">
+                  <span>{item.scope || "general"}</span>
+                  {item.target ? <span>Target: {item.target}</span> : null}
+                  <span>Updated {item.updatedAt ? new Date(item.updatedAt).toLocaleString() : "just now"}</span>
+                </div>
+                {item.linkAction?.enabled ? (
+                  <div className="pulse-ai-rule-link-summary">
+                    <span className="pulse-ai-smart-link-badge"><Link2 size={13} /> Smart link active</span>
+                    <div>
+                      <strong>{item.linkAction.title || "Linked action"}</strong>
+                      <small>{detectedPulseAILinkType(item.linkAction) === "internal" ? "Internal" : "External"} · {item.linkAction.trigger || "No trigger provided"}</small>
+                      <code title={item.linkAction.url}>{item.linkAction.url}</code>
+                    </div>
+                  </div>
+                ) : null}
+                <div className="button-row pulse-ai-rule-actions">
+                  <button type="button" className="ghost-button icon-text" onClick={() => edit(item)} disabled={busy}>
+                    <Pencil size={15} /> Edit
+                  </button>
+                  <button type="button" className="ghost-button" onClick={() => toggle(item)} disabled={busy}>
+                    {item.isActive === false ? "Activate" : "Pause"}
+                  </button>
+                  <button type="button" className="danger subtle-button" onClick={() => remove(item)} disabled={busy}>
+                    <Trash2 size={15} /> Delete
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+    </div>
+  );
 }
 
 function LoginScreen({ onAuthenticated, message }) {
@@ -1025,7 +1411,7 @@ function AdminAccountAvatar({ admin }) {
 }
 
 function AdminManager({ admins, currentAdmin, runAction, busy }) {
-  const empty = { name: "", email: "", role: "admin", password: "", tag: "employee", permissions: [], adminAndroidAppAccess: false, isActive: true };
+  const empty = { name: "", email: "", role: "admin", password: "", tag: "employee", permissions: [], adminAndroidAppAccess: false, receivePulseAIUnavailableAlerts: true, isActive: true };
   const [form, setForm] = useState(empty);
   const [editingId, setEditingId] = useState("");
   const [pendingCreate, setPendingCreate] = useState(null);
@@ -1066,6 +1452,7 @@ function AdminManager({ admins, currentAdmin, runAction, busy }) {
       tag: item.tag || "employee",
       permissions: item.permissions || [],
       adminAndroidAppAccess: Boolean(item.adminAndroidAppAccess),
+      receivePulseAIUnavailableAlerts: item.receivePulseAIUnavailableAlerts !== false,
       isActive: item.isActive !== false,
     });
   };
@@ -1090,6 +1477,7 @@ function AdminManager({ admins, currentAdmin, runAction, busy }) {
             tag: form.tag,
             permissions: form.permissions || [],
             adminAndroidAppAccess: Boolean(form.adminAndroidAppAccess),
+            receivePulseAIUnavailableAlerts: form.receivePulseAIUnavailableAlerts !== false,
             isActive: form.isActive !== false,
             ...(form.password ? { password: form.password } : {}),
           }),
@@ -1110,6 +1498,7 @@ function AdminManager({ admins, currentAdmin, runAction, busy }) {
         tag: form.tag,
         permissions: form.permissions || [],
         adminAndroidAppAccess: Boolean(form.adminAndroidAppAccess),
+        receivePulseAIUnavailableAlerts: form.receivePulseAIUnavailableAlerts !== false,
       }),
     })
       .then((response) => {
@@ -1154,6 +1543,17 @@ function AdminManager({ admins, currentAdmin, runAction, busy }) {
     await apiFetch(`/admin/admins/${item._id || item.id}`, { method: "DELETE" });
   }, "Admin account deleted");
 
+  const toggleUnavailableDemandAlerts = (item) => runAction(async () => {
+    await apiFetch(`/admin/admins/${item._id || item.id}`, {
+      method: "PUT",
+      body: JSON.stringify({
+        receivePulseAIUnavailableAlerts: item.receivePulseAIUnavailableAlerts === false,
+      }),
+    });
+  }, item.receivePulseAIUnavailableAlerts === false
+    ? "Pulse AI unavailable-demand emails enabled for this admin"
+    : "Pulse AI unavailable-demand emails disabled for this admin");
+
   return (
     <div className="manager-grid">
       <section className="editor glass-panel">
@@ -1191,6 +1591,11 @@ function AdminManager({ admins, currentAdmin, runAction, busy }) {
           label="Admin Android App Access"
           checked={Boolean(form.adminAndroidAppAccess)}
           onChange={(adminAndroidAppAccess) => setForm({ ...form, adminAndroidAppAccess })}
+        />
+        <Toggle
+          label="Receive Pulse AI unavailable product/service demand emails"
+          checked={form.receivePulseAIUnavailableAlerts !== false}
+          onChange={(receivePulseAIUnavailableAlerts) => setForm({ ...form, receivePulseAIUnavailableAlerts })}
         />
         <div className="repeatable-block">
           <div className="repeatable-head">
@@ -1256,11 +1661,20 @@ function AdminManager({ admins, currentAdmin, runAction, busy }) {
               </span>
               <small>{item.email}</small>
               <small>{item.isSuperAdmin || item.adminAndroidAppAccess ? "Android app access enabled" : "Android app access disabled"}</small>
+              <small>{item.receivePulseAIUnavailableAlerts !== false ? "Pulse AI demand alerts enabled" : "Pulse AI demand alerts disabled"}</small>
               <small>{(item.permissions || []).map((key) => sectionCards.find((card) => card.key === key)?.label || key).join(", ") || "No section access"}</small>
             </div>
             <span className={`status-badge ${item.isActive ? "repaired" : ""}`}>
               {item.isSuperAdmin ? "Owner" : item.isActive ? "Active" : "Inactive"}
             </span>
+            <button
+              type="button"
+              className="admin-demand-alert-toggle"
+              onClick={() => toggleUnavailableDemandAlerts(item)}
+              disabled={busy || item.isActive === false}
+            >
+              <Mail size={14} /> Demand email {item.receivePulseAIUnavailableAlerts !== false ? "On" : "Off"}
+            </button>
             {!item.isSuperAdmin && <button type="button" onClick={() => edit(item)}>Edit</button>}
             {!item.isSuperAdmin && <button className="danger" type="button" onClick={() => remove(item)}>Delete</button>}
           </div>
@@ -1270,16 +1684,38 @@ function AdminManager({ admins, currentAdmin, runAction, busy }) {
   );
 }
 
-function NotificationEmailManager({ emails, runAction, busy }) {
-  const empty = { email: "", label: "", isEnabled: true };
+function NotificationEmailManager({ emails, demandSettings = {}, runAction, busy }) {
+  const empty = { email: "", label: "", isEnabled: true, receivePulseAIUnavailableAlerts: true, source: "manual" };
   const [form, setForm] = useState(empty);
   const [editingId, setEditingId] = useState("");
+  const [demandSettingsForm, setDemandSettingsForm] = useState({
+    minimumUniqueCustomers: Number(demandSettings.minimumUniqueCustomers || 7),
+    trackingPeriodHours: Number(demandSettings.trackingPeriodHours || 168),
+  });
   const enabledCount = emails.filter((item) => item.isEnabled !== false).length;
   const disabledCount = emails.length - enabledCount;
+  const unavailableAlertCount = emails.filter((item) => item.source === "manual" && item.receivePulseAIUnavailableAlerts === true).length;
   const lastSent = emails
     .map((item) => item.lastDeliveryAt)
     .filter(Boolean)
     .sort((a, b) => new Date(b) - new Date(a))[0];
+
+  useEffect(() => {
+    setDemandSettingsForm({
+      minimumUniqueCustomers: Number(demandSettings.minimumUniqueCustomers || 7),
+      trackingPeriodHours: Number(demandSettings.trackingPeriodHours || 168),
+    });
+  }, [demandSettings.minimumUniqueCustomers, demandSettings.trackingPeriodHours]);
+
+  const saveDemandSettings = () => runAction(async () => {
+    await apiFetch("/admin/pulse-ai-demand-settings", {
+      method: "PUT",
+      body: JSON.stringify({
+        minimumUniqueCustomers: Number(demandSettingsForm.minimumUniqueCustomers),
+        trackingPeriodHours: Number(demandSettingsForm.trackingPeriodHours),
+      }),
+    });
+  }, "Pulse AI unavailable-demand threshold updated instantly");
 
   const reset = () => {
     setForm(empty);
@@ -1292,6 +1728,8 @@ function NotificationEmailManager({ emails, runAction, busy }) {
       email: item.email || "",
       label: item.label || "",
       isEnabled: item.isEnabled !== false,
+      receivePulseAIUnavailableAlerts: item.receivePulseAIUnavailableAlerts === true,
+      source: item.source || "manual",
     });
   };
 
@@ -1315,19 +1753,72 @@ function NotificationEmailManager({ emails, runAction, busy }) {
         email: item.email,
         label: item.label || "",
         isEnabled: item.isEnabled === false,
+        receivePulseAIUnavailableAlerts: item.receivePulseAIUnavailableAlerts === true,
       }),
     });
-  }, item.isEnabled === false ? "Notifications enabled" : "Notifications disabled");
+  }, item.isEnabled === false ? "Booking notifications enabled" : "Booking notifications disabled");
+
+  const toggleUnavailableAlerts = (item) => runAction(async () => {
+    await apiFetch(`/admin/notification-emails/${item._id || item.id}`, {
+      method: "PUT",
+      body: JSON.stringify({
+        email: item.email,
+        label: item.label || "",
+        isEnabled: item.isEnabled !== false,
+        receivePulseAIUnavailableAlerts: item.receivePulseAIUnavailableAlerts !== true,
+      }),
+    });
+  }, item.receivePulseAIUnavailableAlerts === true
+    ? "Pulse AI demand alerts disabled for this email"
+    : "Pulse AI demand alerts enabled for this email");
 
   return (
     <div className="manager-grid">
       <section className="editor glass-panel notification-email-editor">
-        <p className="eyebrow">Booking alert delivery</p>
-        <h2>{editingId ? "Edit Notification Email" : "Booking Notifications"}</h2>
-        <p className="muted">Every new public booking sends a professional email notification to active admin accounts and enabled recipients here. Disable an email here to exclude it from booking alerts.</p>
+        <p className="eyebrow">Notification delivery</p>
+        <h2>{editingId ? "Edit Notification Email" : "Email Notifications"}</h2>
+        <p className="muted">Manage booking recipients and additional addresses for Pulse AI unavailable product/service demand alerts. Admin-account demand alerts are controlled from Admin Accounts.</p>
+        <div className="pulse-ai-demand-settings-panel">
+          <div>
+            <p className="eyebrow">Aggregated demand rule</p>
+            <h3>Unavailable electrical demand threshold</h3>
+            <p className="muted">Only electrical/electronics products, related spares/accessories, and services are tracked. One customer counts once per requested item in the rolling period.</p>
+          </div>
+          <div className="two-col">
+            <Input
+              label="Minimum unique customers"
+              type="number"
+              value={demandSettingsForm.minimumUniqueCustomers}
+              onChange={(value) => setDemandSettingsForm((current) => ({ ...current, minimumUniqueCustomers: value }))}
+            />
+            <Select
+              label="Tracking period"
+              value={Number(demandSettingsForm.trackingPeriodHours)}
+              onChange={(trackingPeriodHours) => setDemandSettingsForm((current) => ({ ...current, trackingPeriodHours }))}
+              options={[
+                { value: 24, label: "24 hours" },
+                { value: 168, label: "7 days" },
+                { value: 720, label: "30 days" },
+              ]}
+            />
+          </div>
+          <div className="pulse-ai-demand-settings-footer">
+            <span>{Number(demandSettings.trackedDemands || 0)} relevant unavailable demand type(s) active in this period</span>
+            <button
+              className="primary-button"
+              type="button"
+              disabled={busy || Number(demandSettingsForm.minimumUniqueCustomers) < 2 || Number(demandSettingsForm.minimumUniqueCustomers) > 100}
+              onClick={saveDemandSettings}
+            >
+              Save demand rule
+            </button>
+          </div>
+          <small className="field-hint">Duplicate protection: after an alert, the same demand needs another full threshold cohort of new unique customers and must pass the cooldown before another email can be sent.</small>
+        </div>
         <div className="notification-analytics">
-          <Detail label="Enabled Recipients" value={enabledCount} />
-          <Detail label="Disabled Recipients" value={disabledCount} />
+          <Detail label="Booking Enabled" value={enabledCount} />
+          <Detail label="Booking Disabled" value={disabledCount} />
+          <Detail label="Pulse AI Demand Alerts" value={unavailableAlertCount} />
           <Detail label="Last Sent" value={formatDateTime(lastSent) || "No delivery yet"} />
         </div>
         <div className="two-col">
@@ -1335,6 +1826,14 @@ function NotificationEmailManager({ emails, runAction, busy }) {
           <Input label="Label / Team Member" value={form.label} onChange={(label) => setForm({ ...form, label })} />
         </div>
         <Toggle label="Receive booking notifications" checked={form.isEnabled !== false} onChange={(isEnabled) => setForm({ ...form, isEnabled })} />
+        <Toggle
+          label={form.source === "adminAccount"
+            ? "Pulse AI demand emails are managed from Admin Accounts"
+            : "Receive Pulse AI unavailable product/service demand emails"}
+          checked={form.receivePulseAIUnavailableAlerts === true}
+          disabled={form.source === "adminAccount"}
+          onChange={(receivePulseAIUnavailableAlerts) => setForm({ ...form, receivePulseAIUnavailableAlerts })}
+        />
         <div className="button-row">
           <button className="primary-button" type="button" disabled={busy || !form.email} onClick={save}>
             {editingId ? "Update Email" : "Add Email"}
@@ -1351,12 +1850,18 @@ function NotificationEmailManager({ emails, runAction, busy }) {
             <div>
               <strong><Mail size={15} /> {item.label || item.email}</strong>
               <span>{item.email}</span>
+              <small>{item.source === "adminAccount" ? "Admin account recipient" : "Additional email recipient"}</small>
               <small>{item.lastDeliveryAt ? `Last delivered ${formatDateTime(item.lastDeliveryAt)}` : "No delivery recorded yet"}</small>
             </div>
             <span className={`status-badge ${item.isEnabled !== false ? "repaired" : ""}`}>
-              {item.isEnabled !== false ? "Enabled" : "Disabled"}
+              {item.isEnabled !== false ? "Booking On" : "Booking Off"}
             </span>
-            <button type="button" onClick={() => toggle(item)}>{item.isEnabled !== false ? "Disable" : "Enable"}</button>
+            <button type="button" onClick={() => toggle(item)}>{item.isEnabled !== false ? "Booking Off" : "Booking On"}</button>
+            {item.source === "manual" ? (
+              <button type="button" onClick={() => toggleUnavailableAlerts(item)}>
+                Demand alerts {item.receivePulseAIUnavailableAlerts === true ? "On" : "Off"}
+              </button>
+            ) : <small className="notification-managed-note">Demand alerts managed in Admin Accounts</small>}
             <button type="button" onClick={() => edit(item)}>Edit</button>
             <button className="danger" type="button" onClick={() => remove(item)}>Delete</button>
           </div>
@@ -2471,7 +2976,25 @@ function ProjectPartsManager({ parts, runAction, busy }) {
     stock: 1,
     availability: "In Stock",
     imageUrl: "",
+    images: [],
     tags: "",
+    specifications: "",
+    sku: "",
+    brand: "",
+    gtin: "",
+    mpn: "",
+    manufacturer: "",
+    modelNumber: "",
+    condition: "new",
+    productType: "",
+    googleProductCategory: "",
+    warranty: "",
+    weightValue: "",
+    weightUnit: "kg",
+    shippingDeliveryEstimate: "",
+    shippingChargeNote: "",
+    seoTitle: "",
+    seoDescription: "",
     isActive: true,
     isFeatured: false,
     isTopProduct: false,
@@ -2480,6 +3003,7 @@ function ProjectPartsManager({ parts, runAction, busy }) {
   const [form, setForm] = useState(empty);
   const [editingId, setEditingId] = useState("");
   const [openId, setOpenId] = useState("");
+  const [imageUploading, setImageUploading] = useState(false);
   const batch = useBatchSelection(parts);
 
   const categorySuggestions = useMemo(
@@ -2543,7 +3067,25 @@ function ProjectPartsManager({ parts, runAction, busy }) {
       stock: clampAdminQuantity(part.stock ?? 1),
       availability: part.availability || "In Stock",
       imageUrl: part.imageUrl || "",
+      images: Array.isArray(part.images) ? part.images : [],
       tags: arrayToLines(part.tags),
+      specifications: Array.isArray(part.specifications) ? part.specifications.map((item) => `${item.label || ""}: ${item.value || ""}`).join("\n") : "",
+      sku: part.sku || "",
+      brand: part.brand || part.subCategory || "",
+      gtin: part.gtin || "",
+      mpn: part.mpn || "",
+      manufacturer: part.manufacturer || "",
+      modelNumber: part.modelNumber || "",
+      condition: part.condition || "new",
+      productType: part.productType || "",
+      googleProductCategory: part.googleProductCategory || "",
+      warranty: part.warranty || "",
+      weightValue: part.weight?.value ?? "",
+      weightUnit: part.weight?.unit || "kg",
+      shippingDeliveryEstimate: part.shipping?.deliveryEstimate || "",
+      shippingChargeNote: part.shipping?.chargeNote || "",
+      seoTitle: part.seoTitle || "",
+      seoDescription: part.seoDescription || "",
       isActive: part.isActive !== false,
       isFeatured: Boolean(part.isFeatured),
       isTopProduct: part.isTopProduct === true,
@@ -2553,6 +3095,10 @@ function ProjectPartsManager({ parts, runAction, busy }) {
 
   const save = () => runAction(async () => {
     const pricing = buildPricingPayload(form);
+    const specifications = linesToArray(form.specifications).map((line) => {
+      const [label, ...rest] = line.split(":");
+      return { label: label.trim(), value: rest.join(":").trim() };
+    }).filter((item) => item.label || item.value);
     const payload = {
       ...form,
       category: String(form.category || "").trim() || "Wiring Products",
@@ -2563,6 +3109,10 @@ function ProjectPartsManager({ parts, runAction, busy }) {
       stock: clampAdminQuantity(form.stock),
       displayOrder: Number(form.displayOrder || 0),
       tags: linesToArray(form.tags),
+      images: form.images,
+      specifications,
+      weight: { value: form.weightValue === "" ? null : Number(form.weightValue), unit: form.weightUnit },
+      shipping: { deliveryEstimate: form.shippingDeliveryEstimate, chargeNote: form.shippingChargeNote },
       isTopProduct: form.isTopProduct === true,
     };
     await apiFetch(editingId ? `/project-parts/admin/project-parts/${editingId}` : "/project-parts/admin/project-parts", {
@@ -2640,7 +3190,13 @@ function ProjectPartsManager({ parts, runAction, busy }) {
         </div>
         <Textarea label="Short Description" value={form.shortDescription} onChange={(shortDescription) => setForm({ ...form, shortDescription })} />
         <Textarea label="Full Description" value={form.description} onChange={(description) => setForm({ ...form, description })} />
-        <ImageField value={form.imageUrl} onChange={(imageUrl) => setForm({ ...form, imageUrl })} />
+        <ImageField value={form.imageUrl} onChange={(imageUrl) => setForm({ ...form, imageUrl })} onUploadingChange={setImageUploading} />
+        <div className="admin-form-section">
+          <h3>Product gallery</h3>
+          <p className="muted">Upload additional views for the product thumbnail strip and fullscreen viewer.</p>
+          <ImageField label="Upload additional images" value="" onChange={() => {}} multiple onUploadingChange={setImageUploading} onMultipleUpload={(uploaded) => setForm((current) => ({ ...current, images: [...current.images, ...uploaded.map((item, index) => ({ url: item.url, publicId: item.publicId || "", alt: `${current.name || "Product"} image ${current.images.length + index + 2}` }))].filter((item, index, list) => item.url && list.findIndex((candidate) => candidate.url === item.url) === index).slice(0, 8) }))} />
+          {form.images.length > 0 && <div className="admin-product-gallery-list">{form.images.map((image, index) => <div key={`${image.url}-${index}`}><img src={image.url} alt="" /><input value={image.alt || ""} onChange={(event) => setForm((current) => ({ ...current, images: current.images.map((item, itemIndex) => itemIndex === index ? { ...item, alt: event.target.value } : item) }))} placeholder="Accessible image description" /><button type="button" onClick={() => setForm((current) => ({ ...current, images: current.images.filter((_, itemIndex) => itemIndex !== index) }))}>Remove</button></div>)}</div>}
+        </div>
         <div className="three-col">
           <Select
             label="Availability"
@@ -2656,6 +3212,37 @@ function ProjectPartsManager({ parts, runAction, busy }) {
           <Input label="Display Order" type="number" value={form.displayOrder} onChange={(displayOrder) => setForm({ ...form, displayOrder })} />
           <Textarea label="Tags (comma or line separated)" rows={2} value={form.tags} onChange={(tags) => setForm({ ...form, tags })} />
         </div>
+        <div className="admin-form-section">
+          <h3>Merchant information</h3>
+          <p className="muted">Use genuine manufacturer identifiers only; leave unissued GTIN/MPN values blank.</p>
+          <div className="three-col">
+            <Input label="SKU (auto if blank)" value={form.sku} onChange={(sku) => setForm({ ...form, sku })} />
+            <Input label="Brand" value={form.brand} onChange={(brand) => setForm({ ...form, brand })} />
+            <Input label="GTIN / EAN / UPC" value={form.gtin} onChange={(gtin) => setForm({ ...form, gtin })} />
+          </div>
+          <div className="three-col">
+            <Input label="MPN" value={form.mpn} onChange={(mpn) => setForm({ ...form, mpn })} />
+            <Input label="Manufacturer" value={form.manufacturer} onChange={(manufacturer) => setForm({ ...form, manufacturer })} />
+            <Input label="Model number" value={form.modelNumber} onChange={(modelNumber) => setForm({ ...form, modelNumber })} />
+          </div>
+          <div className="three-col">
+            <Select label="Condition" value={form.condition} onChange={(condition) => setForm({ ...form, condition })} options={[{ value: "new", label: "New" }, { value: "refurbished", label: "Refurbished" }, { value: "used", label: "Used" }]} />
+            <Input label="Product type" value={form.productType} onChange={(productType) => setForm({ ...form, productType })} />
+            <Input label="Google product category" value={form.googleProductCategory} onChange={(googleProductCategory) => setForm({ ...form, googleProductCategory })} />
+          </div>
+          <div className="three-col">
+            <Input label="Warranty" value={form.warranty} onChange={(warranty) => setForm({ ...form, warranty })} />
+            <Input label="Weight" type="number" value={form.weightValue} onChange={(weightValue) => setForm({ ...form, weightValue })} />
+            <Select label="Weight unit" value={form.weightUnit} onChange={(weightUnit) => setForm({ ...form, weightUnit })} options={[{ value: "kg", label: "kg" }, { value: "g", label: "g" }]} />
+          </div>
+          <div className="two-col">
+            <Input label="Delivery estimate" value={form.shippingDeliveryEstimate} onChange={(shippingDeliveryEstimate) => setForm({ ...form, shippingDeliveryEstimate })} />
+            <Input label="Delivery charge note" value={form.shippingChargeNote} onChange={(shippingChargeNote) => setForm({ ...form, shippingChargeNote })} />
+          </div>
+          <Textarea label="Specifications (Label: Value per line)" rows={3} value={form.specifications} onChange={(specifications) => setForm({ ...form, specifications })} />
+          <Input label="SEO title (optional)" value={form.seoTitle} onChange={(seoTitle) => setForm({ ...form, seoTitle })} />
+          <Textarea label="SEO description (optional)" rows={3} value={form.seoDescription} onChange={(seoDescription) => setForm({ ...form, seoDescription })} />
+        </div>
         <div className="two-col">
           <Toggle label="Active on public page" checked={form.isActive} onChange={(isActive) => setForm({ ...form, isActive })} />
           <Toggle label="Featured item" checked={form.isFeatured} onChange={(isFeatured) => setForm({ ...form, isFeatured })} />
@@ -2666,8 +3253,8 @@ function ProjectPartsManager({ parts, runAction, busy }) {
           onChange={(isTopProduct) => setForm({ ...form, isTopProduct })}
         />
         <div className="button-row">
-          <button className="primary-button" disabled={busy || !form.name} onClick={save}>
-            {busy ? "Saving..." : editingId ? "Update Product" : "Add Product"}
+          <button className="primary-button" disabled={busy || imageUploading || !form.name} onClick={save}>
+            {imageUploading ? "Uploading image..." : busy ? "Saving..." : editingId ? "Update Product" : "Add Product"}
           </button>
           {editingId && <button className="ghost-button" type="button" onClick={reset}>Cancel</button>}
         </div>
@@ -2737,6 +3324,195 @@ function ProjectPartsManager({ parts, runAction, busy }) {
   );
 }
 
+function CouponManager({ coupons = [], products = [], runAction, busy }) {
+  const emptyCoupon = {
+    title: "",
+    code: "",
+    description: "",
+    visibility: "public",
+    discountType: "percent",
+    discountValue: 10,
+    maxDiscountAmount: "",
+    minimumSubtotal: 0,
+    appliesToAll: true,
+    productIds: [],
+    categories: "",
+    bannerImageUrl: "",
+    bannerImagePublicId: "",
+    imageLayout: "banner",
+    startsAt: "",
+    endsAt: "",
+    displayOrder: 0,
+    isActive: true,
+  };
+  const [form, setForm] = useState(emptyCoupon);
+  const [editingId, setEditingId] = useState("");
+  const [openId, setOpenId] = useState("");
+  const [imageUploading, setImageUploading] = useState(false);
+  const batch = useBatchSelection(coupons);
+  const categories = useMemo(
+    () => [...new Set(products.map((item) => String(item.category || "").trim()).filter(Boolean))].sort(),
+    [products],
+  );
+
+  const toLocalDateTime = (value) => {
+    if (!value) return "";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    const adjusted = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+    return adjusted.toISOString().slice(0, 16);
+  };
+  const toIsoDate = (value) => value ? new Date(value).toISOString() : null;
+  const reset = () => { setEditingId(""); setForm(emptyCoupon); };
+  const edit = (coupon) => {
+    const id = coupon._id || coupon.id;
+    setEditingId(id);
+    setOpenId(id);
+    setForm({
+      title: coupon.title || "",
+      code: coupon.code || "",
+      description: coupon.description || "",
+      visibility: coupon.visibility || "public",
+      discountType: coupon.discountType || "percent",
+      discountValue: coupon.discountValue ?? 10,
+      maxDiscountAmount: coupon.maxDiscountAmount ?? "",
+      minimumSubtotal: coupon.minimumSubtotal ?? 0,
+      appliesToAll: coupon.appliesToAll === true,
+      productIds: (coupon.productIds || []).map((item) => String(item?._id || item)),
+      categories: arrayToLines(coupon.categories),
+      bannerImageUrl: coupon.bannerImageUrl || "",
+      bannerImagePublicId: coupon.bannerImagePublicId || "",
+      imageLayout: coupon.imageLayout || "banner",
+      startsAt: toLocalDateTime(coupon.startsAt),
+      endsAt: toLocalDateTime(coupon.endsAt),
+      displayOrder: coupon.displayOrder || 0,
+      isActive: coupon.isActive !== false,
+    });
+  };
+  const toggleProduct = (id) => setForm((current) => ({
+    ...current,
+    productIds: current.productIds.includes(id)
+      ? current.productIds.filter((value) => value !== id)
+      : [...current.productIds, id],
+  }));
+  const save = () => runAction(async () => {
+    const payload = {
+      ...form,
+      code: String(form.code || "").trim().toUpperCase().replace(/\s+/g, ""),
+      discountValue: Number(form.discountValue),
+      maxDiscountAmount: form.maxDiscountAmount === "" ? null : Number(form.maxDiscountAmount),
+      minimumSubtotal: Number(form.minimumSubtotal || 0),
+      productIds: form.appliesToAll ? [] : form.productIds,
+      categories: form.appliesToAll ? [] : linesToArray(form.categories),
+      bannerImageUrl: form.visibility === "public" ? form.bannerImageUrl : "",
+      bannerImagePublicId: form.visibility === "public" ? form.bannerImagePublicId : "",
+      startsAt: toIsoDate(form.startsAt),
+      endsAt: toIsoDate(form.endsAt),
+      displayOrder: Number(form.displayOrder || 0),
+    };
+    await apiFetch(editingId ? `/admin/coupons/${editingId}` : "/admin/coupons", {
+      method: editingId ? "PUT" : "POST",
+      body: JSON.stringify(payload),
+    });
+    reset();
+  }, editingId ? "Coupon updated" : "Coupon created");
+  const remove = (coupon) => runAction(async () => {
+    if (!window.confirm(`Delete ${coupon.title || coupon.code}?`)) return false;
+    await apiFetch(`/admin/coupons/${coupon._id || coupon.id}`, { method: "DELETE" });
+  }, "Coupon deleted");
+  const deleteSelected = () => runAction(async () => {
+    if (!batch.selectedIds.length) return false;
+    if (!window.confirm(`Delete ${batch.selectedIds.length} selected coupon${batch.selectedIds.length > 1 ? "s" : ""}?`)) return false;
+    await Promise.all(batch.selectedIds.map((id) => apiFetch(`/admin/coupons/${id}`, { method: "DELETE" })));
+    batch.clearSelection();
+    reset();
+  }, "Selected coupons deleted");
+
+  return (
+    <div className="manager-grid coupon-admin-manager">
+      <section className="editor glass-panel">
+        <div className="coupon-admin-heading">
+          <span><BadgePercent size={25} /></span>
+          <div><h2>{editingId ? "Edit coupon or offer" : "Create coupon or offer"}</h2><p className="muted">Public coupons appear as offers. Private codes remain hidden until a customer applies one.</p></div>
+        </div>
+        <div className="two-col">
+          <Input label="Offer title" value={form.title} onChange={(title) => setForm({ ...form, title })} placeholder="Festive electronics offer" />
+          <Input label="Coupon code" value={form.code} onChange={(code) => setForm({ ...form, code: code.toUpperCase().replace(/\s+/g, "") })} placeholder="SAVE10" />
+        </div>
+        <Textarea label="Customer-facing description" value={form.description} onChange={(description) => setForm({ ...form, description })} rows={3} />
+        <div className="three-col">
+          <Select label="Coupon visibility" value={form.visibility} onChange={(visibility) => setForm({ ...form, visibility })} options={[{ value: "public", label: "Public offer" }, { value: "private", label: "Private coupon" }]} />
+          <Select label="Discount type" value={form.discountType} onChange={(discountType) => setForm({ ...form, discountType })} options={[{ value: "percent", label: "Percentage" }, { value: "fixed", label: "Fixed amount" }]} />
+          <Input label={form.discountType === "percent" ? "Discount (%)" : "Discount (₹)"} type="number" value={form.discountValue} onChange={(discountValue) => setForm({ ...form, discountValue })} />
+        </div>
+        <div className="three-col">
+          <Input label="Minimum eligible subtotal (₹)" type="number" value={form.minimumSubtotal} onChange={(minimumSubtotal) => setForm({ ...form, minimumSubtotal })} />
+          <Input label="Maximum discount (₹, optional)" type="number" value={form.maxDiscountAmount} onChange={(maxDiscountAmount) => setForm({ ...form, maxDiscountAmount })} />
+          <Input label="Display order" type="number" value={form.displayOrder} onChange={(displayOrder) => setForm({ ...form, displayOrder })} />
+        </div>
+        <div className="two-col">
+          <Input label="Starts at (optional)" type="datetime-local" value={form.startsAt} onChange={(startsAt) => setForm({ ...form, startsAt })} />
+          <Input label="Ends at (optional)" type="datetime-local" value={form.endsAt} onChange={(endsAt) => setForm({ ...form, endsAt })} />
+        </div>
+        <div className="two-col">
+          <Toggle label="Active" checked={form.isActive} onChange={(isActive) => setForm({ ...form, isActive })} />
+          <Toggle label="Apply to every shop product" checked={form.appliesToAll} onChange={(appliesToAll) => setForm({ ...form, appliesToAll })} />
+        </div>
+        {!form.appliesToAll && (
+          <div className="admin-form-section coupon-scope-editor">
+            <h3>Eligible products and categories</h3>
+            <p className="muted">Choose one or more products, categories, or both.</p>
+            {categories.length > 0 && (
+              <div className="coupon-category-quick-picks">
+                {categories.map((category) => <button type="button" key={category} onClick={() => setForm((current) => ({ ...current, categories: [current.categories, category].filter(Boolean).join("\n") }))}>{category}</button>)}
+              </div>
+            )}
+            <Textarea label="Categories (comma or line separated)" rows={3} value={form.categories} onChange={(value) => setForm({ ...form, categories: value })} />
+            <div className="coupon-product-picker">
+              {products.map((product) => {
+                const id = String(product._id || product.id);
+                return <label key={id}><input type="checkbox" checked={form.productIds.includes(id)} onChange={() => toggleProduct(id)} /><span>{product.imageUrl ? <img src={product.imageUrl} alt="" /> : <BadgePercent size={18} />}<b>{product.name}</b><small>{product.category || "Electronics"}</small></span></label>;
+              })}
+            </div>
+          </div>
+        )}
+        {form.visibility === "public" && (
+          <div className="admin-form-section">
+            <h3>Public offer banner <small>(optional)</small></h3>
+            <p className="muted">The full image keeps its original proportions on mobile and desktop.</p>
+            <Select label="Offer image layout" value={form.imageLayout} onChange={(imageLayout) => setForm({ ...form, imageLayout })} options={[{ value: "banner", label: "Large image above offer details" }, { value: "thumbnail", label: "Small image beside heading and description" }]} />
+            <ImageField
+              label="Banner image"
+              value={form.bannerImageUrl}
+              onChange={(bannerImageUrl) => setForm((current) => ({ ...current, bannerImageUrl }))}
+              onMultipleUpload={(uploaded) => setForm((current) => ({ ...current, bannerImagePublicId: uploaded?.[0]?.publicId || "" }))}
+              onUploadingChange={setImageUploading}
+            />
+          </div>
+        )}
+        <div className="button-row">
+          <button className="primary-button" type="button" disabled={busy || imageUploading || !form.title || !form.code || Number(form.discountValue) <= 0} onClick={save}>{imageUploading ? "Uploading…" : busy ? "Saving…" : editingId ? "Update coupon" : "Create coupon"}</button>
+          {editingId && <button className="ghost-button" type="button" onClick={reset}>Cancel</button>}
+        </div>
+      </section>
+      <section className="list-panel glass-panel">
+        <h2>Coupons &amp; public offers</h2>
+        <p className="muted">{coupons.length} coupon{coupons.length === 1 ? "" : "s"} configured.</p>
+        <BatchToolbar total={coupons.length} selectedCount={batch.selectedCount} allSelected={batch.allSelected} isIndeterminate={batch.isIndeterminate} onSelectAll={batch.selectAll} onClear={batch.clearSelection} onDelete={deleteSelected} disabled={busy} noun="coupons" />
+        {coupons.map((coupon) => {
+          const id = coupon._id || coupon.id;
+          return <AccordionCard key={id} id={id} openId={openId} onToggle={setOpenId} imageUrl={coupon.visibility === "public" ? coupon.bannerImageUrl : ""} title={coupon.title} meta={`${coupon.code} · ${coupon.discountType === "percent" ? `${coupon.discountValue}%` : formatINR(coupon.discountValue)} off`} status={`${coupon.visibility === "public" ? "Public" : "Private"} · ${coupon.isActive ? "Active" : "Inactive"}`} selectable checked={batch.selectedSet.has(id)} selected={batch.selectedSet.has(id)} onSelect={(checked) => batch.toggleOne(id, checked)} disabled={busy}>
+            <Detail label="Scope" value={coupon.appliesToAll ? "All shop products" : `${coupon.productIds?.length || 0} product(s), ${coupon.categories?.length || 0} category(s)`} />
+            <Detail label="Schedule" value={`${coupon.startsAt ? new Date(coupon.startsAt).toLocaleString("en-IN") : "Now"} — ${coupon.endsAt ? new Date(coupon.endsAt).toLocaleString("en-IN") : "No expiry"}`} />
+            <p className="muted">{coupon.description || "No public description."}</p>
+            <div className="button-row"><button type="button" onClick={() => edit(coupon)}>Edit</button><button className="danger" type="button" onClick={() => remove(coupon)}>Delete</button></div>
+          </AccordionCard>;
+        })}
+      </section>
+    </div>
+  );
+}
+
 function ShopProductsManager({ products, runAction, busy }) {
   const empty = {
     name: "",
@@ -2750,8 +3526,31 @@ function ShopProductsManager({ products, runAction, busy }) {
     quantity: 1,
     availability: "In Stock",
     imageUrl: "",
+    images: [],
     tags: "",
     specifications: "",
+    sku: "",
+    brand: "",
+    gtin: "",
+    mpn: "",
+    manufacturer: "",
+    modelNumber: "",
+    condition: "new",
+    productType: "",
+    googleProductCategory: "",
+    warranty: "",
+    weightValue: "",
+    weightUnit: "kg",
+    dimensionLength: "",
+    dimensionWidth: "",
+    dimensionHeight: "",
+    dimensionUnit: "cm",
+    shippingServiceArea: "",
+    shippingDispatchTime: "",
+    shippingDeliveryEstimate: "",
+    shippingChargeNote: "",
+    seoTitle: "",
+    seoDescription: "",
     isActive: true,
     showInHeroSlider: false,
     isTopProduct: false,
@@ -2783,10 +3582,33 @@ function ShopProductsManager({ products, runAction, busy }) {
       quantity: clampAdminQuantity(product.quantity ?? 1),
       availability: product.availability || "In Stock",
       imageUrl: product.imageUrl || "",
+      images: Array.isArray(product.images) ? product.images : [],
       tags: arrayToLines(product.tags),
       specifications: Array.isArray(product.specifications)
         ? product.specifications.map((item) => `${item.label || ""}: ${item.value || ""}`).join("\n")
         : "",
+      sku: product.sku || "",
+      brand: product.brand || "",
+      gtin: product.gtin || "",
+      mpn: product.mpn || "",
+      manufacturer: product.manufacturer || "",
+      modelNumber: product.modelNumber || "",
+      condition: product.condition || "new",
+      productType: product.productType || "",
+      googleProductCategory: product.googleProductCategory || "",
+      warranty: product.warranty || "",
+      weightValue: product.weight?.value ?? "",
+      weightUnit: product.weight?.unit || "kg",
+      dimensionLength: product.dimensions?.length ?? "",
+      dimensionWidth: product.dimensions?.width ?? "",
+      dimensionHeight: product.dimensions?.height ?? "",
+      dimensionUnit: product.dimensions?.unit || "cm",
+      shippingServiceArea: product.shipping?.serviceArea || "",
+      shippingDispatchTime: product.shipping?.dispatchTime || "",
+      shippingDeliveryEstimate: product.shipping?.deliveryEstimate || "",
+      shippingChargeNote: product.shipping?.chargeNote || "",
+      seoTitle: product.seoTitle || "",
+      seoDescription: product.seoDescription || "",
       isActive: product.isActive !== false,
       showInHeroSlider: product.showInHeroSlider === true,
       isTopProduct: product.isTopProduct === true,
@@ -2810,6 +3632,20 @@ function ShopProductsManager({ products, runAction, busy }) {
       displayOrder: Number(form.displayOrder || 0),
       tags: linesToArray(form.tags),
       specifications,
+      images: form.images,
+      weight: { value: form.weightValue === "" ? null : Number(form.weightValue), unit: form.weightUnit },
+      dimensions: {
+        length: form.dimensionLength === "" ? null : Number(form.dimensionLength),
+        width: form.dimensionWidth === "" ? null : Number(form.dimensionWidth),
+        height: form.dimensionHeight === "" ? null : Number(form.dimensionHeight),
+        unit: form.dimensionUnit,
+      },
+      shipping: {
+        serviceArea: form.shippingServiceArea,
+        dispatchTime: form.shippingDispatchTime,
+        deliveryEstimate: form.shippingDeliveryEstimate,
+        chargeNote: form.shippingChargeNote,
+      },
       isTopProduct: form.isTopProduct === true,
     };
     await apiFetch(editingId ? `/shop-products/admin/products/${editingId}` : "/shop-products/admin/products", {
@@ -2890,9 +3726,73 @@ function ShopProductsManager({ products, runAction, busy }) {
           onChange={(imageUrl) => setForm((current) => ({ ...current, imageUrl }))}
           onUploadingChange={setImageUploading}
         />
+        <div className="admin-form-section">
+          <h3>Product gallery</h3>
+          <p className="muted">Add up to 8 extra product views. These appear as thumbnails and in the fullscreen gallery.</p>
+          <ImageField
+            label="Upload additional images"
+            value=""
+            onChange={() => {}}
+            multiple
+            onMultipleUpload={(uploaded) => setForm((current) => ({
+              ...current,
+              images: [...current.images, ...uploaded.map((item, index) => ({ url: item.url, publicId: item.publicId || "", alt: `${current.name || "Product"} image ${current.images.length + index + 2}` }))]
+                .filter((item, index, list) => item.url && list.findIndex((candidate) => candidate.url === item.url) === index)
+                .slice(0, 8),
+            }))}
+            onUploadingChange={setImageUploading}
+          />
+          {form.images.length > 0 && <div className="admin-product-gallery-list">{form.images.map((image, index) => (
+            <div key={`${image.url}-${index}`}><img src={image.url} alt="" /><input value={image.alt || ""} onChange={(event) => setForm((current) => ({ ...current, images: current.images.map((item, itemIndex) => itemIndex === index ? { ...item, alt: event.target.value } : item) }))} placeholder="Accessible image description" /><button type="button" onClick={() => setForm((current) => ({ ...current, images: current.images.filter((_, itemIndex) => itemIndex !== index) }))}>Remove</button></div>
+          ))}</div>}
+        </div>
         <div className="two-col">
           <Textarea label="Tags / Keywords (comma or line separated)" rows={3} value={form.tags} onChange={(tags) => setForm({ ...form, tags })} />
           <Textarea label="Specifications (Label: Value per line)" rows={3} value={form.specifications} onChange={(specifications) => setForm({ ...form, specifications })} />
+        </div>
+        <div className="admin-form-section">
+          <h3>Merchant &amp; product identity</h3>
+          <p className="muted">Use real manufacturer identifiers only. Leave GTIN or MPN blank when the manufacturer has not issued one.</p>
+          <div className="three-col">
+            <Input label="SKU (auto if blank)" value={form.sku} onChange={(sku) => setForm({ ...form, sku })} />
+            <Input label="Brand" value={form.brand} onChange={(brand) => setForm({ ...form, brand })} />
+            <Input label="GTIN / EAN / UPC" value={form.gtin} onChange={(gtin) => setForm({ ...form, gtin })} />
+          </div>
+          <div className="three-col">
+            <Input label="MPN" value={form.mpn} onChange={(mpn) => setForm({ ...form, mpn })} />
+            <Input label="Manufacturer" value={form.manufacturer} onChange={(manufacturer) => setForm({ ...form, manufacturer })} />
+            <Input label="Model number" value={form.modelNumber} onChange={(modelNumber) => setForm({ ...form, modelNumber })} />
+          </div>
+          <div className="three-col">
+            <Select label="Condition" value={form.condition} onChange={(condition) => setForm({ ...form, condition })} options={[{ value: "new", label: "New" }, { value: "refurbished", label: "Refurbished" }, { value: "used", label: "Used" }]} />
+            <Input label="Product type" value={form.productType} onChange={(productType) => setForm({ ...form, productType })} />
+            <Input label="Google product category" value={form.googleProductCategory} onChange={(googleProductCategory) => setForm({ ...form, googleProductCategory })} />
+          </div>
+          <Input label="Warranty" value={form.warranty} onChange={(warranty) => setForm({ ...form, warranty })} />
+        </div>
+        <div className="admin-form-section">
+          <h3>Package &amp; shipping</h3>
+          <div className="three-col">
+            <Input label="Weight" type="number" value={form.weightValue} onChange={(weightValue) => setForm({ ...form, weightValue })} />
+            <Select label="Weight unit" value={form.weightUnit} onChange={(weightUnit) => setForm({ ...form, weightUnit })} options={[{ value: "kg", label: "kg" }, { value: "g", label: "g" }]} />
+            <Input label="Service area" value={form.shippingServiceArea} onChange={(shippingServiceArea) => setForm({ ...form, shippingServiceArea })} />
+          </div>
+          <div className="three-col">
+            <Input label="Length" type="number" value={form.dimensionLength} onChange={(dimensionLength) => setForm({ ...form, dimensionLength })} />
+            <Input label="Width" type="number" value={form.dimensionWidth} onChange={(dimensionWidth) => setForm({ ...form, dimensionWidth })} />
+            <Input label="Height" type="number" value={form.dimensionHeight} onChange={(dimensionHeight) => setForm({ ...form, dimensionHeight })} />
+          </div>
+          <div className="three-col">
+            <Select label="Dimension unit" value={form.dimensionUnit} onChange={(dimensionUnit) => setForm({ ...form, dimensionUnit })} options={[{ value: "cm", label: "cm" }, { value: "in", label: "inches" }]} />
+            <Input label="Dispatch time" value={form.shippingDispatchTime} onChange={(shippingDispatchTime) => setForm({ ...form, shippingDispatchTime })} />
+            <Input label="Delivery estimate" value={form.shippingDeliveryEstimate} onChange={(shippingDeliveryEstimate) => setForm({ ...form, shippingDeliveryEstimate })} />
+          </div>
+          <Input label="Delivery charge note" value={form.shippingChargeNote} onChange={(shippingChargeNote) => setForm({ ...form, shippingChargeNote })} />
+        </div>
+        <div className="admin-form-section">
+          <h3>Search preview</h3>
+          <Input label="SEO title (optional)" value={form.seoTitle} onChange={(seoTitle) => setForm({ ...form, seoTitle })} />
+          <Textarea label="SEO description (optional)" rows={3} value={form.seoDescription} onChange={(seoDescription) => setForm({ ...form, seoDescription })} />
         </div>
         <div className="two-col">
           <Toggle label="Active on public page" checked={form.isActive} onChange={(isActive) => setForm({ ...form, isActive })} />
@@ -2999,7 +3899,7 @@ function AutoSliderBannerManager({ banners, products, runAction, busy }) {
         label="Click Link (optional)"
         value={form.link}
         onChange={(link) => setForm({ ...form, link })}
-        placeholder="/product-detail/speaker or https://..."
+        placeholder="/product/speaker or https://..."
       />
       <p className="muted" style={{ marginTop: "-0.35rem" }}>
         When a visitor taps this banner on the homepage, they go to this link. Product slides from Shop Products auto-use that product’s detail page.
@@ -3027,7 +3927,7 @@ function AutoSliderBannerManager({ banners, products, runAction, busy }) {
       {!products.length && <p className="muted">No products are enabled for the Hero Slider.</p>}
       {products.map((product) => {
         const productId = String(product.slug || product._id || product.id || "").trim();
-        const detailLink = productId ? `/product-detail/${encodeURIComponent(productId)}` : "";
+        const detailLink = productId ? `/product/${encodeURIComponent(productId)}` : "";
         return (
           <div className="list-item" key={product._id || product.id}>
             <img className="thumb" src={product.imageUrl} alt={product.name} />
@@ -4422,10 +5322,10 @@ function Textarea({ label, value, onChange, rows = 4 }) {
   );
 }
 
-function Toggle({ label, checked, onChange }) {
+function Toggle({ label, checked, onChange, disabled = false }) {
   return (
-    <label className="toggle-line">
-      <input type="checkbox" checked={Boolean(checked)} onChange={(event) => onChange(event.target.checked)} />
+    <label className={`toggle-line ${disabled ? "disabled" : ""}`}>
+      <input type="checkbox" checked={Boolean(checked)} disabled={disabled} onChange={(event) => onChange(event.target.checked)} />
       <span>{label}</span>
     </label>
   );

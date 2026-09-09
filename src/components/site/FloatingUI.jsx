@@ -68,8 +68,7 @@ export function FloatingUI() {
         type="button"
         onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
         aria-label="Back to top"
-        style={{ position: "fixed", right: "auto", left: "1.2rem", bottom: "2rem", zIndex: 70 }}
-        className={`fixed bottom-40 right-0 left-auto z-[70] inline-flex h-12 items-center justify-center gap-2 rounded-full glass-strong border-glow px-4 text-sm font-semibold text-foreground shadow-card transition-transform duration-200 hover:scale-105 ${
+        className={`back-to-top ${isCartPage ? "back-to-top--above-cart" : ""} fixed bottom-40 right-0 left-auto z-[70] inline-flex h-12 items-center justify-center gap-2 rounded-full glass-strong border-glow px-4 text-sm font-semibold text-foreground shadow-card transition-transform duration-200 hover:scale-105 ${
           show ? "translate-y-0 scale-100 opacity-100" : "pointer-events-none translate-y-4 scale-95 opacity-0"
         }`}
       >
