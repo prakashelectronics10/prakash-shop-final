@@ -75,8 +75,8 @@ function feedProduct(product, origin, stockField, publicOffer = null) {
   return rows.join("\n");
 }
 
-async function buildGoogleMerchantFeed(origin = "https://www.prakashshop.in") {
-  const safeOrigin = String(origin || "https://www.prakashshop.in").replace(/\/+$/, "");
+async function buildGoogleMerchantFeed(origin = "https://prakashshop.in") {
+  const safeOrigin = String(origin || "https://prakashshop.in").replace(/\/+$/, "");
   const fields = "name slug shortDescription description mrp discountPercent price quantity stock availability imageUrl images sku brand gtin mpn condition productType googleProductCategory weight isActive";
   const [shopProducts, projectParts, publicCoupons] = await Promise.all([
     ShopProduct.find({ isActive: true }).select(fields).lean(),

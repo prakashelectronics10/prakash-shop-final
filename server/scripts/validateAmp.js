@@ -5,7 +5,7 @@ const {
   renderAmpProductPage,
 } = require("../services/ampPageService");
 
-const origin = "https://www.prakashshop.in";
+const origin = "https://prakashshop.in";
 const sampleProduct = {
   identifier: "amp-validation-product",
   name: "AMP Validation Product",

@@ -43,7 +43,7 @@ const {
   renderAmpProductPage,
 } = require("./services/ampPageService");
 
-const CANONICAL_ORIGIN = "https://www.prakashshop.in";
+const CANONICAL_ORIGIN = "https://prakashshop.in";
 
 const app = express();
 const writeLimiter = rateLimit({
@@ -230,7 +230,7 @@ app.get("/amp/product/:identifier", async (req, res, next) => {
 app.get("/google-merchant-feed.xml", async (req, res, next) => {
   try {
     if (!isConnected()) throw new AppError("Product catalogue is temporarily unavailable", 503);
-    const xml = await buildGoogleMerchantFeed("https://www.prakashshop.in");
+    const xml = await buildGoogleMerchantFeed(CANONICAL_ORIGIN);
     res.set("Cache-Control", "public, max-age=900, stale-while-revalidate=3600");
     res.type("application/xml").send(xml);
   } catch (error) {
@@ -245,7 +245,7 @@ app.get("/robots.txt", (_req, res) => {
     "Allow: /",
     "Disallow: /api/",
     "",
-    "Sitemap: https://www.prakashshop.in/sitemap.xml",
+    `Sitemap: ${CANONICAL_ORIGIN}/sitemap.xml`,
     "",
   ].join("\n"));
 });
@@ -537,6 +537,9 @@ const ROUTE_SHARE_META = [
     keywords: "electronics products Chitarpur, electronics shop, electrical products, home appliances, Prakash Electronics",
     ogImage: "/og-image-shop-products.png",
     ogImageAlt: "Prakash Electronics shop products",
+    ogImageType: "image/png",
+    ogImageWidth: 1672,
+    ogImageHeight: 941,
     canonicalPath: "/products",
     ampPath: "/amp/products",
   },
@@ -722,14 +725,16 @@ function injectRouteMetadata(html, routeMeta, origin, options = {}) {
   if (!options.preserveOgImage) {
     output = replaceTag(output, /<meta property="og:image" content="[^"]*"\s*\/?>/i, `<meta property="og:image" content="${escapeAttribute(image)}" />`);
     output = replaceTag(output, /<meta property="og:image:secure_url" content="[^"]*"\s*\/?>/i, `<meta property="og:image:secure_url" content="${escapeAttribute(image)}" />`);
-    output = replaceTag(output, /<meta property="og:image:width" content="[^"]*"\s*\/?>/i, '<meta property="og:image:width" content="1200" />');
-    output = replaceTag(output, /<meta property="og:image:height" content="[^"]*"\s*\/?>/i, '<meta property="og:image:height" content="630" />');
+    output = replaceTag(output, /<meta property="og:image:type" content="[^"]*"\s*\/?>/i, `<meta property="og:image:type" content="${escapeAttribute(routeMeta.ogImageType || "image/jpeg")}" />`);
+    output = replaceTag(output, /<meta property="og:image:width" content="[^"]*"\s*\/?>/i, `<meta property="og:image:width" content="${escapeAttribute(routeMeta.ogImageWidth || 1200)}" />`);
+    output = replaceTag(output, /<meta property="og:image:height" content="[^"]*"\s*\/?>/i, `<meta property="og:image:height" content="${escapeAttribute(routeMeta.ogImageHeight || 630)}" />`);
     output = replaceTag(output, /<meta name="twitter:image" content="[^"]*"\s*\/?>/i, `<meta name="twitter:image" content="${escapeAttribute(image)}" />`);
   }
   output = replaceTag(output, /<meta property="og:image:alt" content="[^"]*"\s*\/?>/i, `<meta property="og:image:alt" content="${escapeAttribute(imageAlt)}" />`);
   output = replaceTag(output, /<meta name="twitter:card" content="[^"]*"\s*\/?>/i, '<meta name="twitter:card" content="summary_large_image" />');
   output = replaceTag(output, /<meta name="twitter:title" content="[^"]*"\s*\/?>/i, `<meta name="twitter:title" content="${escapeAttribute(title)}" />`);
   output = replaceTag(output, /<meta name="twitter:description" content="[^"]*"\s*\/?>/i, `<meta name="twitter:description" content="${escapeAttribute(description)}" />`);
+  output = replaceTag(output, /<meta name="twitter:image:alt" content="[^"]*"\s*\/?>/i, `<meta name="twitter:image:alt" content="${escapeAttribute(imageAlt)}" />`);
   output = injectAmpHtmlLink(output, routeMeta.ampPath ? absoluteUrl(routeMeta.ampPath, origin) : "");
   return output;
 }

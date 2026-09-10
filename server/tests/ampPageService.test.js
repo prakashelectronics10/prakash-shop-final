@@ -8,7 +8,7 @@ const {
   renderAmpProductPage,
 } = require("../services/ampPageService");
 
-const origin = "https://www.prakashshop.in";
+const origin = "https://prakashshop.in";
 const product = {
   identifier: "bldc-fan",
   name: "BLDC Fan & Remote",
@@ -47,7 +47,7 @@ function assertAmpShell(html) {
 test("renders an AMP product with canonical, real commerce data and AMP images", () => {
   const html = renderAmpProductPage(product, origin);
   assertAmpShell(html);
-  assert.match(html, /<link rel="canonical" href="https:\/\/www\.prakashshop\.in\/product\/bldc-fan">/);
+  assert.match(html, /<link rel="canonical" href="https:\/\/prakashshop\.in\/product\/bldc-fan">/);
   assert.match(html, /<amp-img[^>]+fan\.jpg/);
   assert.match(html, /₹2,500/);
   assert.match(html, /BLDC Fan &amp; Remote/);
@@ -58,7 +58,9 @@ test("renders an AMP product with canonical, real commerce data and AMP images",
 test("renders canonical AMP catalogue and crawlable AMP product links", () => {
   const html = renderAmpCatalogPage({ products: [product], sourceType: "shop-product", origin });
   assertAmpShell(html);
-  assert.match(html, /<link rel="canonical" href="https:\/\/www\.prakashshop\.in\/products">/);
+  assert.match(html, /<link rel="canonical" href="https:\/\/prakashshop\.in\/products">/);
+  assert.match(html, /<meta property="og:image" content="https:\/\/prakashshop\.in\/og-image-shop-products\.png">/);
+  assert.match(html, /<meta property="og:image:type" content="image\/png">/);
   assert.match(html, /href="\/amp\/product\/bldc-fan"/);
   assert.match(html, /"@type":"ItemList"/);
 });

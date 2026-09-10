@@ -18,8 +18,8 @@ test("canonical catalogues advertise their one-to-one AMP pages", async () => {
   await withServer(async (baseUrl) => {
     const products = await fetch(`${baseUrl}/products`).then((response) => response.text());
     const wiring = await fetch(`${baseUrl}/wiring-parts`).then((response) => response.text());
-    assert.match(products, /<link rel="amphtml" href="https:\/\/www\.prakashshop\.in\/amp\/products" \/>/);
-    assert.match(wiring, /<link rel="amphtml" href="https:\/\/www\.prakashshop\.in\/amp\/wiring-parts" \/>/);
+    assert.match(products, /<link rel="amphtml" href="https:\/\/prakashshop\.in\/amp\/products" \/>/);
+    assert.match(wiring, /<link rel="amphtml" href="https:\/\/prakashshop\.in\/amp\/wiring-parts" \/>/);
     assert.equal((products.match(/rel="amphtml"/g) || []).length, 1);
   });
 });
@@ -32,7 +32,7 @@ test("AMP catalogue route is server rendered and cacheable", async () => {
     assert.match(response.headers.get("content-type"), /^text\/html/);
     assert.match(response.headers.get("cache-control"), /max-age=120/);
     assert.match(html, /<html amp lang="en">/);
-    assert.match(html, /<link rel="canonical" href="https:\/\/www\.prakashshop\.in\/products">/);
+    assert.match(html, /<link rel="canonical" href="https:\/\/prakashshop\.in\/products">/);
   });
 });
 

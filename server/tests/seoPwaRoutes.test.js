@@ -21,14 +21,14 @@ test("robots keeps noindex pages crawlable and blocks API endpoints", async () =
     const robots = await fetch(`${baseUrl}/robots.txt`).then((response) => response.text());
     assert.match(robots, /Disallow: \/api\//);
     assert.doesNotMatch(robots, /Disallow: \/(?:cart|checkout|orders|prakash-control-panel)/);
-    assert.match(robots, /Sitemap: https:\/\/www\.prakashshop\.in\/sitemap\.xml/);
+    assert.match(robots, /Sitemap: https:\/\/prakashshop\.in\/sitemap\.xml/);
   });
 });
 
 test("sitemap lists canonical service URLs and no legacy page query URLs", async () => {
   await withServer(async (baseUrl) => {
     const sitemap = await fetch(`${baseUrl}/sitemap.xml`).then((response) => response.text());
-    assert.match(sitemap, /https:\/\/www\.prakashshop\.in\/learn-more\?service=/);
+    assert.match(sitemap, /https:\/\/prakashshop\.in\/learn-more\?service=/);
     assert.doesNotMatch(sitemap, /\?page=learn-more/);
     assert.doesNotMatch(sitemap, /\/#/);
   });
@@ -65,6 +65,31 @@ test("web app manifest and service worker contain the installability essentials"
   assert.match(serviceWorker, /offline\.html/);
   assert.match(serviceWorker, /\/api\//);
   assert.match(serviceWorker, /\/prakash-control-panel@1999/);
+});
+
+test("products route exposes the dedicated PNG OG image without a host redirect", async () => {
+  await withServer(async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/products`);
+    const html = await response.text();
+    assert.equal(response.status, 200);
+    assert.match(html, /<link rel="canonical" href="https:\/\/prakashshop\.in\/products" \/>/);
+    assert.match(html, /<meta property="og:image" content="https:\/\/prakashshop\.in\/og-image-shop-products\.png" \/>/);
+    assert.match(html, /<meta property="og:image:secure_url" content="https:\/\/prakashshop\.in\/og-image-shop-products\.png" \/>/);
+    assert.match(html, /<meta property="og:image:type" content="image\/png" \/>/);
+    assert.match(html, /<meta property="og:image:width" content="1672" \/>/);
+    assert.match(html, /<meta property="og:image:height" content="941" \/>/);
+    assert.match(html, /<meta name="twitter:image" content="https:\/\/prakashshop\.in\/og-image-shop-products\.png" \/>/);
+    assert.match(html, /<meta name="twitter:image:alt" content="Prakash Electronics shop products" \/>/);
+  });
+});
+
+test("products OG asset exists and hosting headers match its PNG content type", () => {
+  const publicDir = path.resolve(__dirname, "..", "..", "public");
+  const image = fs.readFileSync(path.join(publicDir, "og-image-shop-products.png"));
+  const headers = fs.readFileSync(path.join(publicDir, "_headers"), "utf8");
+  assert.deepEqual([...image.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+  assert.match(headers, /\/og-image-shop-products\.png\s+Content-Type: image\/png/);
+  assert.doesNotMatch(headers, /\/og-image-shop-products\.jpg/);
 });
 
 test("manifest endpoint is fresh and always exposes installable icon sizes", async () => {

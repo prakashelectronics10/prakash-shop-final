@@ -40,7 +40,7 @@ const TermsConditionsPage = lazy(() => import('./components/site/LegalPages').th
 const ShippingPolicyPage = lazy(() => import('./components/site/LegalPages').then((module) => ({ default: module.ShippingPolicyPage })));
 const ReturnRefundPolicyPage = lazy(() => import('./components/site/LegalPages').then((module) => ({ default: module.ReturnRefundPolicyPage })));
 
-const SITE_URL = 'https://www.prakashshop.in';
+const SITE_URL = 'https://prakashshop.in';
 const ADMIN_ROUTE = '/prakash-control-panel@1999';
 const LEGACY_PAGE_ROUTES = {
   'learn-more': '/learn-more',
@@ -71,6 +71,9 @@ const routeMeta = [
     keywords: 'electronics shop, wiring accessories, RGB lights, electrical accessories, electronics parts, shop products Chitarpur',
     ogImage: `${SITE_URL}/og-image-shop-products.png`,
     ogImageAlt: 'Prakash Electronics shop products',
+    ogImageType: 'image/png',
+    ogImageWidth: 1672,
+    ogImageHeight: 941,
   },
   {
     match: (path) => path === CANONICAL_WIRING_PARTS_PATH || path === '/projects-parts' || path.startsWith(`${CANONICAL_WIRING_PARTS_PATH}/`) || path.startsWith('/projects-parts/'),
@@ -247,13 +250,15 @@ function updateRouteMeta(pathname, search = '') {
   upsertMeta('meta[property="og:url"]', 'property', 'og:url', canonicalUrl);
   upsertMeta('meta[property="og:image"]', 'property', 'og:image', ogImage);
   upsertMeta('meta[property="og:image:secure_url"]', 'property', 'og:image:secure_url', ogImage);
+  upsertMeta('meta[property="og:image:type"]', 'property', 'og:image:type', meta.ogImageType || 'image/jpeg');
   upsertMeta('meta[property="og:image:alt"]', 'property', 'og:image:alt', ogImageAlt);
-  upsertMeta('meta[property="og:image:width"]', 'property', 'og:image:width', '1200');
-  upsertMeta('meta[property="og:image:height"]', 'property', 'og:image:height', '630');
+  upsertMeta('meta[property="og:image:width"]', 'property', 'og:image:width', String(meta.ogImageWidth || 1200));
+  upsertMeta('meta[property="og:image:height"]', 'property', 'og:image:height', String(meta.ogImageHeight || 630));
   upsertMeta('meta[name="twitter:card"]', 'name', 'twitter:card', 'summary_large_image');
   upsertMeta('meta[name="twitter:title"]', 'name', 'twitter:title', meta.title);
   upsertMeta('meta[name="twitter:description"]', 'name', 'twitter:description', meta.description);
   upsertMeta('meta[name="twitter:image"]', 'name', 'twitter:image', ogImage);
+  upsertMeta('meta[name="twitter:image:alt"]', 'name', 'twitter:image:alt', ogImageAlt);
   document.documentElement.dataset.routeOgImage = meta.ogImage ? '1' : '';
 }
 
