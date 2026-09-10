@@ -1,7 +1,6 @@
 const crypto = require("crypto");
 const AdminSession = require("../models/AdminSession");
 const MaintenanceMarker = require("../models/MaintenanceMarker");
-const env = require("../config/env");
 const AppError = require("../utils/AppError");
 
 const ADMIN_SESSION_CLEANUP_MARKER = "admin-session-cleanup-2026-09-06";
@@ -27,12 +26,6 @@ function normalizeClientType(clientType = "web") {
   return clientType === "mobile" ? "mobile" : "web";
 }
 
-function sessionConflictMessage(clientType) {
-  return clientType === "mobile"
-    ? "This Admin is already logged in on another mobile app device"
-    : "This Admin is already logged in on another website admin panel";
-}
-
 async function expireExpiredSessions(adminId) {
   const filter = {
     isActive: true,
@@ -52,41 +45,8 @@ async function expireExpiredSessions(adminId) {
   });
 }
 
-async function getActiveSession(adminId, clientType = "web") {
-  await expireExpiredSessions(adminId);
-  return AdminSession.findOne({
-    admin: adminId,
-    clientType: normalizeClientType(clientType),
-    isActive: true,
-    revokedAt: null,
-    expiresAt: { $gt: new Date() },
-  });
-}
-
-function isSameDeviceSession(session, req) {
-  const deviceInfo = getDeviceInfo(req);
-  if (session.userAgentHash !== deviceInfo.userAgentHash) return false;
-  if (!env.adminSessionBindIp) return true;
-  return session.ipHash === deviceInfo.ipHash;
-}
-
-async function assertNoOtherDeviceSession(adminId, req, clientType = "web") {
-  const safeClientType = normalizeClientType(clientType);
-  const existingSession = await getActiveSession(adminId, safeClientType);
-  if (existingSession && !isSameDeviceSession(existingSession, req)) {
-    throw new AppError(sessionConflictMessage(safeClientType), 409);
-  }
-
-  return existingSession;
-}
-
 async function createAdminSession(admin, req, clientType = "web") {
   const safeClientType = normalizeClientType(clientType);
-  const existingSession = await assertNoOtherDeviceSession(admin._id, req, safeClientType);
-  if (existingSession) {
-    await revokeSession(existingSession._id, "same-device-relogin");
-  }
-
   const jwtId = crypto.randomUUID();
   const session = await AdminSession.create({
     admin: admin._id,
@@ -97,11 +57,6 @@ async function createAdminSession(admin, req, clientType = "web") {
     // This far-future value retains compatibility with the existing indexed schema.
     expiresAt: new Date("2099-12-31T23:59:59.999Z"),
     lastSeenAt: new Date(),
-  }).catch((error) => {
-    if (error.code === 11000) {
-      throw new AppError(sessionConflictMessage(safeClientType), 409);
-    }
-    throw error;
   });
 
   return { session, jwtId };
@@ -212,22 +167,20 @@ async function ensureAdminSessionIndexes() {
     );
 
     const indexes = await AdminSession.collection.indexes();
-    const oldIndex = indexes.find((index) =>
-      index.unique &&
-      index.key?.admin === 1 &&
-      index.key?.isActive === 1 &&
-      !Object.prototype.hasOwnProperty.call(index.key, "clientType"));
+    const exclusiveSessionIndexes = indexes.filter((index) => (
+      index.unique
+      && index.key?.admin === 1
+      && index.key?.isActive === 1
+    ));
 
-    if (oldIndex?.name) {
-      await AdminSession.collection.dropIndex(oldIndex.name);
+    for (const index of exclusiveSessionIndexes) {
+      if (index.name) await AdminSession.collection.dropIndex(index.name);
     }
 
     await AdminSession.collection.createIndex(
-      { admin: 1, clientType: 1, isActive: 1 },
+      { admin: 1, isActive: 1, lastSeenAt: -1 },
       {
-        unique: true,
-        partialFilterExpression: { isActive: true },
-        name: "admin_1_clientType_1_isActive_1",
+        name: "admin_1_isActive_1_lastSeenAt_-1",
       },
     );
     // Mongoose creates this schema index as `key_1` in development. Creating
@@ -258,14 +211,11 @@ async function ensureAdminSessionIndexes() {
 }
 
 module.exports = {
-  assertNoOtherDeviceSession,
   createAdminSession,
   ensureAdminSessionIndexes,
   expireExpiredSessions,
-  getActiveSession,
   getDeviceInfo,
   hashValue,
-  isSameDeviceSession,
   normalizeClientType,
   revokeAdminSessions,
   revokeAllAdminSessionsOnce,

@@ -54,11 +54,9 @@ const adminSessionSchema = new mongoose.Schema(
 );
 
 adminSessionSchema.index(
-  { admin: 1, clientType: 1, isActive: 1 },
+  { admin: 1, isActive: 1, lastSeenAt: -1 },
   {
-    unique: true,
-    partialFilterExpression: { isActive: true },
-    name: "admin_1_clientType_1_isActive_1",
+    name: "admin_1_isActive_1_lastSeenAt_-1",
   },
 );
 

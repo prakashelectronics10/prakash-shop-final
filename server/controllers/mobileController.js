@@ -10,7 +10,6 @@ const {
   signToken,
 } = require("./authController");
 const {
-  assertNoOtherDeviceSession,
   createAdminSession,
   revokeSession,
 } = require("../services/adminSessionService");
@@ -74,7 +73,6 @@ const login = asyncHandler(async (req, res) => {
     return;
   }
 
-  await assertNoOtherDeviceSession(admin._id, req, "mobile");
   const challenge = await createOtpChallenge({
     admin,
     purpose: "mobile-login",

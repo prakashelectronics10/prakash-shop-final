@@ -6,7 +6,6 @@ const asyncHandler = require("../utils/asyncHandler");
 const { setAdminCookie, clearAdminCookie } = require("../utils/cookie");
 const { allPermissions, isSuperAdminAccount } = require("../middleware/auth");
 const {
-  assertNoOtherDeviceSession,
   createAdminSession,
   revokeSession,
 } = require("../services/adminSessionService");
@@ -68,7 +67,6 @@ const login = asyncHandler(async (req, res) => {
     throw new AppError("Invalid email or password", 401);
   }
 
-  await assertNoOtherDeviceSession(admin._id, req, "web");
   const challenge = await createOtpChallenge({
     admin,
     purpose: "login",
