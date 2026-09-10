@@ -128,8 +128,8 @@ const routeMeta = [
   {
     match: (path) => path === '/return-refund-policy',
     title: 'Return & Refund Policy | Prakash Electronics',
-    description: 'Read cancellation eligibility and refund timelines for paid Prakash Electronics product orders.',
-    keywords: 'Prakash Electronics refund policy, cancellation policy, return policy',
+    description: 'Review the final-order, no-cancellation, no-return, and no-refund policy for paid Prakash Electronics product orders.',
+    keywords: 'Prakash Electronics final order policy, no return policy, no refund policy, order terms',
   },
   {
     match: (path) => path === '/learn-more',
@@ -271,14 +271,15 @@ function NotFoundPage() {
     <PublicShell>
       <div className="App min-h-screen bg-background text-foreground">
         <Navbar />
-        <main className="mx-auto grid min-h-[70vh] max-w-3xl place-items-center px-4 py-20 text-center">
-          <section>
-            <p className="text-sm font-bold uppercase tracking-[0.2em] text-accent">404 · Page not found</p>
-            <h1 className="mt-4 font-display text-4xl font-bold sm:text-5xl">This page is not available</h1>
-            <p className="mx-auto mt-4 max-w-xl text-base leading-7 text-muted-foreground">The link may be outdated. Continue to the shop or return to the homepage.</p>
-            <div className="mt-8 flex flex-wrap justify-center gap-3">
-              <a className="rounded-xl bg-gradient-primary px-6 py-3 font-semibold text-primary-foreground" href="/">Go to homepage</a>
-              <a className="rounded-xl border border-border px-6 py-3 font-semibold" href="/products">Browse products</a>
+        <main className="not-found-page">
+          <section className="not-found-card" aria-labelledby="not-found-title">
+            <p className="not-found-code" aria-hidden="true">404</p>
+            <p className="not-found-kicker">Page not found</p>
+            <h1 id="not-found-title">This page is not available</h1>
+            <p className="not-found-copy">The link may be outdated. Continue to the shop or return to the homepage.</p>
+            <div className="not-found-actions">
+              <a className="primary" href="/">Go to homepage</a>
+              <a href="/products">Browse products</a>
             </div>
           </section>
         </main>

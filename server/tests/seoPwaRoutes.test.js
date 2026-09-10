@@ -52,6 +52,15 @@ test("unknown routes return a real noindex 404 document", async () => {
   });
 });
 
+test("removed customer and admin cancellation endpoints return 404", async () => {
+  await withServer(async (baseUrl) => {
+    const customerResponse = await fetch(`${baseUrl}/api/orders/track/PE-TEST/cancellation`, { method: "POST" });
+    const adminResponse = await fetch(`${baseUrl}/api/orders/admin/000000000000000000000000/cancellation`, { method: "PATCH" });
+    assert.equal(customerResponse.status, 404);
+    assert.equal(adminResponse.status, 404);
+  });
+});
+
 test("web app manifest and service worker contain the installability essentials", () => {
   const publicDir = path.resolve(__dirname, "..", "..", "public");
   const manifest = JSON.parse(fs.readFileSync(path.join(publicDir, "manifest.json"), "utf8"));

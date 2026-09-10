@@ -3,7 +3,7 @@ import { useSiteData } from "../../context/SiteDataContext";
 import { Footer } from "./Footer";
 import { Navbar } from "./Navbar";
 
-const LAST_UPDATED = "9 September 2026";
+const LAST_UPDATED = "10 September 2026";
 
 function LegalPage({ eyebrow, title, intro, children }) {
   const { contact } = useSiteData();
@@ -117,7 +117,7 @@ export function TermsConditionsPage() {
       </section>
       <section>
         <h2>Cancellations, returns, and refunds</h2>
-        <p>Eligibility depends on the product condition, order stage, nature of the issue, and applicable law. Contact the workshop promptly with your Order ID and supporting details. Approved payment refunds are returned through the appropriate payment method and may take the provider&apos;s standard processing time.</p>
+        <p>Review the product, compatibility, quantity, price, charges, and delivery details before payment. Once successful payment creates an Order ID, the order is final and customer-requested cancellation, return, exchange, or refund is unavailable, except where a remedy cannot be excluded under applicable law.</p>
       </section>
       <section>
         <h2>Third-party services</h2>
@@ -166,29 +166,29 @@ export function ShippingPolicyPage() {
 export function ReturnRefundPolicyPage() {
   return (
     <LegalPage
-      eyebrow="Cancellations and refunds"
+      eyebrow="Final order policy"
       title="Return & Refund Policy"
-      intro="The cancellation window and refund process for paid product orders placed through this website."
+      intro="What to confirm before payment and how final paid product orders are handled."
     >
       <section>
-        <h2>Cancellation before shipping</h2>
-        <p>You may submit a cancellation request from the Orders tracking page while the order status is Confirmed. The request is reviewed by an administrator and is not final until accepted.</p>
+        <h2>Confirm before you pay</h2>
+        <p>Please verify the product name and model, specifications, compatibility, quantity, price, applicable charges, phone number, and complete delivery address before pressing Pay. Completing payment confirms that you have reviewed and accepted these order details.</p>
       </section>
       <section>
-        <h2>After shipping or delivery</h2>
-        <p>Orders cannot be cancelled, returned, or refunded after they have been shipped, are out for delivery, or have been delivered. Please review product details and delivery information before payment.</p>
+        <h2>Orders are final after payment</h2>
+        <p>Once successful payment creates an Order ID, customer-requested cancellation is unavailable and the order cannot be returned, exchanged, or refunded. Please place an order only after you are certain about the product and delivery information.</p>
       </section>
       <section>
-        <h2>Approved cancellation refunds</h2>
-        <p>When an administrator accepts an eligible cancellation request, the order is marked Cancelled and the approved refund is processed to the original payment method. A normal Razorpay refund typically takes 5–7 working days, subject to Razorpay and your bank.</p>
+        <h2>Payment issues</h2>
+        <p>If money is debited but no Order ID is created, or if you notice a duplicate payment, contact Prakash Electronics with the payment reference. We will verify the transaction with the payment provider; this is separate from returning or cancelling a successfully placed order.</p>
       </section>
       <section>
         <h2>Incorrect or damaged item concerns</h2>
-        <p>Contact the shop promptly with your Order ID and clear supporting details. The shop will review the concern and explain any remedy required by applicable consumer law; this does not create a general return window after shipping or delivery.</p>
+        <p>Contact the shop promptly with your Order ID and clear supporting details. The shop will review the concern and explain any remedy that cannot be excluded under applicable consumer law; this does not create a general return or refund window.</p>
       </section>
       <section>
-        <h2>How to request help</h2>
-        <p>Use the cancellation action on the Orders tracking page before shipping, or contact Prakash Electronics with your Order ID. Never share a UPI PIN, OTP, card PIN, or banking password.</p>
+        <h2>How to get help</h2>
+        <p>Contact Prakash Electronics with your Order ID or payment reference for order support. Never share a UPI PIN, OTP, card PIN, or banking password.</p>
       </section>
     </LegalPage>
   );

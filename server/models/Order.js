@@ -73,14 +73,6 @@ const orderSchema = new mongoose.Schema(
     razorpayPaymentId: { type: String, trim: true, default: "", index: true },
     paidAt: Date,
     statusUpdatedAt: { type: Date, default: Date.now },
-    cancellationRequest: {
-      status: { type: String, enum: ["none", "requested", "processing", "accepted", "rejected"], default: "none" },
-      reason: { type: String, trim: true, default: "" },
-      requestedAt: Date,
-      resolvedAt: Date,
-      resolvedBy: { type: mongoose.Schema.Types.ObjectId, ref: "Admin" },
-      adminNote: { type: String, trim: true, default: "" },
-    },
     refund: {
       status: { type: String, enum: ["not_required", "processing", "processed", "failed"], default: "not_required" },
       providerRefundId: { type: String, trim: true, default: "" },

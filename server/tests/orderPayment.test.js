@@ -8,6 +8,7 @@ process.env.RAZORPAY_WEBHOOK_SECRET = process.env.RAZORPAY_WEBHOOK_SECRET || "un
 
 const Order = require("../models/Order");
 const { verifyPaymentSignature, verifyWebhookSignature } = require("../services/razorpayService");
+const { ORDER_STATUSES } = require("../controllers/orderController");
 
 test("verifies Razorpay signatures with a timing-safe HMAC comparison", () => {
   const razorpayOrderId = "order_unit_123";
@@ -47,4 +48,9 @@ test("order schema rejects non-six-digit pincodes", () => {
   });
 
   assert.match(order.validateSync().errors["customer.pincode"].message, /invalid/i);
+});
+
+test("new orders cannot enter the removed cancellation workflow", () => {
+  assert.equal(ORDER_STATUSES.includes("cancelled"), false);
+  assert.equal(Order.schema.path("cancellationRequest.status"), undefined);
 });

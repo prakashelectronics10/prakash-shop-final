@@ -13,13 +13,11 @@ const { priceOrderCoupons } = require("../services/couponService");
 const {
   createRazorpayOrder,
   getRazorpayPayment,
-  refundRazorpayPayment,
-  getRazorpayPaymentRefunds,
   verifyPaymentSignature,
   verifyWebhookSignature,
 } = require("../services/razorpayService");
 
-const ORDER_STATUSES = ["confirmed", "shipped", "out_for_delivery", "delivered", "cancelled"];
+const ORDER_STATUSES = ["confirmed", "shipped", "out_for_delivery", "delivered"];
 
 function cleanText(value, maxLength, required = false) {
   const text = String(value || "").trim().replace(/\s+/g, " ");
@@ -119,13 +117,6 @@ function publicOrder(order) {
     orderStatus: order.orderStatus,
     placedAt: order.paidAt || order.createdAt,
     statusUpdatedAt: order.statusUpdatedAt,
-    cancellationRequest: {
-      status: order.cancellationRequest?.status || "none",
-      reason: order.cancellationRequest?.reason || "",
-      requestedAt: order.cancellationRequest?.requestedAt || null,
-      resolvedAt: order.cancellationRequest?.resolvedAt || null,
-      adminNote: order.cancellationRequest?.adminNote || "",
-    },
     refund: {
       status: order.refund?.status || "not_required",
       amount: order.refund?.amount || 0,
@@ -286,36 +277,6 @@ exports.getPublicOrder = asyncHandler(async (req, res) => {
   res.json({ success: true, data: publicOrder(order) });
 });
 
-exports.requestOrderCancellation = asyncHandler(async (req, res) => {
-  const orderId = String(req.params.orderId || "").trim().toUpperCase();
-  const phone = cleanText(req.body.phone, 15, true).replace(/[^\d]/g, "").slice(-10);
-  const reason = cleanText(req.body.reason, 500, true);
-  if (!/^[6-9]\d{9}$/.test(phone)) throw new AppError("Enter the 10-digit phone number used for this order", 400);
-
-  const order = await Order.findOne({ orderId, paymentStatus: "paid" });
-  if (!order || String(order.customer?.phone || "").replace(/[^\d]/g, "").slice(-10) !== phone) {
-    throw new AppError("Order ID and phone number do not match", 404);
-  }
-  if (order.orderStatus !== "confirmed") {
-    throw new AppError("Cancellation is only available before an order is shipped", 409);
-  }
-  if (["requested", "processing", "accepted"].includes(order.cancellationRequest?.status)) {
-    res.set("Cache-Control", "no-store");
-    return res.json({ success: true, data: publicOrder(order) });
-  }
-  order.cancellationRequest = {
-    status: "requested",
-    reason,
-    requestedAt: new Date(),
-    resolvedAt: null,
-    resolvedBy: null,
-    adminNote: "",
-  };
-  await order.save();
-  res.set("Cache-Control", "no-store");
-  return res.status(201).json({ success: true, data: publicOrder(order) });
-});
-
 exports.listOrders = asyncHandler(async (req, res) => {
   const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
   const limit = Math.min(50, Math.max(10, Number.parseInt(req.query.limit, 10) || 20));
@@ -346,11 +307,6 @@ exports.updateOrderStatus = asyncHandler(async (req, res) => {
   const orderStatus = String(req.body.orderStatus || "").trim();
   if (!ORDER_STATUSES.includes(orderStatus)) throw new AppError("Invalid order status", 400);
   const update = { orderStatus, statusUpdatedAt: new Date() };
-  if (orderStatus !== "confirmed") {
-    update["cancellationRequest.status"] = "rejected";
-    update["cancellationRequest.resolvedAt"] = new Date();
-    update["cancellationRequest.adminNote"] = "Order fulfilment had already progressed.";
-  }
   const order = await Order.findByIdAndUpdate(
     req.params.id,
     update,
@@ -358,88 +314,6 @@ exports.updateOrderStatus = asyncHandler(async (req, res) => {
   ).lean();
   if (!order) throw new AppError("Order not found", 404);
   res.json({ success: true, data: order });
-});
-
-exports.resolveOrderCancellation = asyncHandler(async (req, res) => {
-  const decision = String(req.body.decision || "").trim().toLowerCase();
-  const adminNote = cleanText(req.body.adminNote, 500);
-  if (!["accept", "reject"].includes(decision)) throw new AppError("Choose accept or reject", 400);
-
-  if (decision === "reject") {
-    const rejected = await Order.findOneAndUpdate(
-      { _id: req.params.id, "cancellationRequest.status": "requested" },
-      {
-        $set: {
-          "cancellationRequest.status": "rejected",
-          "cancellationRequest.resolvedAt": new Date(),
-          "cancellationRequest.resolvedBy": req.admin?._id,
-          "cancellationRequest.adminNote": adminNote || "Cancellation request was not approved.",
-        },
-      },
-      { new: true, runValidators: true },
-    ).lean();
-    if (!rejected) throw new AppError("This cancellation request is no longer pending", 409);
-    return res.json({ success: true, data: rejected });
-  }
-
-  const order = await Order.findOneAndUpdate(
-    {
-      _id: req.params.id,
-      paymentStatus: "paid",
-      orderStatus: "confirmed",
-      "cancellationRequest.status": "requested",
-    },
-    {
-      $set: {
-        "cancellationRequest.status": "processing",
-        "cancellationRequest.resolvedBy": req.admin?._id,
-        "cancellationRequest.adminNote": adminNote,
-        "refund.status": "processing",
-        "refund.amount": 0,
-        "refund.initiatedAt": new Date(),
-        "refund.failureMessage": "",
-      },
-    },
-    { new: true, runValidators: true },
-  );
-  if (!order) throw new AppError("Only a paid, confirmed order with a pending request can be cancelled", 409);
-
-  try {
-    if (!order.razorpayPaymentId) throw new AppError("This order has no verified payment ID", 409);
-    const receipt = `cancel-${String(order._id)}`;
-    const existingRefunds = await getRazorpayPaymentRefunds(order.razorpayPaymentId).catch(() => null);
-    const existingProviderRefund = existingRefunds?.items?.find((item) => item.receipt === receipt || item.notes?.orderId === order.orderId);
-    const providerRefund = existingProviderRefund || await refundRazorpayPayment(order.razorpayPaymentId, {
-      amount: Math.round(Number(order.total) * 100),
-      receipt,
-      notes: { orderId: order.orderId, reason: order.cancellationRequest.reason.slice(0, 240) },
-    });
-    const completed = providerRefund.status === "processed";
-    order.orderStatus = "cancelled";
-    order.statusUpdatedAt = new Date();
-    order.cancellationRequest.status = "accepted";
-    order.cancellationRequest.resolvedAt = new Date();
-    order.refund.status = completed ? "processed" : "processing";
-    order.refund.providerRefundId = String(providerRefund.id || "");
-    order.refund.amount = Number(providerRefund.amount || Math.round(Number(order.total) * 100)) / 100;
-    if (completed) {
-      order.paymentStatus = "refunded";
-      order.refund.completedAt = new Date();
-    }
-    await order.save();
-    return res.json({ success: true, data: order.toObject() });
-  } catch (error) {
-    const knownProviderRejection = error instanceof AppError && Number(error.statusCode) < 500;
-    await Order.updateOne({ _id: order._id, "cancellationRequest.status": "processing" }, {
-      $set: {
-        ...(knownProviderRejection ? { "cancellationRequest.status": "requested", "refund.status": "failed" } : {}),
-        "refund.failureMessage": knownProviderRejection
-          ? String(error.message || "Refund initiation failed").slice(0, 300)
-          : "Refund request outcome is awaiting Razorpay webhook verification. Check the Razorpay dashboard before retrying.",
-      },
-    });
-    throw error;
-  }
 });
 
 exports.ORDER_STATUSES = ORDER_STATUSES;

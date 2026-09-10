@@ -197,6 +197,8 @@
 .checkout-pay-button:disabled { opacity: .65; cursor: wait; }
 .checkout-charge-error { display: flex; align-items: center; justify-content: space-between; gap: .6rem; margin-top: .85rem; border: 1px solid #fecaca; border-radius: 12px; padding: .7rem .75rem; color: #991b1b; background: #fff7f7; font-size: .76rem; font-weight: 700; }
 .checkout-charge-error button { border: 0; border-radius: 999px; padding: .38rem .65rem; color: white; background: #dc2626; font-weight: 850; cursor: pointer; }
+.checkout-final-sale-note { display: block; margin-top: .65rem; color: #64748b; font-size: .69rem; line-height: 1.5; text-align: center; }
+.checkout-final-sale-note a { color: #1d4ed8; font-weight: 800; text-underline-offset: 2px; }
 .checkout-secure-note { display: flex; align-items: flex-start; gap: .4rem; margin-top: .8rem; color: #64748b; font-size: .72rem; line-height: 1.45; }
 .checkout-secure-note svg { flex: 0 0 auto; color: #059669; }
 
@@ -268,23 +270,6 @@
 .order-timeline p { margin: 0; color: #64748b; font-size: .82rem; }
 .cancelled-order-note { display: grid; gap: .3rem; padding: 1rem; border-radius: 12px; color: #991b1b; background: #fee2e2; }
 .cancelled-order-note span { font-size: .82rem; line-height: 1.5; }
-.order-cancel-request-button { display: inline-flex; align-items: center; gap: .45rem; border: 1px solid #fecaca; border-radius: 12px; padding: .72rem .9rem; color: #b91c1c; background: #fff; font-weight: 850; cursor: pointer; }
-.order-cancel-state { display: grid; gap: .25rem; margin-top: .75rem; border: 1px solid #fde68a; border-radius: 12px; padding: .85rem; color: #92400e; background: #fffbeb; }
-.order-cancel-state span { font-size: .8rem; line-height: 1.45; }
-.order-cancel-state.rejected { border-color: #fecaca; color: #991b1b; background: #fff7f7; }
-.order-cancel-layer { position: fixed; inset: 0; z-index: 120; display: grid; place-items: center; padding: 1rem; }
-.order-cancel-backdrop { position: absolute; inset: 0; border: 0; background: rgba(15,23,42,.58); backdrop-filter: blur(8px); }
-.order-cancel-dialog { position: relative; display: grid; gap: .9rem; width: min(520px,100%); border: 1px solid #dbe7f5; border-radius: 22px; padding: 1.4rem; background: #fff; box-shadow: 0 28px 80px rgba(15,23,42,.22); }
-.order-cancel-dialog h3, .order-cancel-dialog p { margin: 0; }
-.order-cancel-dialog > p:not(.order-kicker) { color: #64748b; line-height: 1.55; }
-.order-cancel-dialog label { display: grid; gap: .4rem; color: #334155; font-size: .8rem; font-weight: 800; }
-.order-cancel-dialog input, .order-cancel-dialog textarea { border: 1px solid #d7e2ef; border-radius: 12px; padding: .8rem; color: #0f172a; background: #f8fafc; outline: none; resize: vertical; }
-.order-cancel-dialog input:focus, .order-cancel-dialog textarea:focus { border-color: #60a5fa; box-shadow: 0 0 0 4px rgba(59,130,246,.1); }
-.order-cancel-dialog > small { color: #dc2626; font-weight: 750; }
-.order-cancel-dialog > div { display: flex; justify-content: flex-end; gap: .65rem; }
-.order-cancel-dialog > div button { border: 0; border-radius: 11px; padding: .72rem 1rem; color: #fff; background: #dc2626; font-weight: 850; cursor: pointer; }
-.order-cancel-dialog > div button.secondary { border: 1px solid #dbe7f5; color: #334155; background: #fff; }
-
 .tracking-summary-card h3 { display: flex; align-items: center; gap: .5rem; margin: 0 0 1rem; }
 .tracking-summary-card p { display: flex; justify-content: space-between; gap: 1rem; margin: 0; padding: .6rem 0; color: #64748b; }
 .tracking-summary-card p strong { color: #0f172a; }

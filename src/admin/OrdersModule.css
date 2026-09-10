@@ -5,6 +5,8 @@
 .orders-admin-head-actions { display: flex; align-items: center; gap: 12px; color: var(--accent-strong); }
 .orders-admin-head-actions > button { display: inline-flex; min-height: 44px; align-items: center; justify-content: center; gap: 8px; border: 1px solid rgba(45,212,191,.28); border-radius: 13px; padding: 0 15px; color: #ccfbf1; background: linear-gradient(135deg,rgba(20,184,166,.2),rgba(37,99,235,.16)); font-weight: 850; cursor: pointer; transition: border-color .18s ease, transform .18s ease, background .18s ease; }
 .orders-admin-head-actions > button:hover { border-color: rgba(45,212,191,.55); background: linear-gradient(135deg,rgba(20,184,166,.3),rgba(37,99,235,.24)); transform: translateY(-1px); }
+.admin-shell.light .orders-admin-head-actions > button { border-color: #99f6e4; color: #0f766e; background: linear-gradient(135deg,#ecfdf5,#eff6ff); box-shadow: 0 8px 18px rgba(15,118,110,.08); }
+.admin-shell.light .orders-admin-head-actions > button:hover { border-color: #2dd4bf; background: linear-gradient(135deg,#d1fae5,#dbeafe); }
 
 .orders-filter-bar { display: grid; grid-template-columns: minmax(240px,1fr) auto auto auto auto; gap: 10px; align-items: center; padding: 12px; }
 .orders-filter-bar label { display: flex; min-height: 44px; align-items: center; gap: 7px; border: 1px solid var(--border); border-radius: 12px; padding: 0 10px; color: var(--muted); background: rgba(255,255,255,.06); }
@@ -13,6 +15,7 @@
 .orders-filter-bar button { min-height: 44px; border: 0; border-radius: 12px; padding: 0 15px; color: white; background: linear-gradient(135deg,#14b8a6,#0f766e); font-weight: 850; cursor: pointer; }
 .orders-filter-bar .orders-reset { border: 1px solid var(--border); color: var(--text); background: transparent; }
 .orders-error { border: 1px solid rgba(248,113,113,.35); border-radius: 12px; padding: 11px 14px; color: #fecaca; background: rgba(127,29,29,.18); }
+.admin-shell.light .orders-error { border-color: #fecaca; color: #b91c1c; background: #fff1f2; }
 
 .orders-list { overflow: hidden; padding: 8px; }
 .order-list-row { display: grid; width: 100%; grid-template-columns: 58px minmax(180px,1fr) minmax(160px,.8fr) auto 24px; gap: 12px; align-items: center; border: 0; border-bottom: 1px solid var(--border); padding: 12px; color: var(--text); background: transparent; text-align: left; cursor: pointer; transition: background .18s ease, transform .18s ease; }
@@ -26,6 +29,9 @@
 .admin-order-status { border-radius: 999px; padding: 7px 10px; color: #93c5fd; background: rgba(37,99,235,.18); font-size: 10px; font-weight: 900; text-transform: uppercase; white-space: nowrap; }
 .admin-order-status.delivered { color: #6ee7b7; background: rgba(5,150,105,.18); }
 .admin-order-status.cancelled { color: #fca5a5; background: rgba(220,38,38,.18); }
+.admin-shell.light .admin-order-status { color: #1d4ed8; background: #dbeafe; }
+.admin-shell.light .admin-order-status.delivered { color: #047857; background: #d1fae5; }
+.admin-shell.light .admin-order-status.cancelled { color: #b91c1c; background: #fee2e2; }
 .orders-state { min-height: 280px; display: grid; place-content: center; justify-items: center; gap: 8px; color: var(--muted); text-align: center; }
 .orders-state h3,.orders-state p { margin: 0; }
 .orders-load-more { display: flex; min-height: 46px; align-items: center; justify-content: center; gap: 7px; width: calc(100% - 16px); margin: 10px 8px 4px; border: 1px solid var(--border); border-radius: 12px; color: var(--accent-strong); background: rgba(20,184,166,.08); font-weight: 850; cursor: pointer; }
@@ -138,14 +144,3 @@
   .charge-modal { border-radius: 18px; padding: 16px; }
   .charge-modal > footer { display: grid; grid-template-columns: 1fr 1fr; }
 }
-.drawer-cancellation-request { display: grid; gap: .75rem; margin: 0 1.15rem 1rem; border: 1px solid #fde68a; border-radius: 16px; padding: 1rem; color: #78350f; background: #fffbeb; }
-.drawer-cancellation-request > div:first-child { display: flex; align-items: center; gap: .65rem; }
-.drawer-cancellation-request > div:first-child > span { display: grid; gap: .12rem; }
-.drawer-cancellation-request strong { text-transform: capitalize; }
-.drawer-cancellation-request p { margin: 0; line-height: 1.5; }
-.drawer-cancellation-request small { color: #92400e; }
-.drawer-cancellation-request.accepted { border-color: #a7f3d0; color: #065f46; background: #ecfdf5; }
-.drawer-cancellation-request.rejected { border-color: #fecaca; color: #991b1b; background: #fff7f7; }
-.drawer-cancellation-actions { display: flex; justify-content: flex-end; gap: .55rem; }
-.drawer-cancellation-actions button { display: inline-flex; align-items: center; gap: .35rem; border: 0; border-radius: 10px; padding: .65rem .8rem; color: #fff; background: #dc2626; font-weight: 800; cursor: pointer; }
-.drawer-cancellation-actions button.secondary { border: 1px solid #dbe7f5; color: #334155; background: #fff; }

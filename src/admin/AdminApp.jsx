@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import toast from "react-hot-toast";
 import {
   BadgePercent,
   BrainCircuit,
@@ -203,6 +204,17 @@ function replaceAdminRoute(path) {
   }
 }
 
+function validationMessage(details) {
+  const fieldErrors = details?.fieldErrors || {};
+  const firstField = Object.entries(fieldErrors).find(([, messages]) => Array.isArray(messages) && messages.length);
+  if (firstField) {
+    const [field, messages] = firstField;
+    const label = field.replace(/([A-Z])/g, " $1").replace(/^./, (value) => value.toUpperCase());
+    return `${label}: ${messages[0]}`;
+  }
+  return details?.formErrors?.find(Boolean) || "";
+}
+
 async function apiFetch(path, options = {}) {
   const isFormData = options.body instanceof FormData;
   const controller = new AbortController();
@@ -233,8 +245,10 @@ async function apiFetch(path, options = {}) {
 
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const error = new Error(payload.message || "Request failed");
+    const detailMessage = payload.message === "Validation failed" ? validationMessage(payload.details) : "";
+    const error = new Error(detailMessage || payload.message || "Request failed");
     error.status = response.status;
+    error.details = payload.details;
     if (response.status === 401 && !suppressAuthInvalidEvent) {
       window.dispatchEvent(new CustomEvent("admin-auth-invalid", { detail: { message: error.message } }));
     }
@@ -575,7 +589,6 @@ function App() {
 
   const runAction = async (action, successText = "Saved") => {
     setBusy(true);
-    setMessage("");
     try {
       const result = await action();
       if (result === false || result?.cancelled) {
@@ -583,9 +596,9 @@ function App() {
       }
       await refresh();
       window.dispatchEvent(new CustomEvent("admin-action-saved"));
-      setMessage(successText);
+      toast.success(successText);
     } catch (error) {
-      setMessage(error.message);
+      toast.error(error.message || "Unable to save changes");
     } finally {
       setBusy(false);
     }
@@ -720,7 +733,6 @@ function App() {
           </div>
         </header>
 
-        {message && <div className="notice glass-panel">{message}</div>}
         {dataLoadWarning && (
           <div className="notice glass-panel admin-data-warning" role="status">
             <span>{dataLoadWarning}</span>
@@ -1412,6 +1424,13 @@ function AdminAccountAvatar({ admin }) {
   );
 }
 
+function adminPermissionSummary(permissions = []) {
+  const labels = permissions.map((key) => sectionCards.find((card) => (card.permission || card.key) === key)?.label || key);
+  if (!labels.length) return "No section access";
+  const visible = labels.slice(0, 3);
+  return `${visible.join(", ")}${labels.length > visible.length ? ` +${labels.length - visible.length} more` : ""}`;
+}
+
 function AdminManager({ admins, currentAdmin, runAction, busy }) {
   const empty = { name: "", email: "", role: "admin", password: "", tag: "employee", permissions: [], adminAndroidAppAccess: false, receivePulseAIUnavailableAlerts: true, isActive: true };
   const [form, setForm] = useState(empty);
@@ -1508,7 +1527,11 @@ function AdminManager({ admins, currentAdmin, runAction, busy }) {
         setOwnerOtp("");
         setNewAdminOtp("");
       })
-      .catch((error) => setCreateError(error.message))
+      .catch((error) => {
+        const message = error.message || "Unable to start admin creation";
+        setCreateError(message);
+        toast.error(message);
+      })
       .finally(() => setCreateBusy(false));
   };
 
@@ -1534,7 +1557,9 @@ function AdminManager({ admins, currentAdmin, runAction, busy }) {
       setOwnerOtp("");
       setNewAdminOtp("");
     } catch (error) {
-      setCreateError(error.message);
+      const message = error.message || "Unable to resend the OTPs";
+      setCreateError(message);
+      toast.error(message);
     } finally {
       setResendBusy(false);
     }
@@ -1655,7 +1680,7 @@ function AdminManager({ admins, currentAdmin, runAction, busy }) {
         {admins.map((item) => (
           <div className="list-item compact admin-account-row" key={item._id || item.id}>
             <AdminAccountAvatar admin={item} />
-            <div>
+            <div className="admin-account-details">
               <strong>{item.name || item.email}</strong>
               <span>
                 {item.email === currentAdmin?.email ? "Current login" : item.tag || item.role || "admin"}
@@ -1664,21 +1689,23 @@ function AdminManager({ admins, currentAdmin, runAction, busy }) {
               <small>{item.email}</small>
               <small>{item.isSuperAdmin || item.adminAndroidAppAccess ? "Android app access enabled" : "Android app access disabled"}</small>
               <small>{item.receivePulseAIUnavailableAlerts !== false ? "Pulse AI demand alerts enabled" : "Pulse AI demand alerts disabled"}</small>
-              <small>{(item.permissions || []).map((key) => sectionCards.find((card) => card.key === key)?.label || key).join(", ") || "No section access"}</small>
+              <small>{adminPermissionSummary(item.permissions || [])}</small>
             </div>
             <span className={`status-badge ${item.isActive ? "repaired" : ""}`}>
               {item.isSuperAdmin ? "Owner" : item.isActive ? "Active" : "Inactive"}
             </span>
-            <button
-              type="button"
-              className="admin-demand-alert-toggle"
-              onClick={() => toggleUnavailableDemandAlerts(item)}
-              disabled={busy || item.isActive === false}
-            >
-              <Mail size={14} /> Demand email {item.receivePulseAIUnavailableAlerts !== false ? "On" : "Off"}
-            </button>
-            {!item.isSuperAdmin && <button type="button" onClick={() => edit(item)}>Edit</button>}
-            {!item.isSuperAdmin && <button className="danger" type="button" onClick={() => remove(item)}>Delete</button>}
+            <div className="admin-account-actions">
+              <button
+                type="button"
+                className="admin-demand-alert-toggle"
+                onClick={() => toggleUnavailableDemandAlerts(item)}
+                disabled={busy || item.isActive === false}
+              >
+                <Mail size={14} /> Demand email {item.receivePulseAIUnavailableAlerts !== false ? "On" : "Off"}
+              </button>
+              {!item.isSuperAdmin && <button type="button" onClick={() => edit(item)}>Edit</button>}
+              {!item.isSuperAdmin && <button className="danger" type="button" onClick={() => remove(item)}>Delete</button>}
+            </div>
           </div>
         ))}
       </section>

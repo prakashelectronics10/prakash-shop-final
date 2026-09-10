@@ -1021,8 +1021,26 @@
 }
 
 .list-item.compact.admin-account-row {
-  grid-template-columns: 48px minmax(0, 1fr) auto auto auto auto;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  grid-template-areas:
+    "avatar details status"
+    "avatar actions actions";
+  align-items: start;
 }
+
+.admin-account-row > .admin-account-avatar { grid-area: avatar; }
+.admin-account-details { grid-area: details; }
+.admin-account-row > .status-badge { grid-area: status; align-self: center; }
+.list-item .admin-account-actions {
+  grid-area: actions;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.admin-account-actions > button { flex: 0 0 auto; }
 
 .admin-demand-alert-toggle {
   display: inline-flex;
@@ -2342,11 +2360,22 @@ button.stat-card:focus-visible {
 }
 
 @media (max-width: 720px) {
-  .list-item.compact.admin-account-row,
   .list-item.notification-email-row {
     grid-template-columns: 1fr;
     align-items: stretch;
   }
+
+  .list-item.compact.admin-account-row {
+    grid-template-columns: 48px minmax(0, 1fr);
+    grid-template-areas:
+      "avatar details"
+      "status status"
+      "actions actions";
+    align-items: start;
+  }
+
+  .list-item .admin-account-actions { justify-content: flex-start; }
+  .admin-account-actions > button { flex: 1 1 10rem; }
 
   .admin-demand-alert-toggle,
   .list-item.notification-email-row > button {

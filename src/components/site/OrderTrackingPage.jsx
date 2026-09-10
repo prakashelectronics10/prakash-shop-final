@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Ban, Check, Clock3, PackageCheck, Search, Truck, WalletCards } from "lucide-react";
+import { Check, Clock3, PackageCheck, Search, Truck, WalletCards } from "lucide-react";
 import { apiRequest } from "../../api/client";
 import { formatINR } from "../../utils/productPricing";
 import { Navbar } from "./Navbar";
@@ -19,33 +19,11 @@ function formatDate(value) {
   return new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 }
 
-function OrderResult({ order, onOrderChange }) {
-  const [cancelOpen, setCancelOpen] = useState(false);
-  const [cancelForm, setCancelForm] = useState({ phone: "", reason: "" });
-  const [cancelBusy, setCancelBusy] = useState(false);
-  const [cancelError, setCancelError] = useState("");
+function OrderResult({ order }) {
   const activeIndex = order.orderStatus === "cancelled" ? -1 : STEPS.findIndex((step) => step.key === order.orderStatus);
   const chargeRows = Array.isArray(order.additionalCharges) && order.additionalCharges.length
     ? order.additionalCharges
     : [{ name: "Delivery charge", slug: "delivery-charge", amount: order.deliveryCharge || 0 }];
-  const cancellationStatus = order.cancellationRequest?.status || "none";
-  const requestCancellation = async (event) => {
-    event.preventDefault();
-    setCancelBusy(true);
-    setCancelError("");
-    try {
-      const response = await apiRequest(`/orders/track/${encodeURIComponent(order.orderId)}/cancellation`, {
-        method: "POST",
-        body: JSON.stringify(cancelForm),
-      });
-      onOrderChange(response.data);
-      setCancelOpen(false);
-    } catch (requestError) {
-      setCancelError(requestError.message || "Cancellation request could not be submitted");
-    } finally {
-      setCancelBusy(false);
-    }
-  };
   return (
     <section className="tracking-result">
       <header className="tracking-order-head">
@@ -87,15 +65,6 @@ function OrderResult({ order, onOrderChange }) {
               })}
             </ol>
           )}
-          {order.orderStatus === "confirmed" && cancellationStatus === "none" && (
-            <button className="order-cancel-request-button" type="button" onClick={() => setCancelOpen(true)}><Ban size={17} /> Request cancellation</button>
-          )}
-          {["requested", "processing"].includes(cancellationStatus) && (
-            <div className="order-cancel-state"><strong>Cancellation requested</strong><span>An administrator will review it before shipping.</span></div>
-          )}
-          {cancellationStatus === "rejected" && order.orderStatus === "confirmed" && (
-            <div className="order-cancel-state rejected"><strong>Cancellation was not approved</strong><span>{order.cancellationRequest?.adminNote || "Contact the shop if you need help."}</span></div>
-          )}
         </section>
         <aside className="tracking-summary-card">
           <h3><WalletCards size={20} /> Order summary</h3>
@@ -112,20 +81,6 @@ function OrderResult({ order, onOrderChange }) {
           <small><Check size={15} /> Payment verified</small>
         </aside>
       </div>
-      {cancelOpen && (
-        <div className="order-cancel-layer" role="presentation">
-          <button type="button" className="order-cancel-backdrop" aria-label="Close cancellation form" onClick={() => setCancelOpen(false)} />
-          <form className="order-cancel-dialog" onSubmit={requestCancellation} role="dialog" aria-modal="true" aria-label="Request order cancellation">
-            <p className="order-kicker">Before shipping</p>
-            <h3>Request cancellation</h3>
-            <p>This request must be approved by an administrator. Once shipped, the order cannot be cancelled.</p>
-            <label><span>Order phone number</span><input type="tel" inputMode="numeric" value={cancelForm.phone} onChange={(event) => setCancelForm({ ...cancelForm, phone: event.target.value })} placeholder="10-digit mobile number" required /></label>
-            <label><span>Reason</span><textarea rows="4" maxLength="500" value={cancelForm.reason} onChange={(event) => setCancelForm({ ...cancelForm, reason: event.target.value })} placeholder="Tell us why you need to cancel" required /></label>
-            {cancelError && <small role="alert">{cancelError}</small>}
-            <div><button type="button" className="secondary" onClick={() => setCancelOpen(false)}>Keep order</button><button type="submit" disabled={cancelBusy}>{cancelBusy ? "Submitting…" : "Submit request"}</button></div>
-          </form>
-        </div>
-      )}
     </section>
   );
 }
@@ -175,7 +130,7 @@ export function OrderTrackingPage() {
             {error && <small role="alert">{error}</small>}
           </form>
         </header>
-        {order && <OrderResult order={order} onOrderChange={setOrder} />}
+        {order && <OrderResult order={order} />}
       </main>
       <Footer />
     </div>

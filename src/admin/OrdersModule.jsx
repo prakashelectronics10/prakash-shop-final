@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AlertTriangle, CalendarDays, Check, ChevronRight, Edit3, LoaderCircle, PackageCheck, Plus, ReceiptIndianRupee, Search, ShoppingBag, Trash2, Truck, X } from "lucide-react";
+import toast from "react-hot-toast";
+import { CalendarDays, ChevronRight, Edit3, LoaderCircle, PackageCheck, Plus, ReceiptIndianRupee, Search, ShoppingBag, Trash2, Truck, X } from "lucide-react";
 import "./OrdersModule.css";
 
 const STATUS_OPTIONS = [
@@ -7,7 +8,6 @@ const STATUS_OPTIONS = [
   ["shipped", "Shipped"],
   ["out_for_delivery", "Out for delivery"],
   ["delivered", "Delivered"],
-  ["cancelled", "Cancelled"],
 ];
 
 function money(value) {
@@ -20,6 +20,7 @@ function dateTime(value) {
 }
 
 function labelStatus(value) {
+  if (value === "cancelled") return "Cancelled";
   return STATUS_OPTIONS.find(([key]) => key === value)?.[1] || value;
 }
 
@@ -115,30 +116,11 @@ export default function OrdersModule({ apiFetch }) {
       });
       setSelected(response.data);
       setOrders((current) => current.map((order) => order._id === response.data._id ? response.data : order));
+      toast.success("Order status updated");
     } catch (requestError) {
-      setError(requestError.message || "Status could not be updated");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const resolveCancellation = async (decision) => {
-    if (!selected || saving) return;
-    const message = decision === "accept"
-      ? "Accept this cancellation and initiate the full Razorpay refund?"
-      : "Reject this cancellation request?";
-    if (!window.confirm(message)) return;
-    setSaving(true);
-    setError("");
-    try {
-      const response = await apiFetch(`/orders/admin/${selected._id}/cancellation`, {
-        method: "PATCH",
-        body: JSON.stringify({ decision }),
-      });
-      setSelected(response.data);
-      setOrders((current) => current.map((order) => order._id === response.data._id ? response.data : order));
-    } catch (requestError) {
-      setError(requestError.message || "Cancellation request could not be updated");
+      const message = requestError.message || "Status could not be updated";
+      setError(message);
+      toast.error(message);
     } finally {
       setSaving(false);
     }
@@ -193,8 +175,11 @@ export default function OrdersModule({ apiFetch }) {
         ? current.map((charge) => charge._id === response.data._id ? response.data : charge)
         : [...current, response.data]);
       setChargeEditor(null);
+      toast.success(editing ? "Additional charge updated" : "Additional charge added");
     } catch (requestError) {
-      setChargeError(requestError.message || "Additional charge could not be saved");
+      const message = requestError.message || "Additional charge could not be saved";
+      setChargeError(message);
+      toast.error(message);
     } finally {
       setChargeSaving(false);
     }
@@ -208,8 +193,11 @@ export default function OrdersModule({ apiFetch }) {
       await apiFetch(`/orders/admin/charges/${deleteTarget._id}`, { method: "DELETE" });
       setCharges((current) => current.filter((charge) => charge._id !== deleteTarget._id));
       setDeleteTarget(null);
+      toast.success("Additional charge deleted");
     } catch (requestError) {
-      setChargeError(requestError.message || "Additional charge could not be deleted");
+      const message = requestError.message || "Additional charge could not be deleted";
+      setChargeError(message);
+      toast.error(message);
     } finally {
       setChargeSaving(false);
     }
@@ -270,24 +258,10 @@ export default function OrdersModule({ apiFetch }) {
               ))}
             </section>
 
-            {selected.cancellationRequest?.status && selected.cancellationRequest.status !== "none" && (
-              <section className={`drawer-cancellation-request ${selected.cancellationRequest.status}`}>
-                <div><AlertTriangle size={19} /><span><strong>Cancellation {selected.cancellationRequest.status}</strong><small>{dateTime(selected.cancellationRequest.requestedAt)}</small></span></div>
-                <p>{selected.cancellationRequest.reason || "No reason provided."}</p>
-                {selected.cancellationRequest.adminNote && <small>{selected.cancellationRequest.adminNote}</small>}
-                {selected.cancellationRequest.status === "requested" && (
-                  <div className="drawer-cancellation-actions">
-                    <button type="button" className="secondary" disabled={saving} onClick={() => resolveCancellation("reject")}><X size={16} /> Reject</button>
-                    <button type="button" disabled={saving} onClick={() => resolveCancellation("accept")}><Check size={16} /> Accept &amp; refund</button>
-                  </div>
-                )}
-                {selected.cancellationRequest.status === "accepted" && <small>Refund: {selected.refund?.status || "processing"} · {money(selected.refund?.amount || selected.total)}</small>}
-              </section>
-            )}
-
             <section className="drawer-status-control">
               <label htmlFor="admin-order-status"><Truck size={18} /> Customer-visible status</label>
               <select id="admin-order-status" value={selected.orderStatus} disabled={saving} onChange={(e) => updateStatus(e.target.value)}>
+                {selected.orderStatus === "cancelled" && <option value="cancelled" disabled>Cancelled (historical)</option>}
                 {STATUS_OPTIONS.map(([value, label]) => <option value={value} key={value}>{label}</option>)}
               </select>
               <small>{saving ? "Updating status…" : "Changes appear immediately on the customer's tracking page."}</small>

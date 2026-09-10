@@ -16,6 +16,8 @@ const CORE_ROUTES = [
   { title: "Gallery", url: "/gallery", description: "Shop, products and repair-work gallery" },
   { title: "Privacy Policy", url: "/privacy-policy", description: "How customer and website data is handled" },
   { title: "Terms & Conditions", url: "/terms-and-conditions", description: "Ordering, payment, delivery and repair terms" },
+  { title: "Shipping Policy", url: "/shipping-policy", description: "Order delivery, charges and tracking information" },
+  { title: "Return & Refund Policy", url: "/return-refund-policy", description: "Final paid-order policy and pre-payment checks" },
   { title: "Cart", url: "/cart", description: "Review selected products" },
   { title: "Checkout", url: "/checkout", description: "Delivery details and secure payment" },
   { title: "Track Order", url: "/orders", description: "Track an order using its Order ID" },
@@ -35,9 +37,14 @@ const LEGAL_KNOWLEDGE = {
     topics: ["information collected for orders, bookings, support and Pulse AI", "payments handled by Razorpay", "service-provider sharing", "storage, security, cookies, retention and customer choices"],
   },
   termsAndConditions: {
-    lastUpdated: "7 September 2026",
+    lastUpdated: "10 September 2026",
     route: "/terms-and-conditions",
-    topics: ["website use", "product pricing and availability", "orders and Razorpay payment", "delivery and additional charges", "repair bookings", "cancellations, returns and refunds", "third-party services and governing law in India/Jharkhand"],
+    topics: ["website use", "product pricing and availability", "orders and Razorpay payment", "delivery and additional charges", "repair bookings", "final paid orders with no customer-requested cancellation, return or refund except where required by law", "third-party services and governing law in India/Jharkhand"],
+  },
+  returnRefundPolicy: {
+    lastUpdated: "10 September 2026",
+    route: "/return-refund-policy",
+    topics: ["confirm product, compatibility, quantity, price, charges and delivery details before payment", "paid orders are final with no customer-requested cancellation, return, exchange or refund", "payment issues and remedies required by applicable law"],
   },
 };
 

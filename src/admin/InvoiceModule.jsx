@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import toast from "react-hot-toast";
 import {
   CheckCircle2,
   Download,
@@ -61,7 +62,6 @@ export default function InvoiceModule({ apiFetch }) {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [pdfLoading, setPdfLoading] = useState(false);
-  const [message, setMessage] = useState("");
   const [successInvoice, setSuccessInvoice] = useState(null);
 
   const totals = useMemo(() => calculateInvoiceTotals(form.items), [form.items]);
@@ -73,7 +73,6 @@ export default function InvoiceModule({ apiFetch }) {
 
   const loadInvoices = async (nextFilters = filters) => {
     setLoading(true);
-    setMessage("");
     try {
       const query = new URLSearchParams();
       query.set("limit", "80");
@@ -84,7 +83,7 @@ export default function InvoiceModule({ apiFetch }) {
       setInvoices(response.data?.items || []);
       setStats(response.data?.stats || {});
     } catch (error) {
-      setMessage(error.message || "Unable to load invoices");
+      toast.error(error.message || "Unable to load invoices");
     } finally {
       setLoading(false);
     }
@@ -102,12 +101,11 @@ export default function InvoiceModule({ apiFetch }) {
   const loadInvoice = async (id) => {
     if (!id) return;
     setLoading(true);
-    setMessage("");
     try {
       const response = await apiFetch(`/invoices/${id}`);
       setSelectedInvoice(response.data);
     } catch (error) {
-      setMessage(error.message || "Unable to load invoice");
+      toast.error(error.message || "Unable to load invoice");
     } finally {
       setLoading(false);
     }
@@ -156,7 +154,6 @@ export default function InvoiceModule({ apiFetch }) {
 
   const saveInvoice = async () => {
     setSaving(true);
-    setMessage("");
     try {
       const payload = formToInvoicePayload({ ...form, totals });
       const response = editingId
@@ -166,8 +163,9 @@ export default function InvoiceModule({ apiFetch }) {
       setSelectedInvoice(response.data);
       setEditingId(response.data?._id || response.data?.id || "");
       await loadInvoices();
+      toast.success(editingId ? "Invoice updated" : "Invoice saved");
     } catch (error) {
-      setMessage(error.message || "Invoice save failed");
+      toast.error(error.message || "Invoice save failed");
     } finally {
       setSaving(false);
     }
@@ -183,8 +181,9 @@ export default function InvoiceModule({ apiFetch }) {
       setSelectedInvoice(null);
       await loadInvoices();
       navigate("/admin/invoice/history");
+      toast.success("Invoice deleted");
     } catch (error) {
-      setMessage(error.message || "Invoice delete failed");
+      toast.error(error.message || "Invoice delete failed");
     } finally {
       setLoading(false);
     }
@@ -194,7 +193,7 @@ export default function InvoiceModule({ apiFetch }) {
     const printable = invoice || { ...form, totals };
     const printWindow = window.open("", "_blank", "noopener,noreferrer,width=920,height=860");
     if (!printWindow) {
-      setMessage("Popup blocked. Allow popups to print the invoice.");
+      toast.error("Popup blocked. Allow popups to print the invoice.");
       return;
     }
     printWindow.document.open();
@@ -207,7 +206,7 @@ export default function InvoiceModule({ apiFetch }) {
   const downloadPdf = async (invoice) => {
     const id = invoice?._id || invoice?.id;
     if (!id) {
-      setMessage("Save the invoice before downloading the PDF.");
+      toast.error("Save the invoice before downloading the PDF.");
       return;
     }
     setPdfLoading(true);
@@ -228,9 +227,9 @@ export default function InvoiceModule({ apiFetch }) {
         return;
       }
       await navigator.clipboard.writeText(url);
-      setMessage("Invoice PDF link copied.");
+      toast.success("Invoice PDF link copied.");
     } catch (error) {
-      setMessage(error.message || "Unable to share invoice");
+      if (error?.name !== "AbortError") toast.error(error.message || "Unable to share invoice");
     }
   };
 
@@ -238,7 +237,6 @@ export default function InvoiceModule({ apiFetch }) {
     if (!file) return;
     const formData = new FormData();
     formData.append("image", file);
-    setMessage("");
     try {
       const response = await apiFetch("/admin/upload/image", { method: "POST", body: formData, timeout: 45000 });
       setForm((current) => ({
@@ -249,8 +247,9 @@ export default function InvoiceModule({ apiFetch }) {
           logoPublicId: response.data?.publicId || "",
         },
       }));
+      toast.success("Logo uploaded");
     } catch (error) {
-      setMessage(error.message || "Logo upload failed");
+      toast.error(error.message || "Logo upload failed");
     }
   };
 
@@ -270,7 +269,6 @@ export default function InvoiceModule({ apiFetch }) {
 
   return (
     <section className="invoice-module">
-      {message && <div className="invoice-alert glass-panel">{message}</div>}
       {route.mode === "dashboard" && (
         <InvoiceDashboard
           stats={stats}

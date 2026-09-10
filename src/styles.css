@@ -9195,6 +9195,117 @@ body.pulse-ai-route-active .science-ai-chat {
   text-decoration: underline;
 }
 
+/* Not-found page */
+.not-found-page {
+  display: grid;
+  min-height: clamp(38rem, 72vh, 56rem);
+  place-items: center;
+  width: min(100% - 2rem, 74rem);
+  margin-inline: auto;
+  padding: clamp(8.5rem, 15vw, 11rem) 0 clamp(4rem, 8vw, 6rem);
+  text-align: center;
+}
+
+.not-found-card {
+  width: min(100%, 52rem);
+}
+
+.not-found-code {
+  margin: 0;
+  color: #1d4ed8;
+  background: linear-gradient(135deg, #2563eb 10%, #0284c7 90%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  font-family: var(--font-display);
+  font-size: clamp(7.5rem, 22vw, 15rem);
+  font-weight: 900;
+  line-height: 0.78;
+  letter-spacing: -0.085em;
+  -webkit-text-fill-color: transparent;
+}
+
+.not-found-kicker {
+  margin: clamp(1.4rem, 4vw, 2rem) 0 0;
+  color: #0369a1;
+  font-size: clamp(0.72rem, 2vw, 0.88rem);
+  font-weight: 850;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.not-found-card h1 {
+  margin: 0.65rem 0 0;
+  color: #0f172a;
+  font-family: var(--font-display);
+  font-size: clamp(2.15rem, 7vw, 4.5rem);
+  font-weight: 850;
+  line-height: 1.02;
+  letter-spacing: -0.045em;
+}
+
+.not-found-copy {
+  max-width: 38rem;
+  margin: 1.15rem auto 0;
+  color: #5b6b80;
+  font-size: clamp(0.95rem, 2vw, 1.08rem);
+  line-height: 1.7;
+}
+
+.not-found-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-top: 2rem;
+}
+
+.not-found-actions a {
+  display: inline-flex;
+  min-height: 3.15rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #cddbeb;
+  border-radius: 14px;
+  padding: 0.75rem 1.4rem;
+  color: #0f172a;
+  background: #fff;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.not-found-actions a.primary {
+  border-color: transparent;
+  color: #fff;
+  background: linear-gradient(135deg, #2563eb, #0284c7);
+  box-shadow: 0 15px 34px rgba(37, 99, 235, 0.22);
+}
+
+.not-found-actions a:hover,
+.not-found-actions a:focus-visible {
+  border-color: #93c5fd;
+  transform: translateY(-1px);
+}
+
+@media (max-width: 480px) {
+  .not-found-page {
+    width: min(100% - 1.25rem, 74rem);
+    min-height: 36rem;
+    padding-top: 7.5rem;
+  }
+
+  .not-found-code {
+    font-size: clamp(6.5rem, 38vw, 9rem);
+  }
+
+  .not-found-actions {
+    display: grid;
+  }
+
+  .not-found-actions a {
+    width: 100%;
+  }
+}
+
 /* Legal pages */
 .legal-page {
   color: #0f172a;
@@ -9261,8 +9372,14 @@ body.pulse-ai-route-active .science-ai-chat {
   border-right: 0;
 }
 
-.legal-page-card section:nth-last-child(-n + 2) {
+.legal-page-card section:last-child,
+.legal-page-card section:nth-last-child(2):nth-child(odd) {
   border-bottom: 0;
+}
+
+.legal-page-card section:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+  border-right: 0;
 }
 
 .legal-page-card h2 {
@@ -9358,6 +9475,7 @@ body.pulse-ai-route-active .science-ai-chat {
   }
 
   .legal-page-card section:last-child {
+    grid-column: auto;
     border-bottom: 0;
   }
 

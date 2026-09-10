@@ -270,6 +270,7 @@ export function CheckoutPage() {
             <button className="checkout-pay-button" type="submit" disabled={busy || chargesLoading || Boolean(chargesError)}>
               {chargesLoading ? "Calculating total…" : busy ? "Opening secure payment…" : `Pay ${formatINR(checkoutTotal)}`}
             </button>
+            <small className="checkout-final-sale-note">Please confirm the product, quantity, price, and delivery details before paying. Once placed, the order is final—no cancellation, return, or refund, except where required by law. <a href="/return-refund-policy">View policy</a></small>
             <small className="checkout-secure-note"><ShieldCheck size={15} /> Secured by Razorpay. UPI, cards, netbanking and supported payment methods are available in the payment window.</small>
           </aside>
         </form>

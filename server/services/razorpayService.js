@@ -43,22 +43,6 @@ function getRazorpayPayment(paymentId) {
   return razorpayRequest(`/payments/${encodeURIComponent(paymentId)}`);
 }
 
-function refundRazorpayPayment(paymentId, { amount, receipt, notes } = {}) {
-  return razorpayRequest(`/payments/${encodeURIComponent(paymentId)}/refund`, {
-    method: "POST",
-    body: JSON.stringify({
-      ...(Number.isFinite(amount) ? { amount } : {}),
-      speed: "normal",
-      ...(receipt ? { receipt } : {}),
-      ...(notes ? { notes } : {}),
-    }),
-  });
-}
-
-function getRazorpayPaymentRefunds(paymentId) {
-  return razorpayRequest(`/payments/${encodeURIComponent(paymentId)}/refunds`);
-}
-
 function verifyPaymentSignature({ razorpayOrderId, razorpayPaymentId, signature }) {
   ensureConfigured();
   const expected = crypto
@@ -81,8 +65,6 @@ function verifyWebhookSignature(rawBody, signature) {
 module.exports = {
   createRazorpayOrder,
   getRazorpayPayment,
-  refundRazorpayPayment,
-  getRazorpayPaymentRefunds,
   verifyPaymentSignature,
   verifyWebhookSignature,
 };
