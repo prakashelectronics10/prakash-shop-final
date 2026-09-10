@@ -67,29 +67,33 @@ test("web app manifest and service worker contain the installability essentials"
   assert.match(serviceWorker, /\/prakash-control-panel@1999/);
 });
 
-test("products route exposes the dedicated PNG OG image without a host redirect", async () => {
+test("products route exposes the mobile-compatible OG image without a host redirect", async () => {
   await withServer(async (baseUrl) => {
     const response = await fetch(`${baseUrl}/products`);
     const html = await response.text();
     assert.equal(response.status, 200);
     assert.match(html, /<link rel="canonical" href="https:\/\/prakashshop\.in\/products" \/>/);
-    assert.match(html, /<meta property="og:image" content="https:\/\/prakashshop\.in\/og-image-shop-products\.png" \/>/);
-    assert.match(html, /<meta property="og:image:secure_url" content="https:\/\/prakashshop\.in\/og-image-shop-products\.png" \/>/);
-    assert.match(html, /<meta property="og:image:type" content="image\/png" \/>/);
-    assert.match(html, /<meta property="og:image:width" content="1672" \/>/);
-    assert.match(html, /<meta property="og:image:height" content="941" \/>/);
-    assert.match(html, /<meta name="twitter:image" content="https:\/\/prakashshop\.in\/og-image-shop-products\.png" \/>/);
+    assert.match(html, /<meta property="og:image" content="https:\/\/prakashshop\.in\/og-image-shop-products\.jpg\?v=20260910-mobile" \/>/);
+    assert.match(html, /<meta property="og:image:secure_url" content="https:\/\/prakashshop\.in\/og-image-shop-products\.jpg\?v=20260910-mobile" \/>/);
+    assert.match(html, /<meta property="og:image:type" content="image\/jpeg" \/>/);
+    assert.match(html, /<meta property="og:image:width" content="1200" \/>/);
+    assert.match(html, /<meta property="og:image:height" content="630" \/>/);
+    assert.match(html, /<meta name="twitter:image" content="https:\/\/prakashshop\.in\/og-image-shop-products\.jpg\?v=20260910-mobile" \/>/);
     assert.match(html, /<meta name="twitter:image:alt" content="Prakash Electronics shop products" \/>/);
   });
 });
 
-test("products OG asset exists and hosting headers match its PNG content type", () => {
+test("products OG asset is a lightweight standard JPEG with matching hosting headers", async () => {
   const publicDir = path.resolve(__dirname, "..", "..", "public");
-  const image = fs.readFileSync(path.join(publicDir, "og-image-shop-products.png"));
+  const imagePath = path.join(publicDir, "og-image-shop-products.jpg");
+  const image = fs.readFileSync(imagePath);
   const headers = fs.readFileSync(path.join(publicDir, "_headers"), "utf8");
-  assert.deepEqual([...image.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
-  assert.match(headers, /\/og-image-shop-products\.png\s+Content-Type: image\/png/);
-  assert.doesNotMatch(headers, /\/og-image-shop-products\.jpg/);
+  const metadata = await require("sharp")(imagePath).metadata();
+  assert.deepEqual([...image.subarray(0, 3)], [255, 216, 255]);
+  assert.equal(metadata.width, 1200);
+  assert.equal(metadata.height, 630);
+  assert.ok(image.length < 300 * 1024);
+  assert.match(headers, /\/og-image-shop-products\.jpg\s+Content-Type: image\/jpeg/);
 });
 
 test("manifest endpoint is fresh and always exposes installable icon sizes", async () => {

@@ -76,4 +76,21 @@ describe("applyDynamicWebSettings", () => {
     expect(document.head.querySelector('link[rel="canonical"]')?.getAttribute("href")).toBe("http://localhost/product/havells-bldc-fan");
     expect(document.head.querySelector('link[rel="icon"]')?.getAttribute("href")).toContain("favicon-32.png?v=");
   });
+
+  test("uses a crawler-compatible JPEG transformation for Cloudinary product shares", () => {
+    const product = {
+      slug: "mobile-share-fan",
+      name: "Mobile Share Fan",
+      imageUrl: "https://res.cloudinary.com/demo/image/upload/v123/products/mobile-share-fan.png",
+      price: 1499,
+    };
+    window.history.replaceState({}, "", getProductSharePath(product));
+
+    applyProductPageMeta(product);
+
+    const image = document.head.querySelector('meta[property="og:image"]')?.getAttribute("content");
+    expect(image).toContain("/image/upload/f_jpg,q_auto:good,c_fill,g_auto,w_1200,h_630/v123/");
+    expect(document.head.querySelector('meta[property="og:image:type"]')?.getAttribute("content")).toBe("image/jpeg");
+    expect(document.head.querySelector('meta[name="twitter:image:alt"]')?.getAttribute("content")).toBe(product.name);
+  });
 });

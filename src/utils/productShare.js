@@ -37,9 +37,19 @@ function setMeta(selector, attributeName, attributeValue, content) {
 
 function absoluteProductImage(product = {}) {
   const imageValue = product.imageUrl || product.images?.find((item) => item?.url)?.url;
-  return imageValue
+  const absoluteImage = imageValue
     ? new URL(imageValue, window.location.origin).toString()
     : `${window.location.origin}/og-image.jpg`;
+  if (!/^https:\/\/res\.cloudinary\.com\//i.test(absoluteImage) || !absoluteImage.includes("/image/upload/")) {
+    return absoluteImage;
+  }
+  const marker = "/image/upload/";
+  const suffix = absoluteImage.slice(absoluteImage.indexOf(marker) + marker.length);
+  const transformation = "f_jpg,q_auto:good,c_fill,g_auto,w_1200,h_630";
+  const version = suffix.match(/(^|\/)v\d+\//);
+  if (!version) return absoluteImage.replace(marker, `${marker}${transformation}/`);
+  const insertAt = version.index + (version[1] ? 1 : 0);
+  return `${absoluteImage.slice(0, absoluteImage.indexOf(marker) + marker.length)}${suffix.slice(0, insertAt)}${transformation}/${suffix.slice(insertAt)}`;
 }
 
 function productAvailability(product = {}) {
@@ -167,6 +177,7 @@ export function applyProductPageMeta(product = {}, publicOffers = []) {
   setMeta('meta[property="og:url"]', "property", "og:url", url);
   setMeta('meta[property="og:image"]', "property", "og:image", image);
   setMeta('meta[property="og:image:secure_url"]', "property", "og:image:secure_url", image);
+  setMeta('meta[property="og:image:type"]', "property", "og:image:type", !image.includes("f_jpg") && /\.png(?:$|\?)/i.test(image) ? "image/png" : "image/jpeg");
   setMeta('meta[property="og:image:alt"]', "property", "og:image:alt", product.name);
   setMeta('meta[property="og:image:width"]', "property", "og:image:width", "1200");
   setMeta('meta[property="og:image:height"]', "property", "og:image:height", "630");
@@ -178,5 +189,6 @@ export function applyProductPageMeta(product = {}, publicOffers = []) {
   setMeta('meta[name="twitter:title"]', "name", "twitter:title", title);
   setMeta('meta[name="twitter:description"]', "name", "twitter:description", description);
   setMeta('meta[name="twitter:image"]', "name", "twitter:image", image);
+  setMeta('meta[name="twitter:image:alt"]', "name", "twitter:image:alt", product.name);
   applyProductStructuredData(product, { description, image, url, publicOffers });
 }

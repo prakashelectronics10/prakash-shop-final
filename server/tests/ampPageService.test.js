@@ -59,8 +59,8 @@ test("renders canonical AMP catalogue and crawlable AMP product links", () => {
   const html = renderAmpCatalogPage({ products: [product], sourceType: "shop-product", origin });
   assertAmpShell(html);
   assert.match(html, /<link rel="canonical" href="https:\/\/prakashshop\.in\/products">/);
-  assert.match(html, /<meta property="og:image" content="https:\/\/prakashshop\.in\/og-image-shop-products\.png">/);
-  assert.match(html, /<meta property="og:image:type" content="image\/png">/);
+  assert.match(html, /<meta property="og:image" content="https:\/\/prakashshop\.in\/og-image-shop-products\.jpg\?v=20260910-mobile">/);
+  assert.match(html, /<meta property="og:image:type" content="image\/jpeg">/);
   assert.match(html, /href="\/amp\/product\/bldc-fan"/);
   assert.match(html, /"@type":"ItemList"/);
 });

@@ -28,10 +28,16 @@ function cloudinaryOgImage(value) {
   if (!/^https:\/\/res\.cloudinary\.com\//i.test(url) || !url.includes("/image/upload/")) {
     return url;
   }
-  if (/\/image\/upload\/[^/]*(?:w_1200|c_fill|f_auto|q_auto)/i.test(url)) {
+  if (url.includes("f_jpg") && url.includes("w_1200") && url.includes("h_630") && url.includes("c_fill")) {
     return url;
   }
-  return url.replace("/image/upload/", "/image/upload/f_auto,q_auto:good,c_fill,g_auto,w_1200,h_630/");
+  const marker = "/image/upload/";
+  const suffix = url.slice(url.indexOf(marker) + marker.length);
+  const transformation = "f_jpg,q_auto:good,c_fill,g_auto,w_1200,h_630";
+  const version = suffix.match(/(^|\/)v\d+\//);
+  if (!version) return url.replace(marker, `${marker}${transformation}/`);
+  const insertAt = version.index + (version[1] ? 1 : 0);
+  return `${url.slice(0, url.indexOf(marker) + marker.length)}${suffix.slice(0, insertAt)}${transformation}/${suffix.slice(insertAt)}`;
 }
 
 function productIdentifier(product = {}) {

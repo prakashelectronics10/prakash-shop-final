@@ -535,11 +535,11 @@ const ROUTE_SHARE_META = [
     title: "Electronics Shop Products in Chitarpur | Prakash Electronics",
     description: "Browse electronics shop products, wiring accessories, RGB lights, electrical parts, and accessories from Prakash Electronics and Electricals in Chitarpur.",
     keywords: "electronics products Chitarpur, electronics shop, electrical products, home appliances, Prakash Electronics",
-    ogImage: "/og-image-shop-products.png",
+    ogImage: "/og-image-shop-products.jpg?v=20260910-mobile",
     ogImageAlt: "Prakash Electronics shop products",
-    ogImageType: "image/png",
-    ogImageWidth: 1672,
-    ogImageHeight: 941,
+    ogImageType: "image/jpeg",
+    ogImageWidth: 1200,
+    ogImageHeight: 630,
     canonicalPath: "/products",
     ampPath: "/amp/products",
   },
@@ -747,6 +747,7 @@ function injectProductMetadata(html, productMeta) {
   const image = productMeta.image;
   const url = productMeta.url;
   const imageAlt = productMeta.imageAlt || productMeta.title;
+  const imageType = !image.includes("f_jpg") && /\.png(?:$|\?)/i.test(image) ? "image/png" : "image/jpeg";
   const bestPublicOffer = (productMeta.publicOffers || []).find((offer) => offer?.visibility === "public" && Number.isFinite(Number(offer.finalPrice)));
   const effectivePrice = bestPublicOffer ? Number(bestPublicOffer.finalPrice) : productMeta.price;
   const productJsonLd = JSON.stringify({
@@ -815,6 +816,7 @@ function injectProductMetadata(html, productMeta) {
   output = replaceTag(output, /<meta property="og:url" content="[^"]*"\s*\/?>/i, `<meta property="og:url" content="${escapeAttribute(url)}" />`);
   output = replaceTag(output, /<meta property="og:image" content="[^"]*"\s*\/?>/i, `<meta property="og:image" content="${escapeAttribute(image)}" />`);
   output = replaceTag(output, /<meta property="og:image:secure_url" content="[^"]*"\s*\/?>/i, `<meta property="og:image:secure_url" content="${escapeAttribute(image)}" />`);
+  output = replaceTag(output, /<meta property="og:image:type" content="[^"]*"\s*\/?>/i, `<meta property="og:image:type" content="${imageType}" />`);
   output = replaceTag(output, /<meta property="og:image:alt" content="[^"]*"\s*\/?>/i, `<meta property="og:image:alt" content="${escapeAttribute(imageAlt)}" />`);
   output = replaceTag(output, /<meta property="og:image:width" content="[^"]*"\s*\/?>/i, '<meta property="og:image:width" content="1200" />');
   output = replaceTag(output, /<meta property="og:image:height" content="[^"]*"\s*\/?>/i, '<meta property="og:image:height" content="630" />');
@@ -822,6 +824,7 @@ function injectProductMetadata(html, productMeta) {
   output = replaceTag(output, /<meta name="twitter:title" content="[^"]*"\s*\/?>/i, `<meta name="twitter:title" content="${escapeAttribute(title)}" />`);
   output = replaceTag(output, /<meta name="twitter:description" content="[^"]*"\s*\/?>/i, `<meta name="twitter:description" content="${escapeAttribute(description)}" />`);
   output = replaceTag(output, /<meta name="twitter:image" content="[^"]*"\s*\/?>/i, `<meta name="twitter:image" content="${escapeAttribute(image)}" />`);
+  output = replaceTag(output, /<meta name="twitter:image:alt" content="[^"]*"\s*\/?>/i, `<meta name="twitter:image:alt" content="${escapeAttribute(imageAlt)}" />`);
   if (effectivePrice !== null) {
     output = replaceTag(output, /<meta property="product:price:amount" content="[^"]*"\s*\/?>/i, `<meta property="product:price:amount" content="${escapeAttribute(effectivePrice)}" />`);
     output = replaceTag(output, /<meta property="product:price:currency" content="[^"]*"\s*\/?>/i, '<meta property="product:price:currency" content="INR" />');
