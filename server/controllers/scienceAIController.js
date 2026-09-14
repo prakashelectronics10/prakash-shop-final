@@ -18,6 +18,11 @@ const {
 const { isRetryableGeminiError, requestGeminiWithRetry } = require("../services/geminiClient");
 const { fetchSafeFavicon } = require("../services/faviconService");
 const {
+  extractChatTitleMetadata,
+  fallbackChatTitle,
+  stripChatTitleMetadata,
+} = require("../services/pulseAIChatTitleService");
+const {
   resolveVerifiedLinkCards,
   stripLinkActionMetadata,
 } = require("../services/pulseAILinkActionService");
@@ -152,11 +157,13 @@ function isProductDetailLink(value) {
 }
 
 function stripResponseMetadata(text) {
-  return stripConversationMemoryMetadata(
-    stripUnavailableDemandMetadata(
-      stripLinkActionMetadata(
-        stripCatalogMatchLine(text)
-          .replace(/\n?\s*WEBSITE_LINKS\s*:.*$/gim, ""),
+  return stripChatTitleMetadata(
+    stripConversationMemoryMetadata(
+      stripUnavailableDemandMetadata(
+        stripLinkActionMetadata(
+          stripCatalogMatchLine(text)
+            .replace(/\n?\s*WEBSITE_LINKS\s*:.*$/gim, ""),
+        ),
       ),
     ),
   ).trim();
@@ -530,12 +537,17 @@ exports.chatWithScienceAI = catchAsync(async (req, res) => {
     cart = {},
     thinkMode = false,
     deepSearch = false,
+    generateTitle = false,
   } = req.body;
   const imageInputs = Array.isArray(images) && images.length
     ? images.slice(0, 5)
     : imageBase64
       ? [{ base64: imageBase64, mimeType: imageMimeType }]
       : [];
+  const shouldGenerateChatTitle = Boolean(generateTitle);
+  const localChatTitle = shouldGenerateChatTitle
+    ? fallbackChatTitle(message, imageInputs.length > 0)
+    : "";
 
   if (!message && !imageInputs.length) {
     throw new AppError("Message or image is required", 400);
@@ -559,6 +571,7 @@ exports.chatWithScienceAI = catchAsync(async (req, res) => {
       success: true,
       data: {
         response: aiResponse,
+        chatTitle: localChatTitle,
         suggestions: [],
         linkCards: [],
         model: "conversation-memory",
@@ -584,6 +597,7 @@ exports.chatWithScienceAI = catchAsync(async (req, res) => {
       success: true,
       data: {
         response: aiResponse,
+        chatTitle: localChatTitle,
         suggestions,
         linkCards,
         model: "local-fallback",
@@ -610,6 +624,7 @@ exports.chatWithScienceAI = catchAsync(async (req, res) => {
       success: true,
       data: {
         response: aiResponse,
+        chatTitle: localChatTitle,
         suggestions,
         linkCards,
         model: "local-fallback",
@@ -690,6 +705,13 @@ CONVERSATION CONTINUITY AND MEMORY:
 - Keep that summary concise and cumulative. Never include passwords, OTPs, payment credentials or hidden private coupon codes.
 
 ${formatConversationMemoryForModel(safeConversationMemory)}
+
+CHAT TITLE:
+- GENERATE_CHAT_TITLE is ${shouldGenerateChatTitle ? "YES" : "NO"}.
+- When it is YES, create a concise professional title of 3-6 words that summarizes the conversation intent.
+- Rewrite the intent naturally in title case. Never copy the customer's first message verbatim, and never include greetings, trailing punctuation, quotes, or markdown.
+- When it is YES, add one final machine line: CHAT_TITLE: "Your Concise Title"
+- When it is NO, omit CHAT_TITLE completely.
 
 UNAVAILABLE CUSTOMER DEMAND ALERT:
 - Consider demand metadata only for electrical/electronics products, related accessories/spare parts, home electrical appliances, and their installation/repair services.
@@ -800,6 +822,7 @@ ${formatCatalogForGemini(catalogProducts, Boolean(deepSearch))}`;
       success: true,
       data: {
         response: aiResponse,
+        chatTitle: localChatTitle,
         suggestions,
         linkCards,
         model: "local-fallback",
@@ -824,6 +847,9 @@ ${formatCatalogForGemini(catalogProducts, Boolean(deepSearch))}`;
 
   const data = await geminiResponse.json();
   const rawAiResponse = extractGeminiText(data);
+  const chatTitle = shouldGenerateChatTitle
+    ? (extractChatTitleMetadata(rawAiResponse) || localChatTitle)
+    : "";
   const extractedMemory = extractConversationMemoryMetadata(rawAiResponse).memory;
   const suggestions = await buildProductSuggestions(message, rawAiResponse, availableCatalogProducts, Boolean(deepSearch), {
     hasImages: Boolean(imageInputs.length),
@@ -868,6 +894,7 @@ ${formatCatalogForGemini(catalogProducts, Boolean(deepSearch))}`;
     success: true,
     data: {
       response: aiResponse,
+      chatTitle,
       suggestions,
       linkCards,
       model: usedModel,

@@ -451,15 +451,15 @@ export function ProjectsPartsPage() {
       <main>
         <section className="parts-page-intro">
           <div className="parts-page-intro-inner">
-            <div className="parts-page-nav-row">
-              <a className="detail-back-link catalog-page-back" href="/">
-                <ArrowLeft size={18} aria-hidden="true" />
-                <span>Back to home</span>
-              </a>
+            <a className="detail-back-link catalog-page-back" href="/">
+              <ArrowLeft size={18} aria-hidden="true" />
+              <span>Back to home</span>
+            </a>
+            <div className="catalog-page-heading">
               <p className="parts-kicker"><Zap size={16} /> Wiring accessories</p>
+              <h1>Wiring Accessories</h1>
+              <p>Browse switches, sockets, wires, MCBs, and electrical fittings by category and brand from Prakash Electronics.</p>
             </div>
-            <h1>Wiring Accessories</h1>
-            <p>Browse switches, sockets, wires, MCBs, and electrical fittings by category and brand from Prakash Electronics.</p>
           </div>
         </section>
 

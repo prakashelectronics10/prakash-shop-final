@@ -197,6 +197,7 @@ function createSession(priorChatsSummary = "") {
   return {
     id,
     title: "New Chat",
+    titleGenerated: false,
     messages: [welcomeMessage],
     memory: normalizeConversationMemory(),
     priorChatsSummary: cleanMemoryText(priorChatsSummary, MAX_PREVIOUS_CHATS_SUMMARY_LENGTH),
@@ -224,13 +225,33 @@ function normalizeStoredMessage(message = {}) {
   };
 }
 
+function legacyCopiedPromptTitle(messages = []) {
+  const firstPrompt = String(messages.find((message) => message.role === "user")?.text || "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!firstPrompt) return "Image analysis";
+  return firstPrompt.length > 34 ? `${firstPrompt.slice(0, 34).trim()}...` : firstPrompt;
+}
+
 function normalizeStoredSession(session = {}) {
   const messages = Array.isArray(session.messages)
     ? session.messages.map((message) => normalizeStoredMessage(message)).filter(Boolean)
     : [];
+  const storedTitle = String(session.title || "").trim();
+  const isLegacyCopiedTitle = storedTitle === legacyCopiedPromptTitle(messages);
+  const inferredGeneratedTitle = Boolean(
+    storedTitle
+    && storedTitle !== "New Chat"
+    && storedTitle !== "Pulse AI Chat"
+    && !isLegacyCopiedTitle
+  );
+  const titleGenerated = session.titleGenerated === true || inferredGeneratedTitle;
   return {
     id: session.id || `chat-${Date.now()}`,
-    title: session.title || "New Chat",
+    title: isLegacyCopiedTitle
+      ? "Pulse AI Chat"
+      : (storedTitle || "New Chat"),
+    titleGenerated,
     messages: messages.length ? messages : [welcomeMessage],
     memory: normalizeConversationMemory(session.memory),
     priorChatsSummary: cleanMemoryText(session.priorChatsSummary, MAX_PREVIOUS_CHATS_SUMMARY_LENGTH),
@@ -296,12 +317,6 @@ function fileToPayload(file) {
     reader.onerror = () => reject(new Error("Unable to read image."));
     reader.readAsDataURL(file);
   });
-}
-
-function titleFrom(text) {
-  const clean = String(text || "").trim().replace(/\s+/g, " ");
-  if (!clean) return "Image analysis";
-  return clean.length > 34 ? `${clean.slice(0, 34)}...` : clean;
 }
 
 function createMessageId(prefix) {
@@ -500,6 +515,7 @@ export function ScienceAIPage() {
     () => sessions.find((item) => item.id === chatState.activeSessionId) || sessions[0],
     [chatState.activeSessionId, sessions],
   );
+  const displayedChatTitle = session.title === "New Chat" ? "Pulse AI" : session.title;
   const messages = useMemo(() => session.messages || [welcomeMessage], [session.messages]);
   const hasStarted = useMemo(() => messages.some((message) => message.role === "user"), [messages]);
   const heroAnimationData = useScienceAIHeroAnimationData(!hasStarted);
@@ -782,10 +798,9 @@ export function ScienceAIPage() {
 
     const targetSessionId = session.id;
     const userMessage = { id: createMessageId("user"), role: "user", text, images };
-    const shouldTitle = session.title === "New Chat";
+    const shouldTitle = session.titleGenerated !== true;
     updateSessionById(targetSessionId, (targetSession) => ({
       ...targetSession,
-      title: shouldTitle ? titleFrom(text) : targetSession.title,
       messages: [...targetSession.messages, userMessage],
     }));
     setInput("");
@@ -812,6 +827,7 @@ export function ScienceAIPage() {
           },
           customerId: getPulseAICustomerId(),
           sessionId: targetSessionId,
+          generateTitle: shouldTitle,
         }),
       });
       const answer = response.data?.response || "I could not generate a response. Please try again.";
@@ -819,6 +835,14 @@ export function ScienceAIPage() {
       const linkCards = normalizeLinkCards(response.data?.linkCards);
       const warning = response.data?.warning || "";
       const memory = response.data?.memory || null;
+      const generatedChatTitle = String(response.data?.chatTitle || "").trim();
+      if (shouldTitle && generatedChatTitle) {
+        updateSessionById(targetSessionId, (targetSession) => ({
+          ...targetSession,
+          title: generatedChatTitle.slice(0, 60),
+          titleGenerated: true,
+        }));
+      }
       await revealAssistantMessage({ text: answer, suggestions, linkCards, warning, memory, targetSessionId });
     } catch (err) {
       const rawMessage = String(err?.message || "");
@@ -956,7 +980,7 @@ export function ScienceAIPage() {
           </button>
           <div className="ai-title-block">
             <p>Prakash Electronics assistant</p>
-            <h1>{session.title === "New Chat" ? "Pulse AI" : session.title}</h1>
+            <h1 title={displayedChatTitle}>{displayedChatTitle}</h1>
           </div>
           <div className="ai-topbar-actions">
             <a className="ai-topbar-cart" href="/cart" aria-label={`Open cart with ${totals.quantity} items`}>

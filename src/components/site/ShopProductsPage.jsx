@@ -536,9 +536,11 @@ export function ShopProductsPage() {
               <ArrowLeft size={18} aria-hidden="true" />
               <span>Back to home</span>
             </a>
-            <p className="parts-kicker"><ShoppingBag size={16} /> Public shop products</p>
-            <h1>Shop Products</h1>
-            <h2>Browse electronics, home appliances, lights, speakers, and useful products from Prakash Electronics.</h2>
+            <div className="catalog-page-heading">
+              <p className="parts-kicker"><ShoppingBag size={16} /> Public shop products</p>
+              <h1>Shop Products</h1>
+              <h2>Browse electronics, home appliances, lights, speakers, and useful products from Prakash Electronics.</h2>
+            </div>
           </div>
         </section>
 
