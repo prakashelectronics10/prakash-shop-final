@@ -82,6 +82,8 @@ export function Booking() {
   const [showSuccessAnimation, setShowSuccessAnimation] = useState(false);
   const fileInputRef = useRef(null);
   const selectionLoadedRef = useRef(false);
+  const bookingMessageId = useId();
+  const bookingImageUploadId = useId();
 
   const update = (key, value) => setForm((current) => ({ ...current, [key]: value }));
   const updateDigits = (key, value) => update(key, value.replace(/\D/g, "").slice(0, 10));
@@ -461,8 +463,9 @@ export function Booking() {
               />
             </div>
             <div className="mt-4">
-              <label className="mb-2 block text-sm font-medium text-muted-foreground">Message (Optional)</label>
+              <label htmlFor={bookingMessageId} className="mb-2 block text-sm font-medium text-muted-foreground">Message (Optional)</label>
               <textarea
+                id={bookingMessageId}
                 value={form.message}
                 placeholder="Describe the issue or any specific instructions..."
                 onChange={(event) => update("message", event.target.value)}
@@ -471,7 +474,7 @@ export function Booking() {
               />
             </div>
             <div className="mt-4">
-              <label className="mb-2 block text-sm font-medium text-muted-foreground">
+              <label htmlFor={bookingImageUploadId} className="mb-2 block text-sm font-medium text-muted-foreground">
                 Image Upload ({images.length}/8)
               </label>
               <div
@@ -483,6 +486,15 @@ export function Booking() {
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
                 onClick={() => fileInputRef.current?.click()}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    fileInputRef.current?.click();
+                  }
+                }}
+                role="button"
+                tabIndex={0}
+                aria-label="Upload repair images"
               >
                 <UploadCloud className={`h-8 w-8 transition-colors ${isDragging ? "text-primary animate-bounce" : "text-accent"}`} />
                 <span className="text-sm text-muted-foreground">
@@ -490,6 +502,7 @@ export function Booking() {
                     isDragging ? "Drop images here..." : "Upload repair images (max 8) - Drag & drop or click to browse"}
                 </span>
                 <input
+                  id={bookingImageUploadId}
                   ref={fileInputRef}
                   type="file"
                   accept="image/*"
@@ -511,13 +524,15 @@ export function Booking() {
                       <div key={index} className="relative group">
                         <img
                           src={preview}
-                          alt={`Upload ${index + 1}`}
+                          alt={`Repair upload ${index + 1}`}
                           width={160}
                           height={112}
                           className="w-full h-24 sm:h-28 object-cover rounded-xl transition-opacity duration-300 group-hover:opacity-70"
                         />
                         <button
                           type="button"
+                          aria-label={`Remove repair image ${index + 1}`}
+                          title={`Remove repair image ${index + 1}`}
                           onClick={() => {
                             const newImages = images.filter((_, i) => i !== index);
                             const newPreviews = previews.filter((_, i) => i !== index);

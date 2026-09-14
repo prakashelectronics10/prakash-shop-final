@@ -115,3 +115,32 @@ test("manifest endpoint is fresh and always exposes installable icon sizes", asy
     assert.ok(manifest.icons.some((icon) => icon.sizes === "512x512"));
   });
 });
+
+test("homepage shell marks its critical fallback hero image for immediate hydration", async () => {
+  await withServer(async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/`);
+    const html = await response.text();
+    assert.equal(response.status, 200);
+    assert.match(html, /<link rel="preload" as="image"[^>]*fetchpriority="high"[^>]*data-hero-image="true"/);
+    assert.match(html, /imagesrcset="[^"]*hero-technician-720\.avif 720w/);
+  });
+});
+
+test("dynamic Cloudinary hero preload matches the responsive AVIF requested by the client", () => {
+  const source = "https://res.cloudinary.com/demo/image/upload/c_limit,f_auto,q_auto:good,w_1600/v1/prakash-electronics/hero?_a=test";
+  const tag = app.heroPreloadTag({
+    id: "hero-1",
+    imageUrl: source,
+    alt: "Homepage hero",
+    link: "/products",
+  });
+
+  assert.match(tag, /href="https:\/\/res\.cloudinary\.com\/demo\/image\/upload\/f_avif,q_auto:good,c_limit,w_960\/v1\/prakash-electronics\/hero\?_a=test"/);
+  assert.match(tag, /imagesrcset="[^"]*f_avif,q_auto:good,c_limit,w_360[^"]* 360w/);
+  assert.match(tag, /imagesrcset="[^"]*f_avif,q_auto:good,c_limit,w_720[^"]* 720w/);
+  assert.match(tag, /imagesizes="\(min-width: 1024px\) 42vw, 92vw"/);
+  assert.match(tag, /fetchpriority="high"/);
+  assert.match(tag, /data-hero-src="https:\/\/res\.cloudinary\.com\/demo\/image\/upload\/c_limit,f_auto,q_auto:good,w_1600\/v1\/prakash-electronics\/hero\?_a=test"/);
+  assert.match(tag, /data-hero-id="hero-1"/);
+  assert.match(tag, /data-hero-link="\/products"/);
+});

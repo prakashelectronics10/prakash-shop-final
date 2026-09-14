@@ -36,6 +36,12 @@ async function copyOrderId(orderId, automatic = false) {
   }
 }
 
+function QuoteValue({ value, loading, label }) {
+  if (value !== undefined && value !== null) return formatINR(value);
+  if (!loading) return "Unavailable";
+  return <span className="order-quote-value-skeleton" role="status" aria-label={`Calculating ${label}`} />;
+}
+
 function OrderSuccess({ order }) {
   return (
     <main className="order-success-page">
@@ -76,6 +82,13 @@ export function CheckoutPage() {
   const quotedItems = currentQuote?.items || [];
   const checkoutTotal = currentQuote?.total;
   const discountTotal = currentQuote?.discountTotal || 0;
+  const paymentLabel = chargesLoading
+    ? "Calculating total…"
+    : busy
+      ? "Opening secure payment…"
+      : chargesError || !currentQuote
+        ? "Pricing unavailable"
+        : `Pay ${formatINR(checkoutTotal)}`;
 
   useEffect(() => { setPaymentQuote(null); }, [quote]);
 
@@ -226,30 +239,31 @@ export function CheckoutPage() {
             <div className="checkout-summary-items">
               {items.map((item, index) => {
                 const quoteItem = quotedItems[index];
+                const itemQuoteReady = Boolean(quoteItem);
                 const hasDiscount = Number(quoteItem?.discountAmount || 0) > 0;
-                const unitPrice = quoteItem?.discountedUnitPrice ?? item.price;
-                const linePrice = quoteItem?.discountedLineTotal ?? Number(item.price) * Number(item.quantity);
                 return (
                 <article className={hasDiscount ? "has-coupon-discount" : ""} key={item.cartId}>
                   <div>{item.productImageUrl ? <OptimizedImage src={item.productImageUrl} alt={item.productName} width={64} height={64} /> : <PackageCheck size={24} />}</div>
                   <span>
                     <strong>{item.productName}</strong>
                     <small className="checkout-item-unit-price">
-                      {hasDiscount && <del>{formatINR(quoteItem.unitPrice)}</del>}
-                      <span>{formatINR(unitPrice)} × {item.quantity}</span>
+                      {itemQuoteReady ? <>
+                        {hasDiscount && <del>{formatINR(quoteItem.unitPrice)}</del>}
+                        <span>{formatINR(quoteItem.discountedUnitPrice)} × {item.quantity}</span>
+                      </> : <span><QuoteValue loading={chargesLoading} label={`the price for ${item.productName}`} /></span>}
                     </small>
                     {hasDiscount && <small>{quoteItem.couponCode} applied</small>}
                   </span>
                   <b className="checkout-item-line-price">
-                    {hasDiscount && <del>{formatINR(quoteItem.lineTotal)}</del>}
-                    <span>{formatINR(linePrice)}</span>
+                    {itemQuoteReady && hasDiscount && <del>{formatINR(quoteItem.lineTotal)}</del>}
+                    <span><QuoteValue value={quoteItem?.discountedLineTotal} loading={chargesLoading} label={`the line total for ${item.productName}`} /></span>
                   </b>
                 </article>
                 );
               })}
             </div>
             <div className="checkout-totals">
-              <p><span>Subtotal</span><strong>{currentQuote ? formatINR(currentQuote.discountedSubtotal) : chargesLoading ? "Calculating…" : "Unavailable"}</strong></p>
+              <p><span>Subtotal</span><strong><QuoteValue value={currentQuote?.discountedSubtotal} loading={chargesLoading} label="the subtotal" /></strong></p>
               {additionalCharges.map((charge) => (
                 <p key={charge._id || charge.slug || charge.name}>
                   <span>{charge.name}</span>
@@ -258,7 +272,7 @@ export function CheckoutPage() {
                   </strong>
                 </p>
               ))}
-              <p className="checkout-grand-total"><span>Total</span><strong>{currentQuote ? formatINR(checkoutTotal) : chargesLoading ? "Calculating…" : "Unavailable"}</strong></p>
+              <p className="checkout-grand-total"><span>Total</span><strong><QuoteValue value={checkoutTotal} loading={chargesLoading} label="the total" /></strong></p>
             </div>
             {discountTotal > 0 && <p className="checkout-coupon-notice success"><BadgePercent size={15} /> Coupon savings included in product prices.</p>}
             {chargesError && (
@@ -267,8 +281,8 @@ export function CheckoutPage() {
                 <button type="button" onClick={loadAdditionalCharges}>Retry</button>
               </div>
             )}
-            <button className="checkout-pay-button" type="submit" disabled={busy || chargesLoading || Boolean(chargesError)}>
-              {chargesLoading ? "Calculating total…" : busy ? "Opening secure payment…" : `Pay ${formatINR(checkoutTotal)}`}
+            <button className="checkout-pay-button" type="submit" disabled={busy || chargesLoading || Boolean(chargesError) || !currentQuote}>
+              {paymentLabel}
             </button>
             <small className="checkout-final-sale-note">Please confirm the product, quantity, price, and delivery details before paying. Once placed, the order is final—no cancellation, return, or refund, except where required by law. <a href="/return-refund-policy">View policy</a></small>
             <small className="checkout-secure-note"><ShieldCheck size={15} /> Secured by Razorpay. UPI, cards, netbanking and supported payment methods are available in the payment window.</small>

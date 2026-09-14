@@ -81,10 +81,13 @@
 
 .pulse-ai-input-row {
   display: flex;
+  flex: 1 1 auto;
   align-items: flex-end;
   gap: 0.35rem;
+  min-height: 0;
   padding: 0.7rem 0.75rem;
   width: 100%;
+  box-sizing: border-box;
 }
 
 .pulse-ai-icon-btn,

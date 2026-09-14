@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowUpRight, Bot, Camera, Check, ImagePlus, Images, Link2, Moon, PackageSearch, PanelLeftClose, PanelLeftOpen, Plus, ShoppingCart, Sun, Trash2, Wrench } from "lucide-react";
+import { ArrowUpRight, Bot, Camera, Check, ChevronLeft, ChevronRight, ImagePlus, Images, Link2, Moon, PackageSearch, PanelLeftClose, PanelLeftOpen, Plus, ShoppingCart, Sun, Trash2, Wrench } from "lucide-react";
 import { apiRequest, apiUrl } from "../../api/client";
 import { SCIENCE_PROJECTS_CATEGORY, getCartStockLimit, useCart } from "../../context/CartContext";
 import { notifyCartResult } from "../../utils/cartToast";
@@ -9,6 +9,7 @@ import { formatINR } from "../../utils/productPricing";
 import { AIChatInput } from "../ui/AIChatInput";
 import { LottieSvgAnimation } from "./LottieSvgAnimation";
 import { OptimizedImage } from "./OptimizedImage";
+import cartImage from "../../assets/Cart.png";
 
 const welcomeMessage = {
   role: "ai",
@@ -451,15 +452,32 @@ function FormattedMessage({ text }) {
   );
 }
 
+function offlinePulseMessage(promptText, imageCount = 0) {
+  const prompt = String(promptText || "").toLowerCase();
+  if (imageCount > 0) {
+    return "Internet connection is unavailable, so I cannot safely inspect the uploaded image or verify a matching product right now. Please reconnect and send it again. Meanwhile, keep the product label, model number, visible fault and required use ready for a more accurate match.";
+  }
+  if (/\b(cart|checkout|total|coupon|order)\b/.test(prompt)) {
+    return "Internet connection is unavailable, so I cannot verify live prices, coupon eligibility or the checkout total right now. Your browser cart remains available in this session—please reconnect, refresh the cart, and confirm the latest order summary before checkout.";
+  }
+  if (/\b(repair|service|fault|problem|issue|not working|kharab|fan|cooler|ac|tv|fridge|speaker)\b/.test(prompt)) {
+    return "Internet connection is unavailable, so live diagnosis and booking are temporarily unavailable. For safety, switch the appliance off and disconnect it from power if there is heat, smoke, sparking or a burning smell. Note the product type, model and exact symptom, then reconnect and send those details so Pulse AI can guide you or open the correct repair booking.";
+  }
+  if (/\b(buy|product|price|stock|available|suggest|recommend|speaker|wire|mcb|switch|light|rgb)\b/.test(prompt)) {
+    return "Internet connection is unavailable, so I cannot verify current stock, price or offers without risking outdated information. Please reconnect and resend your requirement with the product type, budget and key specification; Pulse AI will then show only matching available products.";
+  }
+  return "Internet connection is unavailable right now. Your message is saved in this chat, but live shop information cannot be verified offline. Please reconnect and send it again for an accurate product, offer or repair response.";
+}
+
 export function ScienceAIPage() {
-  const { items: cartItems } = useCart();
+  const { items: cartItems, totals } = useCart();
   const [chatState, setChatState] = useState(loadScienceAIState);
   const [input, setInput] = useState("");
   const [images, setImages] = useState([]);
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [theme, setTheme] = useState(() => localStorage.getItem("pulse-ai-theme") || "dark");
-  const [error, setError] = useState("");
+  const [, setError] = useState("");
   const [dragging, setDragging] = useState(false);
   const [navOpen, setNavOpen] = useState(() => (typeof window === "undefined" ? true : window.innerWidth > 860));
   const [visualViewport, setVisualViewport] = useState(() => ({
@@ -550,7 +568,9 @@ export function ScienceAIPage() {
   useEffect(() => {
     if (!mediaMenuOpen) return undefined;
 
+    let frame = 0;
     const updateMediaMenuPosition = () => {
+      frame = 0;
       const button = uploadButtonRef.current;
       if (!button) return;
 
@@ -566,9 +586,13 @@ export function ScienceAIPage() {
 
       setMediaMenuPosition({ left, top: Math.max(edge, top) });
     };
+    const scheduleMediaMenuPosition = () => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(updateMediaMenuPosition);
+    };
 
     updateMediaMenuPosition();
-    const frameId = window.requestAnimationFrame(updateMediaMenuPosition);
+    scheduleMediaMenuPosition();
 
     const closeOnOutsideClick = (event) => {
       const target = event.target;
@@ -576,14 +600,14 @@ export function ScienceAIPage() {
       setMediaMenuOpen(false);
     };
 
-    window.addEventListener("resize", updateMediaMenuPosition);
-    window.addEventListener("scroll", updateMediaMenuPosition, true);
+    window.addEventListener("resize", scheduleMediaMenuPosition, { passive: true });
+    window.addEventListener("scroll", scheduleMediaMenuPosition, { capture: true, passive: true });
     document.addEventListener("pointerdown", closeOnOutsideClick);
 
     return () => {
-      window.cancelAnimationFrame(frameId);
-      window.removeEventListener("resize", updateMediaMenuPosition);
-      window.removeEventListener("scroll", updateMediaMenuPosition, true);
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("resize", scheduleMediaMenuPosition);
+      window.removeEventListener("scroll", scheduleMediaMenuPosition, true);
       document.removeEventListener("pointerdown", closeOnOutsideClick);
     };
   }, [mediaMenuOpen]);
@@ -797,9 +821,22 @@ export function ScienceAIPage() {
       const memory = response.data?.memory || null;
       await revealAssistantMessage({ text: answer, suggestions, linkCards, warning, memory, targetSessionId });
     } catch (err) {
-      const message = err.message || "Pulse AI is unavailable right now.";
+      const rawMessage = String(err?.message || "");
+      const isConnectionFailure = (
+        typeof navigator !== "undefined" && navigator.onLine === false
+      ) || /network|failed to fetch|load failed|timeout|offline|econn/i.test(rawMessage);
+      const message = isConnectionFailure
+        ? offlinePulseMessage(text, images.length)
+        : "Pulse AI could not complete this request right now. Please try again in a moment; live prices, stock and bookings will only be shown after they are verified.";
       setError(message);
-      await revealAssistantMessage({ text: message, suggestions: [], linkCards: [], warning: "", isError: true, targetSessionId });
+      await revealAssistantMessage({
+        text: message,
+        suggestions: [],
+        linkCards: [],
+        warning: isConnectionFailure ? "No internet connection. Live shop data could not be checked." : "The live assistant is temporarily unavailable.",
+        isError: false,
+        targetSessionId,
+      });
     } finally {
       setBusy(false);
     }
@@ -921,10 +958,17 @@ export function ScienceAIPage() {
             <p>Prakash Electronics assistant</p>
             <h1>{session.title === "New Chat" ? "Pulse AI" : session.title}</h1>
           </div>
-          <button className="ai-theme-toggle" type="button" onClick={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}>
-            {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
-            <span>{theme === "dark" ? "Light" : "Dark"}</span>
-          </button>
+          <div className="ai-topbar-actions">
+            <a className="ai-topbar-cart" href="/cart" aria-label={`Open cart with ${totals.quantity} items`}>
+              <img src={cartImage} alt="" aria-hidden="true" />
+              <span>Cart</span>
+              {totals.quantity > 0 ? <small>{totals.quantity}</small> : null}
+            </a>
+            <button className="ai-theme-toggle" type="button" onClick={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}>
+              {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
+              <span>{theme === "dark" ? "Light" : "Dark"}</span>
+            </button>
+          </div>
         </header>
 
         <section className="ai-messages" aria-live="polite">
@@ -963,7 +1007,7 @@ export function ScienceAIPage() {
                 )}
                 {!message.isStreaming && message.suggestions?.length > 0 && (
                   <div className="ai-suggestion-block">
-                    <SuggestionCards suggestions={message.suggestions} />
+                    <SuggestionCards suggestions={message.suggestions} theme={theme} />
                   </div>
                 )}
                 {!message.isStreaming && message.linkCards?.length > 0 && (
@@ -982,8 +1026,8 @@ export function ScienceAIPage() {
           <div ref={endRef} />
         </section>
 
-        <footer className="science-ai-composer">
-          {error && <div className="ai-error">{error}</div>}
+          <footer className="science-ai-composer">
+
           {images.length > 0 && (
             <div className="ai-image-preview-grid">
               {images.map((image) => (
@@ -1076,10 +1120,94 @@ function EmptyState({ animationData }) {
   );
 }
 
-function SuggestionCards({ suggestions }) {
+function SuggestionCards({ suggestions, theme }) {
   const { addItem, getQuantity } = useCart();
   const availableSuggestions = (suggestions || []).filter((item) => item.available);
+  const suggestionTrackRef = useRef(null);
+  const suggestionDragRef = useRef({ active: false, pointerId: null, startX: 0, startScrollLeft: 0 });
+  const [suggestionEdges, setSuggestionEdges] = useState({ previous: false, next: false });
+
+  useEffect(() => {
+    const track = suggestionTrackRef.current;
+    if (!track) return undefined;
+    let frame = 0;
+
+    const updateEdges = () => {
+      frame = 0;
+      const maxScrollLeft = Math.max(0, track.scrollWidth - track.clientWidth);
+      const nextEdges = {
+        previous: track.scrollLeft > 3,
+        next: track.scrollLeft < maxScrollLeft - 3,
+      };
+      setSuggestionEdges((current) => (
+        current.previous === nextEdges.previous && current.next === nextEdges.next
+          ? current
+          : nextEdges
+      ));
+    };
+    const scheduleUpdate = () => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(updateEdges);
+    };
+
+    scheduleUpdate();
+    track.addEventListener("scroll", scheduleUpdate, { passive: true });
+    window.addEventListener("resize", scheduleUpdate, { passive: true });
+    const resizeObserver = typeof ResizeObserver !== "undefined"
+      ? new ResizeObserver(scheduleUpdate)
+      : null;
+    resizeObserver?.observe(track);
+
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame);
+      resizeObserver?.disconnect();
+      track.removeEventListener("scroll", scheduleUpdate);
+      window.removeEventListener("resize", scheduleUpdate);
+    };
+  }, [availableSuggestions.length]);
+
   if (!availableSuggestions.length) return null;
+
+  const scrollSuggestions = (direction) => {
+    const track = suggestionTrackRef.current;
+    if (!track) return;
+    const firstCard = track.querySelector(".ai-suggestion-card");
+    const styles = window.getComputedStyle(track);
+    const gap = Number.parseFloat(styles.columnGap || styles.gap) || 12;
+    const distance = (firstCard?.getBoundingClientRect().width || track.clientWidth * 0.8) + gap;
+    track.scrollBy({ left: direction * distance, behavior: "smooth" });
+  };
+
+  const beginSuggestionDrag = (event) => {
+    if (event.pointerType !== "mouse" || event.button !== 0 || event.target.closest("a, button")) return;
+    const track = event.currentTarget;
+    suggestionDragRef.current = {
+      active: true,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startScrollLeft: track.scrollLeft,
+    };
+    track.classList.add("is-dragging");
+    track.setPointerCapture?.(event.pointerId);
+    event.preventDefault();
+  };
+
+  const moveSuggestionDrag = (event) => {
+    const drag = suggestionDragRef.current;
+    if (!drag.active || drag.pointerId !== event.pointerId) return;
+    event.currentTarget.scrollLeft = drag.startScrollLeft - (event.clientX - drag.startX);
+    event.preventDefault();
+  };
+
+  const endSuggestionDrag = (event) => {
+    const drag = suggestionDragRef.current;
+    if (!drag.active || drag.pointerId !== event.pointerId) return;
+    suggestionDragRef.current.active = false;
+    event.currentTarget.classList.remove("is-dragging");
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  };
 
   const cartOverrides = (item) => {
     const sourceCollection = String(item.sourceCollection || "").toLowerCase();
@@ -1114,57 +1242,97 @@ function SuggestionCards({ suggestions }) {
     && Number.isFinite(Number(item.publicCoupon.finalPrice))
     && Number(item.publicCoupon.finalPrice) < Number(item.price);
 
+  const cartIconColor = theme === "light" ? "#0f172a" : "#ffffff";
+
   return (
     <div className="ai-suggestions">
       <div className="ai-suggestions-head">
         <strong>Suggested for you</strong>
         <span>{availableSuggestions.length} available</span>
       </div>
-      <div className="ai-suggestion-grid">
-        {availableSuggestions.map((item) => (
-          <article className="ai-suggestion-card" key={`${item.name}-${item.component}`}>
-            <div className="ai-suggestion-image">
-              {item.imageUrl ? <OptimizedImage src={item.imageUrl} alt={item.name} width={180} height={140} /> : <PackageSearch size={34} />}
-            </div>
-            <div className="ai-suggestion-content">
-              <div className="ai-suggestion-meta">
-                <span className="available">{item.status}</span>
-                <span className="ai-suggestion-price">
-                  {hasPublicOffer(item) ? <del>{formatINR(item.price)}</del> : null}
-                  <strong>{formatINR(offerPrice(item))}</strong>
-                </span>
+      <div
+        className="ai-suggestion-carousel"
+      >
+        {suggestionEdges.previous ? (
+          <button
+            className="ai-suggestion-nav previous"
+            type="button"
+            onClick={() => scrollSuggestions(-1)}
+            aria-label="Show previous product suggestion"
+          >
+            <ChevronLeft size={18} aria-hidden="true" />
+          </button>
+        ) : null}
+        <div
+          ref={suggestionTrackRef}
+          className="ai-suggestion-grid"
+          role="region"
+          aria-label="Product suggestions. Swipe or drag horizontally to browse."
+          tabIndex={0}
+          onPointerDown={beginSuggestionDrag}
+          onPointerMove={moveSuggestionDrag}
+          onPointerUp={endSuggestionDrag}
+          onPointerCancel={endSuggestionDrag}
+          onDragStart={(event) => event.preventDefault()}
+        >
+          {availableSuggestions.map((item) => (
+            <article className="ai-suggestion-card" key={`${item.name}-${item.component}`}>
+              <div className="ai-suggestion-image">
+                {item.imageUrl ? <OptimizedImage src={item.imageUrl} alt={item.name} width={180} height={140} /> : <PackageSearch size={34} />}
               </div>
-              <h3>{item.name}</h3>
-              <div className="ai-suggestion-context">
-                <small>{item.component}</small>
-                {hasPublicOffer(item) ? (
-                  <div className="ai-suggestion-offer">
-                    <code>{item.publicCoupon.code}</code>
-                    <span>Save {formatINR(item.publicCoupon.discountAmount)}</span>
-                  </div>
-                ) : null}
+              <div className="ai-suggestion-content">
+                <div className="ai-suggestion-meta">
+                  <span className="available">{item.status}</span>
+                  <span className="ai-suggestion-price">
+                    {hasPublicOffer(item) ? <del>{formatINR(item.price)}</del> : null}
+                    <strong>{formatINR(offerPrice(item))}</strong>
+                  </span>
+                </div>
+                <h3>{item.name}</h3>
+                <div className="ai-suggestion-context">
+                  <small>{item.component}</small>
+                  {hasPublicOffer(item) ? (
+                    <div className="ai-suggestion-offer">
+                      <code>{item.publicCoupon.code}</code>
+                      <span>Save {formatINR(item.publicCoupon.discountAmount)}</span>
+                    </div>
+                  ) : null}
+                </div>
+                <div className="ai-suggestion-actions">
+                  <a href={`/product/${encodeURIComponent(item.slug || item.productId)}`}>
+                    View Product
+                    <ArrowUpRight size={15} />
+                  </a>
+                  <button
+                    className={`ai-cart-icon-button ${getQuantity(item, cartOverrides(item)) ? "added" : ""}`}
+                    type="button"
+                    onClick={() => addSuggestionToCart(item)}
+                    aria-label={`Add ${item.name} to cart`}
+                    title={getQuantity(item, cartOverrides(item)) ? `In cart (${getQuantity(item, cartOverrides(item))})` : "Add to cart"}
+                    disabled={getQuantity(item, cartOverrides(item)) >= getCartStockLimit(cartOverrides(item))}
+                  >
+                    {getQuantity(item, cartOverrides(item)) ? (
+                      <Check size={16} color={cartIconColor} style={{ color: cartIconColor, stroke: cartIconColor }} />
+                    ) : (
+                      <ShoppingCart size={16} color={cartIconColor} style={{ color: cartIconColor, stroke: cartIconColor }} />
+                    )}
+                  </button>
+                  <span>{item.category || "Component"}</span>
+                </div>
               </div>
-              <p>{item.shortDescription}</p>
-              <div className="ai-suggestion-actions">
-                <a href={`/product/${encodeURIComponent(item.slug || item.productId)}`}>
-                  View Product
-                  <ArrowUpRight size={15} />
-                </a>
-                <button
-                  className={`ai-cart-icon-button ${getQuantity(item, cartOverrides(item)) ? "added" : ""}`}
-                  type="button"
-                  onClick={() => addSuggestionToCart(item)}
-                  aria-label={`Add ${item.name} to cart`}
-                  title={getQuantity(item, cartOverrides(item)) ? `In cart (${getQuantity(item, cartOverrides(item))})` : "Add to cart"}
-                  disabled={getQuantity(item, cartOverrides(item)) >= getCartStockLimit(cartOverrides(item))}
-                >
-                  {getQuantity(item, cartOverrides(item)) ? <Check size={16} /> : <ShoppingCart size={16} />}
-                </button>
-                <span>{item.category || "Component"}</span>
-              </div>
-            </div>
-          </article>
-        ))}
+            </article>
+          ))}
+        </div>
+        {suggestionEdges.next ? (
+          <button
+            className="ai-suggestion-nav next"
+            type="button"
+            onClick={() => scrollSuggestions(1)}
+            aria-label="Show next product suggestion"
+          >
+            <ChevronRight size={18} aria-hidden="true" />
+          </button>
+        ) : null}
       </div>
     </div>
   );

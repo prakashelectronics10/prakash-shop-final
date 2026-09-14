@@ -23,7 +23,8 @@ function OfferCard({ offer, eager }) {
             src={offer.imageUrl}
             alt={offer.title}
             className="offer-card-image"
-            loading={eager ? "eager" : "lazy"}
+            loading="lazy"
+            fetchPriority="low"
             width={480}
             height={270}
             sizes="(min-width: 1024px) 340px, (min-width: 640px) 300px, 86vw"

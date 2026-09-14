@@ -12,7 +12,7 @@ function firstServiceImage(...values) {
   return values.find((value) => typeof value === "string" && value.trim()) || "";
 }
 
-function ServiceFanCard({ card, loadImages = true, priority = false }) {
+function ServiceFanCard({ card, loadImages = true }) {
   const Icon = getIcon(card.iconName, Plug);
   const highlights = Array.isArray(card.highlights)
     ? card.highlights.filter(Boolean).slice(0, 2)
@@ -29,8 +29,8 @@ function ServiceFanCard({ card, loadImages = true, priority = false }) {
             height={1120}
             sizes="(min-width: 1024px) 264px, (min-width: 768px) 224px, 78vw"
             className="h-full w-full object-cover"
-            loading={priority ? "eager" : "lazy"}
-            fetchPriority={priority ? "high" : "low"}
+            loading="lazy"
+            fetchPriority="low"
             draggable={false}
           />
         ) : (
@@ -57,7 +57,8 @@ function ServiceFanCard({ card, loadImages = true, priority = false }) {
                 height={48}
                 sizes="48px"
                 className="h-full w-full object-cover"
-                loading={priority ? "eager" : "lazy"}
+                loading="lazy"
+                fetchPriority="low"
                 draggable={false}
               />
             ) : (
@@ -191,9 +192,8 @@ export function Services({ sectionId = "services" }) {
           >
             {cards.map((card, index) => {
               const loadImages = true;
-              const priority = index === activeIndex;
               const cardNode = (
-                <ServiceFanCard card={card} loadImages={loadImages} priority={priority} />
+                <ServiceFanCard card={card} loadImages={loadImages} />
               );
               return card.linkUrl ? (
                 <a
@@ -223,7 +223,7 @@ export function Services({ sectionId = "services" }) {
                   {cardNode}
                 </a>
               ) : (
-                <ServiceFanCard key={card.id} card={card} loadImages={loadImages} priority={priority} />
+                <ServiceFanCard key={card.id} card={card} loadImages={loadImages} />
               );
             })}
           </SnapCarousel>

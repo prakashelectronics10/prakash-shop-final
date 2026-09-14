@@ -446,26 +446,68 @@ function injectAmpHtmlLink(html, ampUrl = "") {
   return pattern.test(html) ? html.replace(pattern, `${tag}\n`) : html.replace("</head>", `${tag}\n</head>`);
 }
 
-function getCloudinaryOptimizedImageUrl(url, width = 1200) {
-  const value = String(url || "").trim();
-  if (!value) return "";
-  const safeUrl = value.replace(/^http:\/\//i, "https://");
-  if (/^https:\/\/res\.cloudinary\.com\//i.test(safeUrl) && safeUrl.includes("/image/upload/")) {
-    if (/\/image\/upload\/[^/]*(?:f_auto|q_auto|w_\d+)/i.test(safeUrl)) return safeUrl;
-    return safeUrl.replace("/image/upload/", `/image/upload/f_auto,q_auto:good,c_limit,w_${width}/`);
+const HERO_IMAGE_SIZES = "(min-width: 1024px) 42vw, 92vw";
+const CLOUDINARY_HERO_WIDTHS = [240, 360, 480, 720, 960, 1200];
+
+function getCloudinaryRootUrl(value) {
+  const safeUrl = String(value || "").trim().replace(/^http:\/\//i, "https://");
+  const match = safeUrl.match(/^(https:\/\/res\.cloudinary\.com\/[^/]+\/image\/upload\/)(.+)$/i);
+  if (!match) return "";
+
+  const prefix = match[1];
+  let rest = match[2];
+  const versioned = rest.match(/^(?:([^/]+)\/)?(v\d+\/.+)$/);
+  if (versioned) {
+    const possibleTransforms = versioned[1] || "";
+    const assetPath = versioned[2];
+    if (!possibleTransforms || /(?:^|,)(?:f_|q_|w_|h_|c_|dpr_|e_|fl_)/.test(possibleTransforms)) {
+      return `${prefix}${assetPath}`;
+    }
+    return `${prefix}${possibleTransforms}/${assetPath}`;
   }
-  return safeUrl;
+
+  if (/(?:^|,)(?:f_|q_|w_|h_|c_|dpr_|e_|fl_)/.test(rest.split("/")[0] || "")) {
+    rest = rest.replace(/^[^/]+\//, "");
+  }
+  return `${prefix}${rest}`;
 }
 
-function heroPreloadTag(heroImageUrl = "") {
-  const value = String(heroImageUrl || "").trim();
+function cloudinaryHeroImageUrl(value, width) {
+  const root = getCloudinaryRootUrl(value);
+  return root
+    ? root.replace("/image/upload/", `/image/upload/f_avif,q_auto:good,c_limit,w_${width}/`)
+    : "";
+}
+
+function heroDataAttributes(heroImage = {}) {
+  const attributes = [
+    'data-hero-image="true"',
+    `data-hero-src="${escapeAttribute(heroImage.imageUrl)}"`,
+    `data-hero-id="${escapeAttribute(heroImage.id || "shell-hero")}"`,
+    `data-hero-alt="${escapeAttribute(heroImage.alt || heroImage.title || "")}"`,
+  ];
+  if (heroImage.title) attributes.push(`data-hero-title="${escapeAttribute(heroImage.title)}"`);
+  if (heroImage.link) attributes.push(`data-hero-link="${escapeAttribute(heroImage.link)}"`);
+  return attributes.join(" ");
+}
+
+function heroPreloadTag(heroImage = {}) {
+  const normalized = typeof heroImage === "string" ? { imageUrl: heroImage } : heroImage;
+  const value = String(normalized?.imageUrl || "").trim();
   if (!value) return "";
-  if (/\/seed-assets\/hero-technician\.jpe?g$/i.test(value)) {
-    return '<link rel="preload" as="image" href="/seed-assets/optimized/hero-technician-960.webp" type="image/webp" imagesrcset="/seed-assets/optimized/hero-technician-480.webp 480w, /seed-assets/optimized/hero-technician-720.webp 720w, /seed-assets/optimized/hero-technician-960.webp 960w, /seed-assets/optimized/hero-technician-1254.webp 1254w" imagesizes="(min-width: 1024px) 42vw, 92vw" fetchpriority="high" />';
+  const dataAttributes = heroDataAttributes({ ...normalized, imageUrl: value });
+  if (/\/seed-assets\/(?:optimized\/)?hero-technician(?:-\d+)?\.(?:jpe?g|webp|avif)(?:[?#].*)?$/i.test(value)) {
+    return `<link rel="preload" as="image" href="/seed-assets/optimized/hero-technician-960.avif" type="image/avif" imagesrcset="/seed-assets/optimized/hero-technician-480.avif 480w, /seed-assets/optimized/hero-technician-720.avif 720w, /seed-assets/optimized/hero-technician-960.avif 960w, /seed-assets/optimized/hero-technician-1254.avif 1254w" imagesizes="${HERO_IMAGE_SIZES}" fetchpriority="high" ${dataAttributes} />`;
   }
-  const optimizedUrl = getCloudinaryOptimizedImageUrl(value, 1200);
-  if (!optimizedUrl) return "";
-  return `<link rel="preload" as="image" href="${escapeAttribute(optimizedUrl)}" fetchpriority="high" />`;
+  const cloudinarySrcSet = CLOUDINARY_HERO_WIDTHS
+    .map((width) => `${cloudinaryHeroImageUrl(value, width)} ${width}w`)
+    .filter((candidate) => !candidate.startsWith(" "))
+    .join(", ");
+  if (cloudinarySrcSet) {
+    const optimizedUrl = cloudinaryHeroImageUrl(value, 960);
+    return `<link rel="preload" as="image" href="${escapeAttribute(optimizedUrl)}" type="image/avif" imagesrcset="${escapeAttribute(cloudinarySrcSet)}" imagesizes="${HERO_IMAGE_SIZES}" fetchpriority="high" ${dataAttributes} />`;
+  }
+  return `<link rel="preload" as="image" href="${escapeAttribute(value.replace(/^http:\/\//i, "https://"))}" fetchpriority="high" ${dataAttributes} />`;
 }
 
 function injectWebSettings(html, site = {}, options = {}) {
@@ -473,7 +515,14 @@ function injectWebSettings(html, site = {}, options = {}) {
   const ogUrl = options.includeOgImage ? webSettings.ogImage?.url : "";
   const faviconUrl = webSettings.favicon?.url;
   const appleUrl = webSettings.appleTouchIcon?.url;
-  const heroPreload = heroPreloadTag(site.heroSlider?.[0]?.imageUrl || site.hero?.image?.url);
+  const firstHeroSlide = site.heroSlider?.[0];
+  const heroPreload = heroPreloadTag(firstHeroSlide?.imageUrl
+    ? firstHeroSlide
+    : {
+        id: "fallback-hero",
+        imageUrl: site.hero?.image?.url,
+        alt: site.hero?.image?.alt,
+      });
   let output = html;
 
   if (heroPreload) {
@@ -939,3 +988,4 @@ app.use(notFound);
 app.use(errorHandler);
 
 module.exports = app;
+module.exports.heroPreloadTag = heroPreloadTag;

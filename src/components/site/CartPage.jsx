@@ -9,9 +9,10 @@ import { setAppliedCouponCode } from "../../utils/coupons";
 import { useOrderQuote } from "../../hooks/useOrderQuote";
 import { formatINR } from "../../utils/productPricing";
 
-function lineTotal(item) {
-  const price = Number(item.price);
-  return Number.isFinite(price) ? price * Number(item.quantity || 1) : null;
+function QuoteValue({ value, loading, label }) {
+  if (value !== undefined && value !== null) return formatINR(value);
+  if (!loading) return "Unavailable";
+  return <span className="order-quote-value-skeleton" role="status" aria-label={`Calculating ${label}`} />;
 }
 
 export function CartPage() {
@@ -67,9 +68,8 @@ export function CartPage() {
             <div className="cart-items-stack">
               {items.map((item, index) => {
                 const quoteItem = quotedItems[index];
+                const itemQuoteReady = Boolean(quoteItem);
                 const hasDiscount = Number(quoteItem?.discountAmount || 0) > 0;
-                const unitPrice = quoteItem?.discountedUnitPrice ?? item.price;
-                const quotedLineTotal = quoteItem?.discountedLineTotal ?? lineTotal(item);
                 return (
                 <article className={`cart-item-card ${hasDiscount ? "has-coupon-discount" : ""}`} key={item.cartId}>
                   <div className="cart-item-image">
@@ -91,8 +91,10 @@ export function CartPage() {
                     {item.originalCategory && <small>Original category: {item.originalCategory}</small>}
                     <p>{item.productDescription || "Available at Prakash Electronics."}</p>
                     <div className="cart-item-price">
-                      {hasDiscount && <del>{formatINR(quoteItem.unitPrice)}</del>}
-                      <strong>{formatINR(unitPrice)}</strong>
+                      {itemQuoteReady ? <>
+                        {hasDiscount && <del>{formatINR(quoteItem.unitPrice)}</del>}
+                        <strong>{formatINR(quoteItem.discountedUnitPrice)}</strong>
+                      </> : <strong><QuoteValue loading={chargesLoading} label={`the price for ${item.productName}`} /></strong>}
                       {hasDiscount && <small>{quoteItem.couponCode} applied</small>}
                     </div>
                     {payload.items[index]?.couponCode && <button className="cart-coupon-remove" type="button" onClick={() => setAppliedCouponCode("", item)}>Remove coupon {payload.items[index].couponCode}</button>}
@@ -119,8 +121,8 @@ export function CartPage() {
                       </button>
                     </div>
                     <div className="cart-line-price">
-                      {hasDiscount && <del>{formatINR(quoteItem.lineTotal)}</del>}
-                      <strong className="cart-line-total">{quotedLineTotal === null ? "Request price" : formatINR(quotedLineTotal)}</strong>
+                      {itemQuoteReady && hasDiscount && <del>{formatINR(quoteItem.lineTotal)}</del>}
+                      <strong className="cart-line-total"><QuoteValue value={quoteItem?.discountedLineTotal} loading={chargesLoading} label={`the line total for ${item.productName}`} /></strong>
                     </div>
                     <button className="cart-remove-button" type="button" onClick={() => removeItem(item.cartId)}>
                       <Trash2 size={16} /> Remove

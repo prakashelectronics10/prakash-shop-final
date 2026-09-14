@@ -41,17 +41,25 @@ export function CartFloatingButton() {
 
   useLayoutEffect(() => {
     if (typeof document === "undefined") return undefined;
+    let frame = 0;
     const checkFloatingActions = () => {
-      setLowerFloatingActionCount(Math.max(routeLowerFloatingActionCount(), domLowerFloatingActionCount()));
+      frame = 0;
+      const nextCount = Math.max(routeLowerFloatingActionCount(), domLowerFloatingActionCount());
+      setLowerFloatingActionCount((currentCount) => (currentCount === nextCount ? currentCount : nextCount));
+    };
+    const scheduleFloatingActionCheck = () => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(checkFloatingActions);
     };
 
     checkFloatingActions();
-    const observer = new MutationObserver(checkFloatingActions);
+    const observer = new MutationObserver(scheduleFloatingActionCheck);
     observer.observe(document.body, { childList: true, subtree: true });
-    window.addEventListener("popstate", checkFloatingActions);
+    window.addEventListener("popstate", scheduleFloatingActionCheck);
     return () => {
       observer.disconnect();
-      window.removeEventListener("popstate", checkFloatingActions);
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("popstate", scheduleFloatingActionCheck);
     };
   }, []);
 

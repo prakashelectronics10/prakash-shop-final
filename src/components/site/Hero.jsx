@@ -38,6 +38,20 @@ function normalizeSlideLink(link = "") {
   return `/${value.replace(/^\//, "")}`;
 }
 
+function getShellHeroSlide() {
+  if (typeof document === "undefined") return null;
+  const preload = document.head.querySelector('link[rel="preload"][as="image"][data-hero-image="true"]');
+  const imageUrl = preload?.getAttribute("data-hero-src") || "";
+  if (!imageUrl) return null;
+  return {
+    id: preload.getAttribute("data-hero-id") || "shell-hero",
+    imageUrl,
+    alt: preload.getAttribute("data-hero-alt") || "Prakash Electronics product",
+    title: preload.getAttribute("data-hero-title") || "",
+    link: preload.getAttribute("data-hero-link") || "",
+  };
+}
+
 function HeroImageSlider({ slides, fallbackImage }) {
   const fallback = fallbackImage?.url ? [{ id: "fallback", imageUrl: fallbackImage.url, alt: fallbackImage.alt || "Prakash Electronics service" }] : [];
   const items = slides.length ? slides : fallback;
@@ -138,6 +152,8 @@ function HeroImageSlider({ slides, fallbackImage }) {
 export function Hero() {
   const { hero, contact, heroSlider = [] } = useSiteData();
   const heroData = hero || fallbackHero;
+  const shellHeroSlide = heroSlider.length ? null : getShellHeroSlide();
+  const visibleHeroSlides = heroSlider.length ? heroSlider : (shellHeroSlide ? [shellHeroSlide] : []);
 
   const primaryCta = heroData.primaryCta || {};
   const secondaryCta = heroData.secondaryCta || {};
@@ -208,7 +224,7 @@ export function Hero() {
           </div>
         </div>
 
-        <HeroImageSlider slides={heroSlider} fallbackImage={heroData.image} />
+        <HeroImageSlider slides={visibleHeroSlides} fallbackImage={heroData.image} />
       </div>
     </section>
   );

@@ -385,40 +385,29 @@ function asksForFirstQuestionRecall(value) {
 function buildLocalResponse(
   promptText,
   imageCount = 0,
-  reason = "",
+  _reason = "",
   catalogProducts = [],
   cartContext = null,
   conversationMemory = {},
 ) {
   const normalizedPrompt = String(promptText || "").toLowerCase();
   const components = extractWantedFromPrompt(promptText);
-  const list = components.length
-    ? components.map((item) => `- ${item}`).join("\n")
-    : "- Arduino or controller board\n- Sensor/module according to project\n- Breadboard\n- Jumper wires\n- Battery/power supply\n- LEDs/resistors for testing";
-  const note = reason
-    ? "\n\nNote: Gemini API se abhi direct response nahi aa paya, isliye maine local fallback guidance aur shop suggestions generate kiye hain."
-    : "";
-
-  const serviceContext = normalizedPrompt.includes("repair") || normalizedPrompt.includes("ac") || normalizedPrompt.includes("cooler") || normalizedPrompt.includes("fan")
-    ? "\n\nIf the user is asking for repair support, first identify the appliance type, visible fault, and whether it needs diagnosis, spare part replacement, or booking support."
-    : "";
-
-  const productContext = normalizedPrompt.includes("wire") || normalizedPrompt.includes("accessory") || normalizedPrompt.includes("rgb") || normalizedPrompt.includes("switch") || normalizedPrompt.includes("mcb")
-    ? "\n\nIf the user is asking for product selection, recommend the most suitable wiring accessory, switch, LED/RGB lighting item, or compatible electrical part with a simple usage note."
-    : "";
+  const verifiedMatches = rankProductsForDemand(promptText, "", catalogProducts || [], false)
+    .slice(0, 3)
+    .map(({ product }) => product);
 
   const safeMemory = sanitizeConversationMemory(conversationMemory);
   if (asksForFirstQuestionRecall(normalizedPrompt) && safeMemory.firstUserQuestion) {
-    return `Your first question in this chat was: “${safeMemory.firstUserQuestion}”${note}`;
+    return `Your first question in this chat was: “${safeMemory.firstUserQuestion}”`;
   }
 
   const wantsCart = /\b(cart|basket|order summary|estimated total|subtotal|additional charge|delivery charge|coupon saving|checkout total)\b/.test(normalizedPrompt);
   if (wantsCart && cartContext) {
     if (cartContext.status === "empty") {
-      return `I checked your current cart. It is empty, so the estimated total is Rs. 0 and no additional charges apply yet.${note}`;
+      return "I checked your current cart. It is empty, so the estimated total is Rs. 0 and no additional charges apply yet. Add a product first, then reconnect before checkout so stock, coupons and charges can be verified again.";
     }
     if (cartContext.status !== "verified") {
-      return `I checked your current cart, but its live order summary could not be verified: ${cartContext.verificationError || "please refresh the cart and try again"}. I will not guess the total or charges.${note}`;
+      return "Your cart is still available, but its live order summary cannot be verified right now. Please reconnect and refresh the cart before checkout; Pulse AI will not guess prices, coupons or charges.";
     }
     const itemLines = cartContext.items.map((item) => (
       `- ${item.name} x ${item.quantity}: Rs.${Number(item.lineTotalAfterCoupon).toLocaleString("en-IN")}${item.coupon ? ` (${item.coupon.title}, saving Rs.${Number(item.coupon.discountAmount).toLocaleString("en-IN")})` : ""}`
@@ -426,7 +415,7 @@ function buildLocalResponse(
     const chargeLines = cartContext.additionalCharges.length
       ? cartContext.additionalCharges.map((charge) => `- ${charge.name}: ${charge.amount > 0 ? `Rs.${charge.amount.toLocaleString("en-IN")}` : "Free"}`).join("\n")
       : "- No additional charges";
-    return `I checked your current cart and verified its live order summary.\n\nProducts:\n${itemLines}\n\nSubtotal after coupons: Rs.${cartContext.subtotalAfterCoupons.toLocaleString("en-IN")}\nCoupon savings: Rs.${cartContext.couponSavings.toLocaleString("en-IN")}\nAdditional charges:\n${chargeLines}\n\nEstimated total: Rs.${cartContext.estimatedTotal.toLocaleString("en-IN")}\n\nThis is a live estimate and will be recalculated at checkout.${note}`;
+    return `I checked your current cart and verified its live order summary.\n\nProducts:\n${itemLines}\n\nSubtotal after coupons: Rs.${cartContext.subtotalAfterCoupons.toLocaleString("en-IN")}\nCoupon savings: Rs.${cartContext.couponSavings.toLocaleString("en-IN")}\nAdditional charges:\n${chargeLines}\n\nEstimated total: Rs.${cartContext.estimatedTotal.toLocaleString("en-IN")}\n\nThis is a live estimate and will be recalculated at checkout.`;
   }
 
   const wantsOffers = /\b(coupon|coupons|offer|offers|discount|discounts|sale|promo|code)\b/.test(normalizedPrompt);
@@ -441,16 +430,38 @@ function buildLocalResponse(
       : "\n\nThere is no verified current public product coupon in the live catalog right now."
     : "";
 
-  return `For this query, start with a clear diagnosis, shortlist the right product or service, and verify availability before placing the order or booking the repair.
+  if (verifiedMatches.length) {
+    const productLines = verifiedMatches.map((product) => {
+      const normalPrice = Number(product.price);
+      const effectivePrice = Number(product.effectivePrice);
+      const priceText = Number.isFinite(effectivePrice)
+        ? `Rs.${effectivePrice.toLocaleString("en-IN")}`
+        : Number.isFinite(normalPrice)
+          ? `Rs.${normalPrice.toLocaleString("en-IN")}`
+          : "price on request";
+      const offerText = product.bestPublicCoupon
+        ? ` using public coupon ${product.bestPublicCoupon.code}`
+        : "";
+      return `- ${product.name}: ${priceText}${offerText}; ${product.availability || "availability must be reconfirmed"}`;
+    }).join("\n");
+    return `The live assistant connection is temporarily unavailable, but I checked the verified shop catalog for your request.\n\nClosest available matches:\n${productLines}\n\nOpen a product card to review its full specifications. Please reconnect before buying so the latest stock, price and coupon eligibility can be confirmed.${offerContext}`;
+  }
 
-Suggested components / next checks:
-${list}${serviceContext}${productContext}${offerContext}
+  const isRepairRequest = /\b(repair|service|servicing|fault|problem|issue|not working|kharab|banwana|thik|theek)\b/.test(normalizedPrompt);
+  if (isRepairRequest) {
+    return `The live assistant connection is temporarily unavailable, but you can still prepare the right repair details.\n\n- Switch the appliance off if there is heat, smoke, sparking or a burning smell.\n- Note the appliance type, brand/model and exact symptom.\n- Mention when the problem started and whether power, sound, cooling or display is affected.\n\nReconnect and send these details to get focused diagnosis guidance or use the repair booking page.${offerContext}`;
+  }
 
-Practical flow:
-1. Confirm the exact product or service requirement.
-2. Match it to the most fitting shop item, part, or repair category.
-3. Check compatibility, price, and availability.
-4. If needed, guide the user to the booking or product detail page for next steps.${imageCount ? "\n\nI also received your uploaded image(s), but advanced image analysis needs Gemini connection." : ""}${note}`;
+  const isProjectRequest = /\b(project|arduino|sensor|breadboard|jumper|robot|iot|circuit)\b/.test(normalizedPrompt);
+  if (isProjectRequest && components.length) {
+    return `The live assistant connection is temporarily unavailable. Based on your project request, these are the components to verify:\n\n${components.map((item) => `- ${item}`).join("\n")}\n\nBefore buying, confirm the circuit voltage, controller compatibility and quantity. Reconnect to check exact catalog matches, live stock and price.`;
+  }
+
+  if (imageCount) {
+    return "The live assistant connection is temporarily unavailable, so I cannot safely inspect the uploaded image or claim a product match. Please reconnect and send it again. If possible, include the visible brand/model, product type, color and the issue or feature you want checked.";
+  }
+
+  return `The live assistant connection is temporarily unavailable, and I could not verify an exact catalog match for this request. Please share the product or appliance type, intended use, budget and any required size/model. After reconnecting, Pulse AI will check only current stock, prices, offers and relevant repair options.${offerContext}`;
 }
 
 function shouldUseLocalFallback(error) {
@@ -576,7 +587,7 @@ exports.chatWithScienceAI = catchAsync(async (req, res) => {
         suggestions,
         linkCards,
         model: "local-fallback",
-        warning: "Gemini API key is not configured. Returned local fallback response with catalog-verified product suggestions.",
+        warning: "Pulse AI is using verified shop guidance right now. Prices, stock and offers are shown only when available in the current catalog.",
         memory,
         conversationHistory: [
           ...conversationHistory,
@@ -602,7 +613,7 @@ exports.chatWithScienceAI = catchAsync(async (req, res) => {
         suggestions,
         linkCards,
         model: "local-fallback",
-        warning: `Gemini rate limit active. Returned local fallback response; retrying Gemini after ${seconds} seconds.`,
+        warning: `Pulse AI is temporarily using verified shop guidance. Live assistance will be retried automatically after ${seconds} seconds.`,
         memory,
         conversationHistory: [
           ...conversationHistory,
@@ -780,10 +791,10 @@ ${formatCatalogForGemini(catalogProducts, Boolean(deepSearch))}`;
       hasImages: Boolean(imageInputs.length),
     });
     const warning = isRateLimitError(geminiError)
-      ? `Live AI rate limit reached. Pulse AI used verified backup guidance and will retry the live model after ${getCooldownSeconds()} seconds.`
+      ? `Pulse AI is temporarily using verified shop guidance and will retry live assistance after ${getCooldownSeconds()} seconds.`
       : Number(geminiError.status) >= 500
-        ? "Live AI was temporarily busy, so Pulse AI used verified backup guidance for this reply."
-        : "Live AI connection was temporarily unavailable, so Pulse AI used verified backup guidance for this reply.";
+        ? "Live assistance is temporarily busy. This reply uses verified shop information where available."
+        : "The live connection is temporarily unavailable. This reply uses verified shop information where available.";
     const linkCards = localLinkCards(message, knowledgeContext);
     return res.json({
       success: true,
@@ -897,3 +908,4 @@ exports.buildPulseCartContext = buildPulseCartContext;
 exports.cartKnowledgeFromQuote = cartKnowledgeFromQuote;
 exports.formatCartContextForModel = formatCartContextForModel;
 exports.asksForFirstQuestionRecall = asksForFirstQuestionRecall;
+exports.buildLocalResponse = buildLocalResponse;

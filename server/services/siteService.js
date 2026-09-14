@@ -47,6 +47,34 @@ function stripSeedOnlyFields(product) {
   return payload;
 }
 
+function bannerToHeroSlide(banner) {
+  if (!banner?.imageUrl) return null;
+  return {
+    id: String(banner._id),
+    imageUrl: banner.imageUrl,
+    title: banner.title,
+    alt: banner.alt || banner.title,
+    link: String(banner.link || "").trim(),
+    displayOrder: banner.displayOrder,
+    source: "banner",
+  };
+}
+
+function productToHeroSlide(product) {
+  if (!product?.imageUrl) return null;
+  const productId = String(product.slug || product._id || "").trim();
+  return {
+    id: String(product._id),
+    imageUrl: product.imageUrl,
+    title: product.name,
+    alt: product.name,
+    description: product.shortDescription,
+    link: productId ? `/product/${encodeURIComponent(productId)}` : "",
+    displayOrder: product.displayOrder,
+    source: "product",
+  };
+}
+
 function normalizeTestimonialsContent(value = {}) {
   return {
     ...value,
@@ -266,29 +294,9 @@ async function getSitePayload() {
     contentUpdatedAt: contentUpdatedAt ? new Date(contentUpdatedAt).toISOString() : "",
     webSettings: normalizeSettings(webSettingsDoc),
     heroSlider: [
-      ...bannerDocs.map((banner) => ({
-        id: String(banner._id),
-        imageUrl: banner.imageUrl,
-        title: banner.title,
-        alt: banner.alt || banner.title,
-        link: String(banner.link || "").trim(),
-        displayOrder: banner.displayOrder,
-        source: "banner",
-      })),
-      ...heroProductDocs.filter((product) => product.imageUrl).map((product) => {
-        const productId = String(product.slug || product._id || "").trim();
-        return {
-          id: String(product._id),
-          imageUrl: product.imageUrl,
-          title: product.name,
-          alt: product.name,
-          description: product.shortDescription,
-          link: productId ? `/product/${encodeURIComponent(productId)}` : "",
-          displayOrder: product.displayOrder,
-          source: "product",
-        };
-      }),
-    ],
+      ...bannerDocs.map(bannerToHeroSlide),
+      ...heroProductDocs.map(productToHeroSlide),
+    ].filter(Boolean),
     isFallback: !contentDocs.length,
   };
 
@@ -304,25 +312,39 @@ function clearSitePayloadCache() {
   htmlShellMetaExpiresAt = 0;
 }
 
-/** Lightweight meta for SPA HTML injection (favicon / OG) — avoids 9-query site payload on every HTML hit. */
+/** Lightweight shell data for metadata and immediate discovery of the homepage LCP image. */
 async function getHtmlShellSiteMeta() {
   const now = Date.now();
   if (sitePayloadCache && now < sitePayloadCacheExpiresAt) {
-    return { webSettings: sitePayloadCache.webSettings || normalizeSettings(null) };
+    return {
+      webSettings: sitePayloadCache.webSettings || normalizeSettings(null),
+      hero: sitePayloadCache.hero || hero,
+      heroSlider: (sitePayloadCache.heroSlider || []).slice(0, 1),
+    };
   }
   if (htmlShellMetaCache && now < htmlShellMetaExpiresAt) {
     return htmlShellMetaCache;
   }
 
   if (!isConnected()) {
-    const payload = { webSettings: normalizeSettings(null) };
+    const payload = { webSettings: normalizeSettings(null), hero, heroSlider: [] };
     htmlShellMetaCache = payload;
     htmlShellMetaExpiresAt = now + SITE_CACHE_TTL;
     return payload;
   }
 
-  const webSettingsDoc = await WebSetting.findOne().lean().catch(() => null);
-  const payload = { webSettings: normalizeSettings(webSettingsDoc) };
+  const [webSettingsDoc, bannerDoc, heroProductDoc, heroDoc] = await Promise.all([
+    WebSetting.findOne({ key: "global" }).lean().catch(() => null),
+    AutoSliderBanner.findOne({ isActive: true }).select("imageUrl title alt link displayOrder").sort({ displayOrder: 1, createdAt: -1 }).lean().catch(() => null),
+    ShopProduct.findOne({ isActive: true, showInHeroSlider: true }).select("name slug imageUrl shortDescription displayOrder").sort({ displayOrder: 1, name: 1 }).lean().catch(() => null),
+    HeroSection.findOne({ isActive: true }).select("image").sort({ updatedAt: -1 }).lean().catch(() => null),
+  ]);
+  const firstSlide = bannerToHeroSlide(bannerDoc) || productToHeroSlide(heroProductDoc);
+  const payload = {
+    webSettings: normalizeSettings(webSettingsDoc),
+    hero: heroDoc || hero,
+    heroSlider: firstSlide ? [firstSlide] : [],
+  };
   htmlShellMetaCache = payload;
   htmlShellMetaExpiresAt = now + SITE_CACHE_TTL;
   return payload;

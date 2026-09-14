@@ -25,8 +25,8 @@ function HighlightMedia({ item, index }) {
       width={1920}
       height={800}
       sizes="(min-width: 1024px) 920px, calc(100vw - 32px)"
-      loading={index === 0 ? "eager" : "lazy"}
-      fetchPriority={index === 0 ? "auto" : "low"}
+      loading="lazy"
+      fetchPriority="low"
       decoding="async"
       className="shop-highlight-image"
       draggable={false}

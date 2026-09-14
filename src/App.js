@@ -328,14 +328,17 @@ function DeferredSectionReady({ onReady, children }) {
   return children;
 }
 
-/** Serializes DeferredSection mounts on desktop; mobile mounts in parallel for fling scroll. */
+/** Serializes DeferredSection mounts so a fast scroll does not hydrate multiple heavy sections in one frame. */
 const deferredMountQueue = [];
 let deferredMountBusy = false;
 const DEFERRED_STAGGER_DESKTOP_MS = 90;
+const DEFERRED_STAGGER_MOBILE_MS = 32;
 
 function getDeferredStaggerMs() {
   if (typeof window === "undefined") return DEFERRED_STAGGER_DESKTOP_MS;
-  return window.matchMedia("(max-width: 768px)").matches ? 0 : DEFERRED_STAGGER_DESKTOP_MS;
+  return window.matchMedia("(max-width: 768px)").matches
+    ? DEFERRED_STAGGER_MOBILE_MS
+    : DEFERRED_STAGGER_DESKTOP_MS;
 }
 
 function enqueueDeferredMount(activate) {
@@ -642,8 +645,8 @@ function App() {
         </Suspense>
         <main>
           <DeferredSection eager anchorId="offers" minHeight={420}><Offers sectionId="" /></DeferredSection>
-          <DeferredSection eager anchorId="shop-highlights" minHeight={420}><ShopHighlights sectionId="" /></DeferredSection>
-          <DeferredSection eager anchorId="services" minHeight={420}><Services sectionId="" /></DeferredSection>
+          <DeferredSection anchorId="shop-highlights" minHeight={420}><ShopHighlights sectionId="" /></DeferredSection>
+          <DeferredSection anchorId="services" minHeight={420}><Services sectionId="" /></DeferredSection>
           <DeferredSection anchorId="trending" minHeight={320}><TrendingProducts sectionId="" /></DeferredSection>
           <DeferredSection anchorId="top-products" minHeight={320}><TopProducts sectionId="" /></DeferredSection>
           <DeferredSection minHeight={280}><QuickRouteCards /></DeferredSection>

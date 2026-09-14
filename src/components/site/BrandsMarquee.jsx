@@ -80,12 +80,13 @@ export function BrandsMarquee() {
         }}
       >
         <div className={`brands-marquee-track${isPaused ? " is-paused" : ""}`}>
-          {loopItems.map(({ item, key }, loopIndex) => (
+          {loopItems.map(({ item, key }) => (
             <div className="brands-marquee-item" key={key}>
               <OptimizedImage
                 src={item.imageUrl}
                 alt={item.name || "Brand"}
-                loading={loopIndex < 4 ? "eager" : "lazy"}
+                loading="lazy"
+                fetchPriority="low"
                 decoding="async"
                 width={160}
                 height={64}
