@@ -20,7 +20,7 @@ function RelatedProductCard({ product }) {
             loading="lazy"
             decoding="async"
             width={640}
-            height={640}
+            height={480}
             sizes="(min-width: 768px) 22vw, 46vw"
             className="related-product-image"
           />

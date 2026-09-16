@@ -7429,7 +7429,7 @@ footer {
 }
 
 .related-product-media {
-  aspect-ratio: 1 / 1;
+  aspect-ratio: 4 / 3;
   overflow: hidden;
   background: rgba(15, 23, 42, 0.8);
 }
