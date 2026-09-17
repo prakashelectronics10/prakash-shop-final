@@ -4,58 +4,119 @@ import { AnimatePresence, motion } from "framer-motion";
 import { X, ChevronLeft, ChevronRight } from "lucide-react";
 import { getOptimizedImageUrl } from "../../utils/media";
 
+const MIN_ZOOM = 1;
+const MAX_ZOOM = 4;
+
+function clamp(value, minimum, maximum) {
+  return Math.min(maximum, Math.max(minimum, value));
+}
+
+function pointerDistance(first, second) {
+  return Math.hypot(second.x - first.x, second.y - first.y);
+}
+
+function pointerMidpoint(first, second) {
+  return { x: (first.x + second.x) / 2, y: (first.y + second.y) / 2 };
+}
+
 export function Lightbox({ items, index, onClose, onIndexChange }) {
   const open = index !== null;
   const [zoom, setZoom] = useState(1);
   const [rotation, setRotation] = useState(0);
   const [pan, setPan] = useState({ x: 0, y: 0 });
-  const dragging = useRef(false);
-  const last = useRef({ x: 0, y: 0 });
-  const swipeStart = useRef(null);
-  const suppressClick = useRef(false);
-  const imgWrapRef = useRef(null);
+  const [swipeOffset, setSwipeOffset] = useState(0);
+  const [interacting, setInteracting] = useState(false);
+  const stageRef = useRef(null);
+  const pointersRef = useRef(new Map());
+  const gestureRef = useRef(null);
+  const zoomRef = useRef(1);
+  const panRef = useRef({ x: 0, y: 0 });
+  const suppressClickRef = useRef(false);
+
+  const clampPan = useCallback((value, atZoom = zoomRef.current) => {
+    const stage = stageRef.current;
+    if (!stage || atZoom <= MIN_ZOOM) return { x: 0, y: 0 };
+    const rect = stage.getBoundingClientRect();
+    const maxX = (rect.width * (atZoom - 1)) / 2;
+    const maxY = (rect.height * (atZoom - 1)) / 2;
+    return {
+      x: clamp(value.x, -maxX, maxX),
+      y: clamp(value.y, -maxY, maxY),
+    };
+  }, []);
+
+  const setTransform = useCallback((nextZoom, nextPan) => {
+    const safeZoom = clamp(nextZoom, MIN_ZOOM, MAX_ZOOM);
+    const safePan = clampPan(nextPan, safeZoom);
+    zoomRef.current = safeZoom;
+    panRef.current = safePan;
+    setZoom(safeZoom);
+    setPan(safePan);
+  }, [clampPan]);
 
   const reset = useCallback(() => {
+    zoomRef.current = 1;
+    panRef.current = { x: 0, y: 0 };
+    pointersRef.current.clear();
+    gestureRef.current = null;
     setZoom(1);
     setRotation(0);
     setPan({ x: 0, y: 0 });
+    setSwipeOffset(0);
+    setInteracting(false);
   }, []);
 
-  const zoomIn = useCallback(() => setZoom((z) => Math.min(+(z + 0.5).toFixed(2), 4)), []);
-  const zoomOut = useCallback(
-    () =>
-      setZoom((z) => {
-        const nz = Math.max(+(z - 0.5).toFixed(2), 1);
-        if (nz === 1) setPan({ x: 0, y: 0 });
-        return nz;
-      }),
-    [],
-  );
-  const rotate = useCallback(() => setRotation((r) => (r + 90) % 360), []);
+  const zoomAtPoint = useCallback((requestedZoom, clientX, clientY) => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    const previousZoom = zoomRef.current;
+    const nextZoom = clamp(requestedZoom, MIN_ZOOM, MAX_ZOOM);
+    if (nextZoom === MIN_ZOOM) {
+      setTransform(MIN_ZOOM, { x: 0, y: 0 });
+      return;
+    }
+    const rect = stage.getBoundingClientRect();
+    const focalX = clientX - (rect.left + rect.width / 2);
+    const focalY = clientY - (rect.top + rect.height / 2);
+    const ratio = nextZoom / previousZoom;
+    const currentPan = panRef.current;
+    setTransform(nextZoom, {
+      x: focalX - (focalX - currentPan.x) * ratio,
+      y: focalY - (focalY - currentPan.y) * ratio,
+    });
+  }, [setTransform]);
+
+  const changeIndex = useCallback((nextIndex) => {
+    if (!items.length) return;
+    onIndexChange((nextIndex + items.length) % items.length);
+    reset();
+  }, [items.length, onIndexChange, reset]);
 
   const next = useCallback(() => {
     if (index === null) return;
-    onIndexChange((index + 1) % items.length);
-    reset();
-  }, [index, items.length, onIndexChange, reset]);
+    changeIndex(index + 1);
+  }, [changeIndex, index]);
 
   const prev = useCallback(() => {
     if (index === null) return;
-    onIndexChange((index - 1 + items.length) % items.length);
-    reset();
-  }, [index, items.length, onIndexChange, reset]);
+    changeIndex(index - 1);
+  }, [changeIndex, index]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) return undefined;
     const previousOverflow = document.body.style.overflow;
-    const onKey = (e) => {
-      if (e.key === "Escape") onClose();
-      else if (e.key === "ArrowRight") next();
-      else if (e.key === "ArrowLeft") prev();
-      else if (e.key === "+" || e.key === "=") zoomIn();
-      else if (e.key === "-") zoomOut();
-      else if (e.key.toLowerCase() === "r") rotate();
-      else if (e.key === "0") reset();
+    const onKey = (event) => {
+      if (event.key === "Escape") onClose();
+      else if (event.key === "ArrowRight") next();
+      else if (event.key === "ArrowLeft") prev();
+      else if (event.key === "+" || event.key === "=") {
+        const rect = stageRef.current?.getBoundingClientRect();
+        if (rect) zoomAtPoint(zoomRef.current + 0.5, rect.left + rect.width / 2, rect.top + rect.height / 2);
+      } else if (event.key === "-") {
+        const rect = stageRef.current?.getBoundingClientRect();
+        if (rect) zoomAtPoint(zoomRef.current - 0.5, rect.left + rect.width / 2, rect.top + rect.height / 2);
+      } else if (event.key.toLowerCase() === "r") setRotation((current) => (current + 90) % 360);
+      else if (event.key === "0") reset();
     };
     document.body.style.overflow = "hidden";
     window.addEventListener("keydown", onKey);
@@ -63,63 +124,155 @@ export function Lightbox({ items, index, onClose, onIndexChange }) {
       document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", onKey);
     };
-  }, [open, next, prev, onClose, reset, zoomIn, zoomOut, rotate]);
+  }, [next, onClose, open, prev, reset, zoomAtPoint]);
 
-  // Native non-passive wheel listener so preventDefault works
   useEffect(() => {
-    const el = imgWrapRef.current;
-    if (!el || !open) return;
-    const handler = (e) => {
-      e.preventDefault();
-      setZoom((z) => Math.max(1, Math.min(4, +(z + (e.deltaY < 0 ? 0.2 : -0.2)).toFixed(2))));
+    const stage = stageRef.current;
+    if (!stage || !open) return undefined;
+    const onWheel = (event) => {
+      if (!event.ctrlKey && !event.metaKey) return;
+      event.preventDefault();
+      const zoomFactor = Math.exp(-event.deltaY * 0.0025);
+      zoomAtPoint(zoomRef.current * zoomFactor, event.clientX, event.clientY);
     };
-    el.addEventListener("wheel", handler, { passive: false });
-    return () => el.removeEventListener("wheel", handler);
-  }, [open]);
+    stage.addEventListener("wheel", onWheel, { passive: false });
+    return () => stage.removeEventListener("wheel", onWheel);
+  }, [open, zoomAtPoint]);
 
   useEffect(() => reset(), [index, reset]);
 
+  const beginPinch = () => {
+    const [first, second] = [...pointersRef.current.values()];
+    if (!first || !second) return;
+    gestureRef.current = {
+      type: "pinch",
+      startDistance: Math.max(1, pointerDistance(first, second)),
+      startMidpoint: pointerMidpoint(first, second),
+      startZoom: zoomRef.current,
+      startPan: panRef.current,
+    };
+    suppressClickRef.current = true;
+    setSwipeOffset(0);
+    setInteracting(true);
+  };
+
+  const onPointerDown = (event) => {
+    pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    suppressClickRef.current = false;
+    if (pointersRef.current.size >= 2) {
+      beginPinch();
+      return;
+    }
+    gestureRef.current = {
+      type: zoomRef.current > MIN_ZOOM ? "pan" : "swipe",
+      startX: event.clientX,
+      startY: event.clientY,
+      lastX: event.clientX,
+      lastY: event.clientY,
+      startedAt: performance.now(),
+    };
+    setInteracting(true);
+  };
+
+  const onPointerMove = (event) => {
+    if (!pointersRef.current.has(event.pointerId)) return;
+    pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+
+    if (pointersRef.current.size >= 2) {
+      if (gestureRef.current?.type !== "pinch") beginPinch();
+      const gesture = gestureRef.current;
+      const [first, second] = [...pointersRef.current.values()];
+      if (!gesture || !first || !second) return;
+      const currentMidpoint = pointerMidpoint(first, second);
+      const nextZoom = clamp(
+        gesture.startZoom * (pointerDistance(first, second) / gesture.startDistance),
+        MIN_ZOOM,
+        MAX_ZOOM,
+      );
+      const rect = stageRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
+      const ratio = nextZoom / gesture.startZoom;
+      setTransform(nextZoom, {
+        x: currentMidpoint.x - centerX - (gesture.startMidpoint.x - centerX - gesture.startPan.x) * ratio,
+        y: currentMidpoint.y - centerY - (gesture.startMidpoint.y - centerY - gesture.startPan.y) * ratio,
+      });
+      return;
+    }
+
+    const gesture = gestureRef.current;
+    if (!gesture) return;
+    if (gesture.type === "pan") {
+      const nextPan = {
+        x: panRef.current.x + (event.clientX - gesture.lastX),
+        y: panRef.current.y + (event.clientY - gesture.lastY),
+      };
+      gesture.lastX = event.clientX;
+      gesture.lastY = event.clientY;
+      setTransform(zoomRef.current, nextPan);
+      suppressClickRef.current = true;
+      return;
+    }
+    if (gesture.type === "swipe") {
+      const deltaX = event.clientX - gesture.startX;
+      const deltaY = event.clientY - gesture.startY;
+      if (Math.abs(deltaX) > 5 && Math.abs(deltaX) > Math.abs(deltaY)) {
+        setSwipeOffset(deltaX);
+        suppressClickRef.current = true;
+      }
+    }
+  };
+
+  const finishPointer = (event, cancelled = false) => {
+    pointersRef.current.delete(event.pointerId);
+    const gesture = gestureRef.current;
+
+    if (gesture?.type === "pinch") {
+      if (zoomRef.current <= 1.02) setTransform(1, { x: 0, y: 0 });
+      if (pointersRef.current.size === 1 && zoomRef.current > 1) {
+        const remaining = [...pointersRef.current.values()][0];
+        gestureRef.current = { type: "pan", lastX: remaining.x, lastY: remaining.y };
+      } else {
+        gestureRef.current = null;
+        setInteracting(false);
+      }
+      return;
+    }
+
+    if (!cancelled && gesture?.type === "swipe" && items.length > 1) {
+      const deltaX = event.clientX - gesture.startX;
+      const elapsed = Math.max(1, performance.now() - gesture.startedAt);
+      const velocity = Math.abs(deltaX) / elapsed;
+      const stageWidth = stageRef.current?.clientWidth || 320;
+      const threshold = Math.min(80, stageWidth * 0.16);
+      if (Math.abs(deltaX) >= threshold || (Math.abs(deltaX) > 24 && velocity > 0.45)) {
+        if (deltaX < 0) next();
+        else prev();
+      }
+    }
+
+    gestureRef.current = null;
+    setSwipeOffset(0);
+    setInteracting(false);
+  };
+
+  const onStageClick = (event) => {
+    event.stopPropagation();
+    if (suppressClickRef.current) {
+      suppressClickRef.current = false;
+      return;
+    }
+    if (zoomRef.current > 1) setTransform(1, { x: 0, y: 0 });
+    else zoomAtPoint(2, event.clientX, event.clientY);
+  };
+
   const current = index !== null ? items[index] : null;
+  const safeIndex = index ?? 0;
   const imageWidth = typeof window === "undefined"
     ? 1600
-    : Math.min(1920, Math.max(960, Math.ceil(window.innerWidth * Math.min(window.devicePixelRatio || 1, 2))));
-
-  const onPointerDown = (e) => {
-    suppressClick.current = false;
-    swipeStart.current = { x: e.clientX, y: e.clientY };
-    if (zoom > 1) {
-      dragging.current = true;
-      last.current = { x: e.clientX, y: e.clientY };
-    }
-    e.currentTarget.setPointerCapture?.(e.pointerId);
-  };
-  const onPointerMove = (e) => {
-    if (!dragging.current) return;
-    setPan((p) => ({
-      x: p.x + (e.clientX - last.current.x),
-      y: p.y + (e.clientY - last.current.y),
-    }));
-    last.current = { x: e.clientX, y: e.clientY };
-  };
-  const onPointerUp = (e) => {
-    const start = swipeStart.current;
-    swipeStart.current = null;
-    dragging.current = false;
-    if (zoom > 1 || !start || items.length < 2) return;
-
-    const deltaX = e.clientX - start.x;
-    const deltaY = e.clientY - start.y;
-    if (Math.abs(deltaX) < 48 || Math.abs(deltaX) <= Math.abs(deltaY)) return;
-
-    suppressClick.current = true;
-    if (deltaX < 0) next();
-    else prev();
-  };
-
-  const onPointerCancel = () => {
-    swipeStart.current = null;
-    dragging.current = false;
-  };
+    : Math.min(2048, Math.max(1200, Math.ceil(window.innerWidth * Math.min(window.devicePixelRatio || 1, 2))));
 
   const content = (
     <AnimatePresence>
@@ -129,93 +282,67 @@ export function Lightbox({ items, index, onClose, onIndexChange }) {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 0.25 }}
+          transition={{ duration: 0.2 }}
           className="lightbox-dialog fixed inset-0 z-[100] flex items-center justify-center"
           onClick={onClose}
           role="dialog"
           aria-modal="true"
           aria-label={current.label}
         >
-          <div
-            className="lightbox-toolbar absolute inset-x-0 top-0 z-20 flex items-center justify-between"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="lightbox-counter">
-              {(index ?? 0) + 1} / {items.length} - {Math.round(zoom * 100)}%
-            </div>
+          <div className="lightbox-toolbar absolute inset-x-0 top-0 z-20 flex items-center justify-between" onClick={(event) => event.stopPropagation()}>
+            <div className="lightbox-counter">{safeIndex + 1} / {items.length} - {Math.round(zoom * 100)}%</div>
+            <p className="lightbox-zoom-hint">Hold Ctrl and scroll over the image to zoom at your pointer</p>
             <div className="lightbox-controls">
-              <button
-                type="button"
-                aria-label="Previous"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  prev();
-                }}
-                className="lightbox-control"
-              >
+              <button type="button" aria-label="Previous" onClick={(event) => { event.stopPropagation(); prev(); }} className="lightbox-control">
                 <ChevronLeft className="h-6 w-6" />
               </button>
-              <button
-                type="button"
-                aria-label="Next"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  next();
-                }}
-                className="lightbox-control"
-              >
+              <button type="button" aria-label="Next" onClick={(event) => { event.stopPropagation(); next(); }} className="lightbox-control">
                 <ChevronRight className="h-6 w-6" />
               </button>
-              <button
-                type="button"
-                aria-label="Close"
-                onClick={onClose}
-                className="lightbox-control lightbox-close"
-              >
+              <button type="button" aria-label="Close" onClick={onClose} className="lightbox-control lightbox-close">
                 <X className="h-4 w-4" />
               </button>
             </div>
           </div>
 
           <div
-            ref={imgWrapRef}
-            className="lightbox-image-stage relative flex h-full w-full items-center justify-center overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
+            ref={stageRef}
+            className={`lightbox-image-stage relative h-full w-full overflow-hidden ${zoom > 1 ? "is-zoomed" : ""}`}
+            onClick={onStageClick}
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={(event) => finishPointer(event)}
+            onPointerCancel={(event) => finishPointer(event, true)}
           >
-            <AnimatePresence mode="wait">
-              <motion.img
-                key={current.src}
-                src={getOptimizedImageUrl(current.src, { width: imageWidth })}
-                alt={current.label}
-                decoding="async"
-                fetchpriority="high"
-                initial={{ opacity: 0, scale: 0.96 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.96 }}
-                transition={{ duration: 0.3, ease: "easeOut" }}
-                style={{
-                  transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom}) rotate(${rotation}deg)`,
-                  cursor: zoom > 1 ? (dragging.current ? "grabbing" : "grab") : "zoom-in",
-                  transition: dragging.current ? "none" : "transform 0.25s ease-out",
-                  touchAction: "none",
-                }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (suppressClick.current) {
-                    suppressClick.current = false;
-                    return;
-                  }
-                  setZoom((z) => (z === 1 ? 2 : 1));
-                  if (zoom !== 1) setPan({ x: 0, y: 0 });
-                }}
-                onPointerDown={onPointerDown}
-                onPointerMove={onPointerMove}
-                onPointerUp={onPointerUp}
-                onPointerCancel={onPointerCancel}
-                className="lightbox-image select-none"
-                draggable={false}
-              />
-            </AnimatePresence>
+            <div
+              className="lightbox-slide-track"
+              style={{
+                transform: `translate3d(calc(${-safeIndex * 100}% + ${swipeOffset}px), 0, 0)`,
+                transition: interacting ? "none" : "transform 260ms cubic-bezier(0.22, 1, 0.36, 1)",
+              }}
+            >
+              {items.map((item, itemIndex) => (
+                <div className="lightbox-slide" aria-hidden={itemIndex !== safeIndex} key={item.src}>
+                  <motion.img
+                    src={getOptimizedImageUrl(item.src, { width: imageWidth })}
+                    alt={item.label}
+                    loading="eager"
+                    decoding="async"
+                    fetchpriority={itemIndex === safeIndex ? "high" : "auto"}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ duration: 0.2, ease: "easeOut" }}
+                    style={itemIndex === safeIndex ? {
+                      transform: `translate3d(${pan.x}px, ${pan.y}px, 0) scale(${zoom}) rotate(${rotation}deg)`,
+                      cursor: zoom > 1 ? (interacting ? "grabbing" : "grab") : "zoom-in",
+                      transition: interacting ? "none" : "transform 180ms ease-out",
+                    } : undefined}
+                    className="lightbox-image select-none"
+                    draggable={false}
+                  />
+                </div>
+              ))}
+            </div>
           </div>
         </motion.div>
       )}

@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import toast from "react-hot-toast";
 import { ArrowLeft, ArrowUpRight, BadgePercent, Ban, Check, Expand, Filter, PackageSearch, Search, ShoppingBag, ShoppingCart, Tag, X } from "lucide-react";
@@ -170,20 +170,133 @@ function ProductGallery({ product }) {
   const items = useMemo(() => productGalleryItems(product), [product]);
   const [activeIndex, setActiveIndex] = useState(0);
   const [lightboxIndex, setLightboxIndex] = useState(null);
+  const viewportRef = useRef(null);
+  const thumbnailRefs = useRef([]);
+  const activeIndexRef = useRef(0);
+  const scrollFrameRef = useRef(0);
+  const scrollSettleTimerRef = useRef(0);
+  const pointerStartRef = useRef(null);
+  const suppressOpenRef = useRef(false);
   const active = items[activeIndex];
+
+  useEffect(() => {
+    activeIndexRef.current = activeIndex;
+    thumbnailRefs.current[activeIndex]?.scrollIntoView({
+      behavior: "smooth",
+      block: "nearest",
+      inline: "center",
+    });
+  }, [activeIndex]);
+
+  useEffect(() => {
+    setActiveIndex(0);
+    activeIndexRef.current = 0;
+    viewportRef.current?.scrollTo({ left: 0, behavior: "auto" });
+  }, [product?._id, product?.slug]);
+
+  useEffect(() => () => {
+    window.cancelAnimationFrame(scrollFrameRef.current);
+    window.clearTimeout(scrollSettleTimerRef.current);
+  }, []);
+
+  const showImage = useCallback((nextIndex, behavior = "smooth") => {
+    const safeIndex = Math.max(0, Math.min(items.length - 1, nextIndex));
+    setActiveIndex(safeIndex);
+    activeIndexRef.current = safeIndex;
+    const viewport = viewportRef.current;
+    if (viewport) viewport.scrollTo({ left: safeIndex * viewport.clientWidth, behavior });
+  }, [items.length]);
+
+  const syncActiveImage = () => {
+    suppressOpenRef.current = true;
+    window.clearTimeout(scrollSettleTimerRef.current);
+    scrollSettleTimerRef.current = window.setTimeout(() => {
+      suppressOpenRef.current = false;
+    }, 140);
+    window.cancelAnimationFrame(scrollFrameRef.current);
+    scrollFrameRef.current = window.requestAnimationFrame(() => {
+      const viewport = viewportRef.current;
+      if (!viewport?.clientWidth) return;
+      const nextIndex = Math.max(0, Math.min(items.length - 1, Math.round(viewport.scrollLeft / viewport.clientWidth)));
+      if (nextIndex !== activeIndexRef.current) {
+        activeIndexRef.current = nextIndex;
+        setActiveIndex(nextIndex);
+      }
+    });
+  };
+
+  const notePointerStart = (event) => {
+    pointerStartRef.current = { x: event.clientX, y: event.clientY };
+  };
+
+  const notePointerEnd = (event) => {
+    const start = pointerStartRef.current;
+    pointerStartRef.current = null;
+    if (!start || Math.hypot(event.clientX - start.x, event.clientY - start.y) < 8) return;
+    suppressOpenRef.current = true;
+    window.clearTimeout(scrollSettleTimerRef.current);
+    scrollSettleTimerRef.current = window.setTimeout(() => {
+      suppressOpenRef.current = false;
+    }, 120);
+  };
 
   if (!active) return <div className="product-gallery-empty"><PackageSearch size={70} /></div>;
   return (
     <div className="product-gallery">
-      <button type="button" className="product-gallery-stage" onClick={() => setLightboxIndex(activeIndex)} aria-label={`Open ${active.label} fullscreen`}>
-        <OptimizedImage src={active.src} alt={active.label} className="part-detail-image" width={900} height={900} decoding="async" fetchPriority="high" sizes="(min-width: 1024px) 42vw, 100vw" />
-        <span className="product-gallery-expand"><Expand size={17} /> View full size</span>
-      </button>
+      <div className="product-gallery-stage-shell">
+        <div
+          ref={viewportRef}
+          className="product-gallery-stage"
+          aria-label="Product image carousel"
+          onScroll={syncActiveImage}
+          onPointerDown={notePointerStart}
+          onPointerUp={notePointerEnd}
+          onPointerCancel={() => { pointerStartRef.current = null; }}
+        >
+          <div className="product-gallery-track">
+            {items.map((item, index) => (
+              <button
+                type="button"
+                className="product-gallery-slide"
+                onClick={() => {
+                  if (suppressOpenRef.current) return;
+                  setLightboxIndex(index);
+                }}
+                aria-label={`Open ${item.label} fullscreen`}
+                key={item.src}
+              >
+                <OptimizedImage
+                  src={item.src}
+                  alt={item.label}
+                  className="part-detail-image"
+                  width={1200}
+                  height={900}
+                  loading="eager"
+                  decoding="async"
+                  fetchPriority={index === 0 ? "high" : "auto"}
+                  sizes="(min-width: 1024px) 42vw, 100vw"
+                />
+              </button>
+            ))}
+          </div>
+        </div>
+        <button type="button" className="product-gallery-expand" onClick={() => setLightboxIndex(activeIndex)} aria-label={`Open ${active.label} fullscreen`}>
+          <Expand size={17} /> View full size
+        </button>
+      </div>
       {items.length > 1 && (
         <div className="product-gallery-thumbnails" aria-label="Product images">
           {items.map((item, index) => (
-            <button type="button" className={index === activeIndex ? "active" : ""} onClick={() => setActiveIndex(index)} aria-label={`Show ${item.label}`} aria-current={index === activeIndex ? "true" : undefined} key={item.src}>
-              <OptimizedImage src={item.src} alt="" width={96} height={96} loading="lazy" />
+            <button
+              ref={(node) => { thumbnailRefs.current[index] = node; }}
+              type="button"
+              className={index === activeIndex ? "active" : ""}
+              onClick={() => showImage(index)}
+              aria-label={`Show ${item.label}`}
+              aria-current={index === activeIndex ? "true" : undefined}
+              key={item.src}
+            >
+              <OptimizedImage src={item.src} alt="" width={160} height={120} loading="eager" decoding="async" sizes="72px" />
             </button>
           ))}
         </div>
