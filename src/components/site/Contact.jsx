@@ -82,9 +82,9 @@ export function Contact({ sectionId = "contact", showHeading = true, requireRati
               {section.eyebrow || "Get in touch"}
             </span>
             <h2 className="mt-4 font-display text-3xl font-bold sm:text-4xl md:text-5xl">
-              {section.title || "Book a repair in"} <span className="text-gradient">{section.highlight || "60 seconds"}</span>
-            </h2>
-            <p className="mt-4 text-muted-foreground">{section.description || "Tell us what you need and our team will help."}</p>
+              {section.title || "Help Us"} <span className="text-gradient">{section.highlight || "Improve"}</span>
+            </h2> 
+            <p className="mt-4 text-muted-foreground">{section.description || "Your feedback helps us build a better experience for you."}</p>
           </div>
         ) : null}
 
@@ -126,7 +126,7 @@ export function Contact({ sectionId = "contact", showHeading = true, requireRati
                 className="mt-6 inline-flex w-full min-w-0 items-center justify-center gap-2 rounded-xl bg-gradient-primary px-6 py-3.5 text-sm font-semibold text-primary-foreground shadow-glow transition-transform duration-300 hover:scale-[1.02]"
               >
                 <Send className="h-4 w-4" />
-                <span className="min-w-0 break-words">{section.submitLabel || "Send Request"}</span>
+                <span className="min-w-0 break-words">Send</span>
               </button>
               {status && <p className="mt-4 text-center text-sm text-muted-foreground">{status}</p>}
             </form>
