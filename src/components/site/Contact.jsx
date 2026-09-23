@@ -79,12 +79,12 @@ export function Contact({ sectionId = "contact", showHeading = true, requireRati
         {showHeading ? (
           <div className="mx-auto max-w-2xl text-center">
             <span className="inline-flex rounded-full glass px-4 py-1.5 text-xs font-medium text-accent">
-              {section.eyebrow || "Get in touch"}
+              {"Your Feedback"}
             </span>
             <h2 className="mt-4 font-display text-3xl font-bold sm:text-4xl md:text-5xl">
-              {section.title || "Help Us"} <span className="text-gradient">{section.highlight || "Improve"}</span>
+              {"Help Us"} <span className="text-gradient">{"Improve"}</span>
             </h2> 
-            <p className="mt-4 text-muted-foreground">{section.description || "Your feedback helps us build a better experience for you."}</p>
+            <p className="mt-4 text-muted-foreground">{"Your feedback helps us build a better experience for you."}</p>
           </div>
         ) : null}
 
