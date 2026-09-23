@@ -127,7 +127,7 @@ export function Footer() {
                 {brandFirst || "Prakash"}<span className="text-gradient"> {brandRest.join(" ") || "Electronics"}</span>
               </span>
             </div>
-            <p className="mt-4 text-sm text-muted-foreground">{footer.description}</p>
+            <p className="mt-4 text-sm text-muted-foreground">Prakash Electronics offers reliable electrical and electronic products, essential home solutions, and professional repair services—all in one place.</p>
           </div>
 
           <FooterCol title="Quick Links" items={footer.quickLinks || []} routeLinks />
