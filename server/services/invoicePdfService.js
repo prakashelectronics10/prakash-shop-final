@@ -6,7 +6,7 @@ const PAGE_HEIGHT = 841.89;
 const MARGIN = 40;
 const CONTENT_WIDTH = PAGE_WIDTH - MARGIN * 2;
 const LOGO_SIZE = 44;
-const ITEMS_PER_PAGE = 12;
+const ITEMS_PER_PAGE = 8;
 
 /* Approximate Helvetica glyph widths (1000 units = 1em) for right-align. */
 const HELVETICA_WIDTHS = {
@@ -162,6 +162,40 @@ function clipTextToWidth(value, maxWidth, size = 10, bold = false) {
   return `${clipped}...`;
 }
 
+function wrapTextToLines(value, maxWidth, size = 10, bold = false, maxLines = 2) {
+  const words = String(value || "").replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
+  if (!words.length) return [];
+  const lines = [];
+  let current = "";
+  for (const word of words) {
+    const candidate = current ? `${current} ${word}` : word;
+    if (measureText(candidate, size, bold) <= maxWidth) {
+      current = candidate;
+      continue;
+    }
+    if (current) lines.push(current);
+    current = measureText(word, size, bold) <= maxWidth ? word : clipTextToWidth(word, maxWidth, size, bold);
+    if (lines.length === maxLines - 1) break;
+  }
+  if (current && lines.length < maxLines) lines.push(current);
+  const source = words.join(" ");
+  const rendered = lines.join(" ").replace(/\.\.\.$/, "");
+  if (rendered.length < source.length && lines.length) {
+    lines[lines.length - 1] = clipTextToWidth(`${lines[lines.length - 1]}...`, maxWidth, size, bold);
+  }
+  return lines.slice(0, maxLines);
+}
+
+function invoiceStatus(invoice) {
+  const status = String(invoice.paymentStatus || "pending").toLowerCase();
+  if (status === "paid") return "PAID";
+  const dueDate = invoice.dueDate ? new Date(invoice.dueDate) : null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  if (dueDate && !Number.isNaN(dueDate.getTime()) && dueDate < today) return "OVERDUE";
+  return status.toUpperCase();
+}
+
 function chunkItems(items = [], size = ITEMS_PER_PAGE) {
   const chunks = [];
   for (let index = 0; index < items.length; index += size) {
@@ -176,7 +210,7 @@ function chunkItems(items = [], size = ITEMS_PER_PAGE) {
  */
 function resolvePalette(invoice) {
   const theme = invoice.theme || {};
-  const template = invoice.template || "modern-blue";
+  const template = invoice.template || "minimal";
   const primary = hexToRgb01(theme.primaryColor, "#2563eb");
   const accent = hexToRgb01(theme.accentColor, "#38bdf8");
   const header = hexToRgb01(theme.headerColor, "#020617");
@@ -225,7 +259,7 @@ const COL = {
   qtyRight: MARGIN + 268,
   priceRight: MARGIN + 348,
   discountRight: MARGIN + 418,
-  taxRight: MARGIN + 458,
+  taxRight: MARGIN + 446,
   totalRight: PAGE_WIDTH - MARGIN - 8,
   itemMaxWidth: 200,
 };
@@ -251,32 +285,32 @@ function pageContent(invoice, pageItems, pageIndex, pageCount, assets = {}) {
     darkHeader,
   } = palette;
   const commands = [];
-  const status = String(invoice.paymentStatus || "pending").toUpperCase();
+  const status = invoiceStatus(invoice);
 
   commands.push(rectCommand(0, 0, PAGE_WIDTH, PAGE_HEIGHT, background));
 
   if (template === "minimal") {
     commands.push(rectCommand(0, PAGE_HEIGHT - 8, PAGE_WIDTH, 8, primary));
-    commands.push(lineCommand(MARGIN, PAGE_HEIGHT - 108, PAGE_WIDTH - MARGIN, PAGE_HEIGHT - 108, primary, 1.4));
+    commands.push(lineCommand(MARGIN, PAGE_HEIGHT - 128, PAGE_WIDTH - MARGIN, PAGE_HEIGHT - 128, primary, 1.4));
   } else if (template === "corporate") {
-    commands.push(rectCommand(0, PAGE_HEIGHT - 108, PAGE_WIDTH, 108, header));
-    commands.push(rectCommand(0, PAGE_HEIGHT - 112, PAGE_WIDTH, 4, primary));
+    commands.push(rectCommand(0, PAGE_HEIGHT - 124, PAGE_WIDTH, 124, header));
+    commands.push(rectCommand(0, PAGE_HEIGHT - 128, PAGE_WIDTH, 4, primary));
     commands.push(rectCommand(0, 0, 8, PAGE_HEIGHT, primary));
   } else if (template === "glass") {
-    commands.push(rectCommand(0, PAGE_HEIGHT - 112, PAGE_WIDTH, 112, mixRgb(header, white, 0.12)));
-    commands.push(rectCommand(MARGIN, PAGE_HEIGHT - 104, CONTENT_WIDTH, 88, mixRgb(header, white, darkHeader ? 0.08 : 0.82)));
-    commands.push(strokeRectCommand(MARGIN, PAGE_HEIGHT - 104, CONTENT_WIDTH, 88, mixRgb(primary, white, 0.35), 1));
-    commands.push(rectCommand(MARGIN, PAGE_HEIGHT - 108, CONTENT_WIDTH, 4, accent));
+    commands.push(rectCommand(0, PAGE_HEIGHT - 128, PAGE_WIDTH, 128, mixRgb(header, white, 0.12)));
+    commands.push(rectCommand(MARGIN, PAGE_HEIGHT - 120, CONTENT_WIDTH, 104, mixRgb(header, white, darkHeader ? 0.08 : 0.82)));
+    commands.push(strokeRectCommand(MARGIN, PAGE_HEIGHT - 120, CONTENT_WIDTH, 104, mixRgb(primary, white, 0.35), 1));
+    commands.push(rectCommand(MARGIN, PAGE_HEIGHT - 124, CONTENT_WIDTH, 4, accent));
   } else if (template === "dark") {
-    commands.push(rectCommand(0, PAGE_HEIGHT - 108, PAGE_WIDTH, 108, header));
-    commands.push(rectCommand(0, PAGE_HEIGHT - 112, PAGE_WIDTH, 4, accent));
+    commands.push(rectCommand(0, PAGE_HEIGHT - 124, PAGE_WIDTH, 124, header));
+    commands.push(rectCommand(0, PAGE_HEIGHT - 128, PAGE_WIDTH, 4, accent));
   } else {
     /* modern-blue and default */
-    commands.push(rectCommand(0, PAGE_HEIGHT - 108, PAGE_WIDTH, 108, header));
-    commands.push(rectCommand(0, PAGE_HEIGHT - 112, PAGE_WIDTH, 4, primary));
+    commands.push(rectCommand(0, PAGE_HEIGHT - 124, PAGE_WIDTH, 124, header));
+    commands.push(rectCommand(0, PAGE_HEIGHT - 128, PAGE_WIDTH, 4, primary));
   }
 
-  const brandY = template === "glass" ? PAGE_HEIGHT - 78 : PAGE_HEIGHT - 72;
+  const brandY = template === "glass" ? PAGE_HEIGHT - 76 : PAGE_HEIGHT - 68;
   const brandTextX = assets.logoName ? MARGIN + LOGO_SIZE + 16 : MARGIN + (template === "glass" ? 14 : 0);
   const brandMax = template === "glass" ? 250 : 280;
 
@@ -289,6 +323,7 @@ function pageContent(invoice, pageItems, pageIndex, pageCount, assets = {}) {
     const logoX = template === "glass" ? MARGIN + 12 : MARGIN;
     const logoY = brandY - LOGO_SIZE + 18;
     commands.push(rectCommand(logoX, logoY, LOGO_SIZE, LOGO_SIZE, white));
+    commands.push(strokeRectCommand(logoX, logoY, LOGO_SIZE, LOGO_SIZE, border, 0.7));
     commands.push(textCommand(logoX + LOGO_SIZE / 2, logoY + 15, "PE", {
       size: 13,
       bold: true,
@@ -297,46 +332,52 @@ function pageContent(invoice, pageItems, pageIndex, pageCount, assets = {}) {
     }));
   }
 
+  const brandColor = template === "minimal" ? text : headerText;
+  const brandMuted = template === "minimal" ? muted : headerMuted;
   const brandName = clipTextToWidth(invoice.business?.name || "Business", brandMax, 15, true);
-  commands.push(textCommand(brandTextX, brandY + 8, brandName, { size: 15, bold: true, color: headerText }));
-  commands.push(textCommand(
-    brandTextX,
-    brandY - 10,
-    clipTextToWidth(invoice.business?.address || "", brandMax + 20, 8.2),
-    { size: 8.2, color: headerMuted },
-  ));
+  commands.push(textCommand(brandTextX, brandY + 8, brandName, { size: 15, bold: true, color: brandColor }));
+  const addressLines = wrapTextToLines(invoice.business?.address || "", brandMax + 20, 8.2, false, 2);
+  addressLines.forEach((value, index) => {
+    commands.push(textCommand(brandTextX, brandY - 9 - index * 11, value, { size: 8.2, color: brandMuted }));
+  });
   const contactLine = [invoice.business?.contactNumber, invoice.business?.email].filter(Boolean).join("  |  ");
   if (contactLine) {
     commands.push(textCommand(
       brandTextX,
-      brandY - 24,
+      brandY - 34,
       clipTextToWidth(contactLine, brandMax + 20, 8.2),
-      { size: 8.2, color: headerMuted },
+      { size: 8.2, color: brandMuted },
     ));
+  }
+  if (invoice.business?.websiteUrl) {
+    commands.push(textCommand(brandTextX, brandY - 46, clipTextToWidth(invoice.business.websiteUrl, brandMax + 20, 7.8), {
+      size: 7.8,
+      color: brandMuted,
+    }));
   }
 
   const rightX = PAGE_WIDTH - MARGIN - (template === "glass" ? 14 : 0);
   commands.push(textCommand(rightX, brandY + 10, "INVOICE", {
     size: 20,
     bold: true,
-    color: headerText,
+    color: brandColor,
     align: "right",
   }));
   commands.push(textCommand(rightX, brandY - 8, invoice.invoiceNumber || "", {
     size: 10,
     bold: true,
-    color: headerMuted,
+    color: brandMuted,
     align: "right",
   }));
   commands.push(textCommand(rightX, brandY - 24, `Status: ${status}`, {
     size: 8.5,
-    color: headerMuted,
+    color: brandMuted,
     align: "right",
   }));
 
   /* Bill To + Invoice meta cards */
-  let y = PAGE_HEIGHT - 148;
-  const cardHeight = 78;
+  let y = PAGE_HEIGHT - 150;
+  const cardHeight = 104;
   const cardGap = 12;
   const cardWidth = (CONTENT_WIDTH - cardGap) / 2;
 
@@ -351,13 +392,13 @@ function pageContent(invoice, pageItems, pageIndex, pageCount, assets = {}) {
     bold: true,
     color: text,
   }));
-  commands.push(textCommand(MARGIN + 12, y - 50, clipTextToWidth(invoice.customer?.address || "", cardWidth - 24, 8.2), {
-    size: 8.2,
-    color: muted,
-  }));
+  const customerAddressLines = wrapTextToLines(invoice.customer?.address || "", cardWidth - 24, 8.2, false, 2);
+  customerAddressLines.forEach((value, index) => {
+    commands.push(textCommand(MARGIN + 12, y - 50 - index * 12, value, { size: 8.2, color: muted }));
+  });
   const customerContact = [invoice.customer?.phone, invoice.customer?.email].filter(Boolean).join("  |  ");
   if (customerContact) {
-    commands.push(textCommand(MARGIN + 12, y - 64, clipTextToWidth(customerContact, cardWidth - 24, 8.2), {
+    commands.push(textCommand(MARGIN + 12, y - 78, clipTextToWidth(customerContact, cardWidth - 24, 8.2), {
       size: 8.2,
       color: muted,
     }));
@@ -372,7 +413,7 @@ function pageContent(invoice, pageItems, pageIndex, pageCount, assets = {}) {
   if (invoice.business?.gstNumber) metaRows.push(["GSTIN", invoice.business.gstNumber]);
   if (invoice.customer?.customerId) metaRows.push(["Customer ID", invoice.customer.customerId]);
   metaRows.slice(0, 4).forEach((row, index) => {
-    const rowY = y - 34 - index * 14;
+    const rowY = y - 34 - index * 17;
     commands.push(textCommand(metaX, rowY, row[0], { size: 8.2, color: muted }));
     commands.push(textCommand(MARGIN + CONTENT_WIDTH - 12, rowY, clipText(row[1], 28), {
       size: 8.5,
@@ -386,8 +427,7 @@ function pageContent(invoice, pageItems, pageIndex, pageCount, assets = {}) {
   y -= cardHeight + 22;
   const tableTop = y;
   const headerH = 26;
-  const rowH = 28;
-  const tableBottomPad = pageIndex === pageCount - 1 ? 168 : 70;
+  const rowH = 32;
   const tableWidth = CONTENT_WIDTH;
 
   commands.push(rectCommand(MARGIN, tableTop - headerH, tableWidth, headerH, tableHead));
@@ -407,25 +447,23 @@ function pageContent(invoice, pageItems, pageIndex, pageCount, assets = {}) {
     }
     commands.push(lineCommand(MARGIN, y - rowH, PAGE_WIDTH - MARGIN, y - rowH, line, 0.4));
 
-    const textY = y - 18;
+    const textY = y - 20;
     commands.push(textCommand(COL.indexLeft, textY, String(absoluteIndex), { size: 8.5, color: muted }));
-    commands.push(textCommand(
-      COL.itemLeft,
-      textY,
-      clipTextToWidth(item.name || `Item ${absoluteIndex}`, COL.itemMaxWidth, 9, true),
-      { size: 9, bold: true, color: text },
-    ));
+    const itemLines = wrapTextToLines(item.name || `Item ${absoluteIndex}`, COL.itemMaxWidth, 8.5, true, 2);
+    itemLines.forEach((value, lineIndex) => {
+      commands.push(textCommand(COL.itemLeft, textY - lineIndex * 10, value, { size: 8.5, bold: true, color: text }));
+    });
     commands.push(textCommand(COL.qtyRight, textY, String(item.quantity ?? 0), {
       size: 8.5,
       color: text,
       align: "right",
     }));
-    commands.push(textCommand(COL.priceRight, textY, money(item.unitPrice), {
+    commands.push(textCommand(COL.priceRight, textY, clipTextToWidth(money(item.unitPrice), 74, 8.2), {
       size: 8.5,
       color: text,
       align: "right",
     }));
-    commands.push(textCommand(COL.discountRight, textY, money(item.discount), {
+    commands.push(textCommand(COL.discountRight, textY, clipTextToWidth(money(item.discount), 64, 8.2), {
       size: 8.5,
       color: text,
       align: "right",
@@ -435,7 +473,7 @@ function pageContent(invoice, pageItems, pageIndex, pageCount, assets = {}) {
       color: text,
       align: "right",
     }));
-    commands.push(textCommand(COL.totalRight, textY, money(item.totalPrice), {
+    commands.push(textCommand(COL.totalRight, textY, clipTextToWidth(money(item.totalPrice), 88, 8.2, true), {
       size: 8.5,
       bold: true,
       color: text,
@@ -449,7 +487,7 @@ function pageContent(invoice, pageItems, pageIndex, pageCount, assets = {}) {
   if (pageIndex === pageCount - 1) {
     const totalsWidth = 220;
     const totalsX = PAGE_WIDTH - MARGIN - totalsWidth;
-    const totalsTop = Math.min(y - 16, tableBottomPad + 110);
+    const totalsTop = Math.min(y - 18, 300);
     const rowGap = 20;
     let ty = totalsTop;
 
@@ -487,17 +525,15 @@ function pageContent(invoice, pageItems, pageIndex, pageCount, assets = {}) {
     }));
 
     /* Notes + signature */
-    const notesY = 118;
+    const notesY = 130;
     commands.push(textCommand(MARGIN, notesY + 28, "Notes", { size: 8, bold: true, color: primary }));
-    commands.push(textCommand(
-      MARGIN,
-      notesY + 12,
-      clipTextToWidth(invoice.notes || "Thank you for your business.", 320, 8.5),
-      { size: 8.5, color: muted },
-    ));
+    const noteLines = wrapTextToLines(invoice.notes || "Thank you for your business.", 300, 8.5, false, 3);
+    noteLines.forEach((value, index) => {
+      commands.push(textCommand(MARGIN, notesY + 12 - index * 12, value, { size: 8.5, color: muted }));
+    });
 
     commands.push(lineCommand(PAGE_WIDTH - MARGIN - 170, notesY + 18, PAGE_WIDTH - MARGIN, notesY + 18, muted, 0.9));
-    commands.push(textCommand(PAGE_WIDTH - MARGIN - 85, notesY, invoice.signatureLabel || "Authorised Signature", {
+    commands.push(textCommand(PAGE_WIDTH - MARGIN - 85, notesY, clipTextToWidth(invoice.signatureLabel || "Authorised Signature", 160, 8), {
       size: 8,
       color: muted,
       align: "center",
@@ -530,14 +566,22 @@ function pageContent(invoice, pageItems, pageIndex, pageCount, assets = {}) {
 
 async function loadLogoImage(url) {
   const logoUrl = String(url || "").trim();
-  if (!/^https?:\/\//i.test(logoUrl)) return null;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8000);
+  const dataImage = logoUrl.match(/^data:image\/(?:png|jpe?g|webp);base64,([A-Za-z0-9+/=]+)$/i);
+  if (!dataImage && !/^https?:\/\//i.test(logoUrl)) return null;
+  const controller = dataImage ? null : new AbortController();
+  const timeout = controller ? setTimeout(() => controller.abort(), 8000) : null;
 
   try {
-    const response = await fetch(logoUrl, { signal: controller.signal });
-    if (!response.ok) return null;
-    const input = Buffer.from(await response.arrayBuffer());
+    let input;
+    if (dataImage) {
+      input = Buffer.from(dataImage[1], "base64");
+      if (!input.length || input.length > 5 * 1024 * 1024) return null;
+    } else {
+      const response = await fetch(logoUrl, { signal: controller.signal });
+      if (!response.ok) return null;
+      input = Buffer.from(await response.arrayBuffer());
+      if (!input.length || input.length > 5 * 1024 * 1024) return null;
+    }
     const converted = await sharp(input)
       .rotate()
       .resize(160, 160, { fit: "contain", background: "#ffffff" })
@@ -553,7 +597,7 @@ async function loadLogoImage(url) {
   } catch (_error) {
     return null;
   } finally {
-    clearTimeout(timeout);
+    if (timeout) clearTimeout(timeout);
   }
 }
 

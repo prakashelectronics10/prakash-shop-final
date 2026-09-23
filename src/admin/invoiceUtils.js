@@ -57,7 +57,20 @@ export const invoiceThemePresets = [
 export function todayInputDate(offsetDays = 0) {
   const date = new Date();
   date.setDate(date.getDate() + offsetDays);
-  return date.toISOString().slice(0, 10);
+  return toInputDate(date);
+}
+
+function toInputDate(value) {
+  if (typeof value === "string") {
+    const dateOnly = value.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (dateOnly) return dateOnly[1];
+  }
+  const date = value ? new Date(value) : null;
+  if (!date || Number.isNaN(date.getTime())) return "";
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 export function defaultInvoiceForm(invoiceNumber = "Auto generated") {
@@ -85,7 +98,7 @@ export function defaultInvoiceForm(invoiceNumber = "Auto generated") {
       customerId: "",
     },
     items: [emptyInvoiceItem()],
-    template: "modern-blue",
+    template: "minimal",
     theme: { ...preset },
     notes: "Thank you for your business.",
     signatureLabel: "Authorised Signature",
@@ -158,7 +171,9 @@ export function displayInvoiceStatus(invoice) {
   const status = invoice?.status || invoice?.paymentStatus || "pending";
   if (status === "paid") return "paid";
   const dueDate = invoice?.dueDate ? new Date(invoice.dueDate) : null;
-  if (dueDate && !Number.isNaN(dueDate.getTime()) && dueDate < new Date()) return "overdue";
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  if (dueDate && !Number.isNaN(dueDate.getTime()) && dueDate < today) return "overdue";
   return status;
 }
 
@@ -168,8 +183,8 @@ export function invoiceToForm(invoice) {
   return {
     ...form,
     ...invoice,
-    invoiceDate: invoice.invoiceDate ? new Date(invoice.invoiceDate).toISOString().slice(0, 10) : form.invoiceDate,
-    dueDate: invoice.dueDate ? new Date(invoice.dueDate).toISOString().slice(0, 10) : form.dueDate,
+    invoiceDate: toInputDate(invoice.invoiceDate) || form.invoiceDate,
+    dueDate: toInputDate(invoice.dueDate) || form.dueDate,
     business: { ...form.business, ...(invoice.business || {}) },
     customer: { ...form.customer, ...(invoice.customer || {}) },
     theme: { ...form.theme, ...(invoice.theme || {}) },
@@ -204,7 +219,7 @@ export function formToInvoicePayload(form) {
 export function invoicePrintHtml(invoice) {
   const totals = invoice.totals || calculateInvoiceTotals(invoice.items);
   const theme = invoice.theme || invoiceThemePresets[0];
-  const template = invoice.template || "modern-blue";
+  const template = invoice.template || "minimal";
   const primary = theme.primaryColor || "#2563eb";
   const accent = theme.accentColor || "#38bdf8";
   const header = theme.headerColor || "#020617";
@@ -215,7 +230,7 @@ export function invoicePrintHtml(invoice) {
       (item, index) => `
         <tr>
           <td class="num">${index + 1}</td>
-          <td>${escapeHtml(item.name)}</td>
+          <td class="description">${escapeHtml(item.name)}</td>
           <td class="right">${item.quantity}</td>
           <td class="right">${formatCurrency(item.unitPrice)}</td>
           <td class="right">${formatCurrency(item.discount)}</td>
@@ -249,7 +264,7 @@ export function invoicePrintHtml(invoice) {
           margin: 24px auto;
           padding: 0 0 28px;
           background: var(--bg);
-          min-height: 100vh;
+          min-height: 1080px;
           overflow: hidden;
           box-shadow: 0 18px 50px rgba(15, 23, 42, 0.12);
         }
@@ -278,7 +293,7 @@ export function invoicePrintHtml(invoice) {
         }
         .page.corporate .topbar { border-left: 8px solid var(--primary); }
         .brand { display: flex; gap: 14px; align-items: flex-start; min-width: 0; }
-        .logo { width: 56px; height: 56px; border-radius: 12px; object-fit: cover; background: #fff; flex: 0 0 auto; }
+        .logo { width: 56px; height: 56px; border-radius: 10px; object-fit: contain; background: #fff; flex: 0 0 auto; border: 1px solid #e2e8f0; }
         .logo-fallback {
           width: 56px; height: 56px; border-radius: 12px; background: #fff; color: var(--primary);
           display: grid; place-items: center; font-weight: 800; flex: 0 0 auto;
@@ -287,6 +302,8 @@ export function invoicePrintHtml(invoice) {
         h1 { font-size: 28px; letter-spacing: 0.04em; text-align: right; }
         .title-block { text-align: right; }
         .title-block p { margin-top: 6px; font-size: 13px; }
+        .brand-copy { min-width: 0; max-width: 480px; }
+        .brand-copy p, .panel p, .note-copy { overflow-wrap: anywhere; }
         .muted { color: rgba(255,255,255,0.78); font-size: 12px; line-height: 1.45; }
         .page.minimal .muted { color: #64748b; }
         .content { padding: 0 32px; }
@@ -308,7 +325,7 @@ export function invoicePrintHtml(invoice) {
         .meta-row { display: flex; justify-content: space-between; gap: 12px; margin-top: 8px; font-size: 13px; }
         .meta-row span { color: #64748b; }
         .page.dark .meta-row span { color: #94a3b8; }
-        table { width: 100%; border-collapse: collapse; margin-top: 8px; border: 1px solid color-mix(in srgb, var(--primary) 20%, #cbd5e1); }
+        table { width: 100%; table-layout: fixed; border-collapse: collapse; margin-top: 8px; border: 1px solid color-mix(in srgb, var(--primary) 20%, #cbd5e1); }
         th {
           color: #475569;
           background: color-mix(in srgb, var(--primary) 12%, #f8fafc);
@@ -318,7 +335,14 @@ export function invoicePrintHtml(invoice) {
           letter-spacing: 0.04em;
         }
         .page.dark th { color: #cbd5e1; background: color-mix(in srgb, var(--primary) 28%, #0f172a); }
-        th, td { padding: 11px 10px; border-bottom: 1px solid color-mix(in srgb, var(--primary) 14%, #e2e8f0); font-size: 13px; vertical-align: top; }
+        th, td { padding: 11px 9px; border-bottom: 1px solid color-mix(in srgb, var(--primary) 14%, #e2e8f0); font-size: 12px; vertical-align: top; }
+        th:nth-child(1) { width: 38px; }
+        th:nth-child(3) { width: 50px; }
+        th:nth-child(4) { width: 92px; }
+        th:nth-child(5) { width: 78px; }
+        th:nth-child(6) { width: 54px; }
+        th:nth-child(7) { width: 96px; }
+        td.description { overflow-wrap: anywhere; }
         th.right, td.right { text-align: right; white-space: nowrap; }
         th.num, td.num { width: 36px; text-align: left; color: #64748b; }
         td.amount { font-weight: 700; }
@@ -334,7 +358,7 @@ export function invoicePrintHtml(invoice) {
         .total-row { display: flex; justify-content: space-between; gap: 16px; padding: 11px 14px; border-bottom: 1px solid color-mix(in srgb, var(--primary) 12%, #e2e8f0); font-size: 13px; }
         .total-row strong { white-space: nowrap; text-align: right; }
         .grand { background: var(--primary); color: #fff; font-weight: 800; font-size: 15px; border-bottom: 0; }
-        .footer { display: flex; justify-content: space-between; gap: 28px; margin-top: 48px; align-items: flex-end; }
+        .footer { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 36px; margin-top: 48px; align-items: end; break-inside: avoid; }
         .footer .note-label { color: var(--primary); font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 6px; }
         .signature { width: 220px; text-align: center; border-top: 1px solid #94a3b8; padding-top: 10px; font-size: 12px; color: #64748b; }
         .page-foot {
@@ -348,9 +372,20 @@ export function invoicePrintHtml(invoice) {
         }
         .accent-bar { height: 6px; background: var(--accent); margin-top: 24px; }
         .page.minimal .accent-bar { background: var(--primary); height: 4px; }
+        @page { size: A4; margin: 0; }
         @media print {
           body { background: white; }
-          .page { margin: 0; box-shadow: none; max-width: none; }
+          .page { margin: 0; box-shadow: none; max-width: none; min-height: 100vh; }
+          thead { display: table-header-group; }
+          tr, .panel, .totals, .footer { break-inside: avoid; page-break-inside: avoid; }
+        }
+        @media (max-width: 700px) {
+          .page { margin: 0; }
+          .topbar, .grid, .footer { grid-template-columns: 1fr; }
+          .topbar { display: grid; }
+          .title-block, h1 { text-align: left; }
+          .grid { display: grid; }
+          .content { padding: 0 18px; overflow-x: auto; }
         }
       </style>
     </head>
@@ -361,10 +396,11 @@ export function invoicePrintHtml(invoice) {
             ${invoice.business?.logoUrl
               ? `<img class="logo" src="${escapeHtml(invoice.business.logoUrl)}" alt="" />`
               : `<div class="logo-fallback">PE</div>`}
-            <div>
+            <div class="brand-copy">
               <h2>${escapeHtml(invoice.business?.name || "")}</h2>
               <p class="muted">${escapeHtml(invoice.business?.address || "")}</p>
               <p class="muted">${escapeHtml([invoice.business?.contactNumber, invoice.business?.email].filter(Boolean).join("  |  "))}</p>
+              ${invoice.business?.websiteUrl ? `<p class="muted">${escapeHtml(invoice.business.websiteUrl)}</p>` : ""}
             </div>
           </div>
           <div class="title-block">
@@ -380,6 +416,7 @@ export function invoicePrintHtml(invoice) {
               <p><strong>${escapeHtml(invoice.customer?.name || "")}</strong></p>
               <p>${escapeHtml(invoice.customer?.address || "")}</p>
               <p>${escapeHtml([invoice.customer?.phone, invoice.customer?.email].filter(Boolean).join("  |  "))}</p>
+              ${invoice.customer?.customerId ? `<p>Customer ID: ${escapeHtml(invoice.customer.customerId)}</p>` : ""}
             </div>
             <div class="panel">
               <h3>Invoice Details</h3>
@@ -412,7 +449,7 @@ export function invoicePrintHtml(invoice) {
           <section class="footer">
             <div>
               <div class="note-label">Notes</div>
-              <p class="muted" style="color:#64748b">${escapeHtml(invoice.notes || "Thank you for your business.")}</p>
+              <p class="muted note-copy" style="color:#64748b">${escapeHtml(invoice.notes || "Thank you for your business.")}</p>
             </div>
             <p class="signature">${escapeHtml(invoice.signatureLabel || "Authorised Signature")}</p>
           </section>

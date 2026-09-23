@@ -7,6 +7,8 @@ const slugify = require("../utils/slugify");
 const { availableStockQuantity, normalizeStockQuantity } = require("../utils/inventory");
 const { applyPricingFields } = require("../utils/productPricing");
 const { collectPublicIdsFromSources, deleteImagesStrict } = require("../services/cloudinaryService");
+const { enqueueProductDelete, enqueueProductSync } = require("../services/metaCatalogService");
+const { logger } = require("../utils/logger");
 
 const SCIENCE_PROJECTS_CATEGORY = "Wiring Accessories";
 const LEGACY_SCIENCE_PROJECTS_CATEGORY = "Science Projects and Parts";
@@ -499,6 +501,9 @@ exports.createShopProduct = catchAsync(async (req, res) => {
     specifications: req.body.specifications || [],
   });
   await normalizeShopDisplayOrders(product);
+  await enqueueProductSync("shop-product", product).catch((error) => {
+    logger.error("meta_catalog.enqueue_failed", { sourceType: "shop-product", productId: product.id, error: error.message });
+  });
   res.status(201).json({ success: true, data: product });
 });
 
@@ -515,7 +520,7 @@ exports.updateShopProduct = catchAsync(async (req, res) => {
     gtin,
     ...pricing,
     slug: req.body.slug || slugify(req.body.name),
-    sku: String(req.body.sku || existing.sku || `PE-${String(existing._id).slice(-10)}`).trim().toUpperCase(),
+    sku: String(existing.sku || req.body.sku || `PE-${String(existing._id).slice(-10)}`).trim().toUpperCase(),
     category: req.body.category || "Electronics",
     quantity: normalizeStockQuantity(req.body.quantity, 1),
     tags: req.body.tags || [],
@@ -532,6 +537,9 @@ exports.updateShopProduct = catchAsync(async (req, res) => {
   const nextIds = new Set(collectPublicIdsFromSources(product.imagePublicId, product.imageUrl, product.images));
   await deleteCloudinaryImages(collectPublicIdsFromSources(existing.imagePublicId, existing.imageUrl, existing.images).filter((id) => !nextIds.has(id)));
   await normalizeShopDisplayOrders(product);
+  await enqueueProductSync("shop-product", product).catch((error) => {
+    logger.error("meta_catalog.enqueue_failed", { sourceType: "shop-product", productId: product.id, error: error.message });
+  });
   res.json({ success: true, data: product });
 });
 
@@ -539,6 +547,7 @@ exports.deleteShopProduct = catchAsync(async (req, res) => {
   const product = await ShopProduct.findById(req.params.id);
   if (!product) throw new AppError("Shop product not found", 404);
 
+  await enqueueProductDelete("shop-product", product);
   await product.deleteOne();
   await deleteCloudinaryImages(collectPublicIdsFromSources(product.imagePublicId, product.imageUrl, product.images));
   res.json({ success: true, message: "Shop product deleted successfully" });

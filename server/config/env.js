@@ -100,6 +100,15 @@ const env = {
     clientEmail: process.env.FIREBASE_CLIENT_EMAIL || "",
     privateKey: (process.env.FIREBASE_PRIVATE_KEY || "").replace(/\\n/g, "\n"),
   },
+  metaCatalog: {
+    graphApiVersion: process.env.META_GRAPH_API_VERSION || "v26.0",
+    catalogId: process.env.META_CATALOG_ID || "",
+    accessToken: process.env.META_ACCESS_TOKEN || "",
+    requestTimeoutMs: number(process.env.META_REQUEST_TIMEOUT_MS, 15000),
+    workerIntervalMs: number(process.env.META_SYNC_WORKER_INTERVAL_MS, 15000),
+    maxAttempts: number(process.env.META_SYNC_MAX_ATTEMPTS, 5),
+    concurrency: Math.max(1, Math.min(5, number(process.env.META_SYNC_CONCURRENCY, 2))),
+  },
 };
 
 module.exports = env;

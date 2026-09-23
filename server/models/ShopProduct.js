@@ -11,7 +11,7 @@ const shopProductSchema = new mongoose.Schema(
     mrp: { type: Number, default: null, min: 0 },
     discountPercent: { type: Number, default: null, min: 0, max: 100 },
     price: { type: Number, default: null },
-    quantity: { type: Number, default: 1, min: 1, max: 9999 },
+    quantity: { type: Number, default: 1, min: 0, max: 9999 },
     availability: { type: String, default: "In Stock", enum: ["In Stock", "Low Stock", "Out of Stock", "Not Available"] },
     imageUrl: { type: String, default: "" },
     imagePublicId: { type: String, default: "" },
@@ -62,6 +62,18 @@ const shopProductSchema = new mongoose.Schema(
     isTopProduct: { type: Boolean, default: false, index: true },
     displayOrder: { type: Number, default: 0, index: true },
     viewCount: { type: Number, default: 0, min: 0, index: true },
+    metaCatalog: {
+      status: {
+        type: String,
+        enum: ["not_synced", "pending", "syncing", "synced", "failed"],
+        default: "not_synced",
+        index: true,
+      },
+      itemId: { type: String, default: "" },
+      lastSyncedAt: { type: Date, default: null },
+      lastAttemptAt: { type: Date, default: null },
+      error: { type: String, default: "" },
+    },
   },
   { timestamps: true },
 );

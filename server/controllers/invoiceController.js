@@ -41,7 +41,9 @@ function derivedStatus(invoice) {
   const status = invoice.paymentStatus || "pending";
   if (status === "paid") return "paid";
   const dueDate = invoice.dueDate ? new Date(invoice.dueDate) : null;
-  if (dueDate && !Number.isNaN(dueDate.getTime()) && dueDate < new Date()) return "overdue";
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  if (dueDate && !Number.isNaN(dueDate.getTime()) && dueDate < today) return "overdue";
   return status;
 }
 
@@ -87,6 +89,7 @@ function buildInvoicePayload(body, adminId, existing = null) {
   const theme = { ...DEFAULT_THEME, ...cleanObject(existing?.theme), ...cleanObject(body.theme) };
   const invoiceDate = safeDate(body.invoiceDate || existing?.invoiceDate);
   const dueDate = safeDate(body.dueDate || existing?.dueDate, 7);
+  if (dueDate < invoiceDate) throw new AppError("Due date cannot be before invoice date", 400);
   const calculated = calculateInvoiceTotals(normalizeInvoiceItems(body.items || existing?.items));
 
   const publicAccessToken = existing?.publicAccessToken;
@@ -99,10 +102,10 @@ function buildInvoicePayload(body, adminId, existing = null) {
     customer,
     items: calculated.items,
     totals: calculated.totals,
-    template: ALLOWED_TEMPLATES.has(body.template) ? body.template : existing?.template || "modern-blue",
+    template: ALLOWED_TEMPLATES.has(body.template) ? body.template : existing?.template || "minimal",
     theme,
-    notes: body.notes || "",
-    signatureLabel: body.signatureLabel || "Authorised Signature",
+    notes: body.notes ?? existing?.notes ?? "",
+    signatureLabel: body.signatureLabel ?? existing?.signatureLabel ?? "Authorised Signature",
     publicAccessToken,
     pdfUrl: existing?.pdfUrl || publicPdfUrl(publicAccessToken),
     updatedBy: adminId,
@@ -153,8 +156,10 @@ function buildListFilter(query) {
   if (customer) filter["customer.name"] = { $regex: customer.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), $options: "i" };
   if (query.status && query.status !== "all") {
     if (query.status === "overdue") {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
       filter.paymentStatus = { $ne: "paid" };
-      filter.dueDate = { $lt: new Date() };
+      filter.dueDate = { $lt: today };
     } else {
       filter.paymentStatus = query.status;
     }
@@ -189,14 +194,17 @@ const listInvoices = asyncHandler(async (req, res) => {
   const filter = buildListFilter(req.query);
   const skip = (page - 1) * limit;
 
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const activeDueDate = { $or: [{ dueDate: { $gte: today } }, { dueDate: null }] };
   const [items, total, totalInvoices, paidInvoices, pendingInvoices, partialInvoices, overdueInvoices] = await Promise.all([
     Invoice.find(filter).sort(sortSpec(req.query.sort)).skip(skip).limit(limit).lean(),
     Invoice.countDocuments(filter),
     Invoice.countDocuments(),
     Invoice.countDocuments({ paymentStatus: "paid" }),
-    Invoice.countDocuments({ paymentStatus: "pending" }),
-    Invoice.countDocuments({ paymentStatus: "partial" }),
-    Invoice.countDocuments({ paymentStatus: { $ne: "paid" }, dueDate: { $lt: new Date() } }),
+    Invoice.countDocuments({ paymentStatus: "pending", ...activeDueDate }),
+    Invoice.countDocuments({ paymentStatus: "partial", ...activeDueDate }),
+    Invoice.countDocuments({ paymentStatus: { $ne: "paid" }, dueDate: { $lt: today } }),
   ]);
 
   res.json({

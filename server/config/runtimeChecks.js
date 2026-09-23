@@ -35,7 +35,18 @@ function validateRuntimeConfig() {
     });
   }
 
-  return { missing };
+  const metaConfigured = Boolean(
+    env.metaCatalog.catalogId
+    && env.metaCatalog.accessToken
+    && /^v\d+\.\d+$/.test(env.metaCatalog.graphApiVersion),
+  );
+  logger.info("meta_catalog.runtime_config", {
+    configured: metaConfigured,
+    graphApiVersion: env.metaCatalog.graphApiVersion,
+    catalogIdConfigured: Boolean(env.metaCatalog.catalogId),
+  });
+
+  return { missing, metaConfigured };
 }
 
 module.exports = { validateRuntimeConfig };

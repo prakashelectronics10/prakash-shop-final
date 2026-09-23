@@ -16,6 +16,7 @@ import {
   PanelLeftOpen,
   Pencil,
   Plus,
+  RefreshCw,
   Send,
   ShieldCheck,
   Trash2,
@@ -29,7 +30,7 @@ import OrdersModule from "./OrdersModule";
 import "./AdminApp.css";
 
 const API_BASE = process.env.REACT_APP_API_URL || process.env.VITE_API_URL || "/api";
-const MIN_STOCK_QUANTITY = 1;
+const MIN_STOCK_QUANTITY = 0;
 const MAX_STOCK_QUANTITY = 9999;
 const ADMIN_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/avif", "image/gif"]);
 const ADMIN_IMAGE_SIZE_LIMIT = 5 * 1024 * 1024;
@@ -53,6 +54,7 @@ function createEmptyAdminData() {
     projectSliders: [],
     brandsSlider: [],
     autoSlider: { banners: [], products: [] },
+    metaCatalog: null,
     webSettings: null,
     pulseAIInstructions: [],
     pulseAIUnavailableDemandSettings: {
@@ -454,6 +456,7 @@ function App() {
     const canAutoSlider = canAccessSection(currentAdmin, "autoSliderBanners") || canShopProducts;
     const canNotificationEmails = canAccessSection(currentAdmin, "notificationEmails");
     const canPulseAI = canAccessSection(currentAdmin, "pulseAI");
+    const canManageMetaCatalog = Boolean(currentAdmin?.isSuperAdmin);
 
     const requests = [
       { key: "dashboard", label: "dashboard", enabled: true, load: () => apiFetch("/admin/dashboard"), read: (result) => result.data, empty: null },
@@ -474,6 +477,7 @@ function App() {
       { key: "brandsSlider", label: "brand slider", enabled: canBrandsSlider, load: () => apiFetch("/brand-sliders/admin"), read: (result) => result.data || [], empty: [] },
       { key: "webSettings", label: "web settings", enabled: canWebSettings, load: () => apiFetch("/admin/web-settings"), read: (result) => result.data, empty: null },
       { key: "autoSlider", label: "auto slider", enabled: canAutoSlider, load: () => apiFetch("/admin/auto-slider-banners"), read: (result) => result.data || { banners: [], products: [] }, empty: { banners: [], products: [] } },
+      { key: "metaCatalog", label: "Meta Catalog status", enabled: canManageMetaCatalog, load: () => apiFetch("/admin/meta-catalog/status", { cache: "no-store" }), read: (result) => result.data || null, empty: null },
     ];
 
     const results = await Promise.all(requests.map(async (request) => {
@@ -788,10 +792,10 @@ function App() {
           />
         )}
         {active === "projectParts" && (
-          <ProjectPartsManager parts={data.projectParts} runAction={runAction} busy={busy} />
+          <ProjectPartsManager parts={data.projectParts} metaCatalog={data.metaCatalog} runAction={runAction} busy={busy} />
         )}
         {active === "shopProducts" && (
-          <ShopProductsManager products={data.shopProducts} runAction={runAction} busy={busy} />
+          <ShopProductsManager products={data.shopProducts} metaCatalog={data.metaCatalog} runAction={runAction} busy={busy} />
         )}
         {active === "coupons" && (
           <CouponManager coupons={data.coupons} products={data.shopProducts} runAction={runAction} busy={busy} />
@@ -2991,7 +2995,7 @@ function FooterManager({ content, contact, runAction, busy }) {
   );
 }
 
-function ProjectPartsManager({ parts, runAction, busy }) {
+function ProjectPartsManager({ parts, metaCatalog, runAction, busy }) {
   const empty = {
     name: "",
     slug: "",
@@ -3291,6 +3295,7 @@ function ProjectPartsManager({ parts, runAction, busy }) {
 
       <section className="list-panel glass-panel wiring-admin-list">
         <h2>Wiring Accessories</h2>
+        <MetaCatalogControls metaCatalog={metaCatalog} runAction={runAction} busy={busy} />
         {!parts.length && <p className="muted">No wiring products added yet.</p>}
         <BatchToolbar
           total={parts.length}
@@ -3337,6 +3342,7 @@ function ProjectPartsManager({ parts, runAction, busy }) {
                     <Detail label="Price" value={formatAdminPriceDetail(part)} />
                     <Detail label="Quantity" value={part.stock ?? 1} />
                     <Detail label="Top Products" value={part.isTopProduct ? "Yes" : "No"} />
+                    <MetaSyncStatus product={part} sourceType="project-part" runAction={runAction} busy={busy} canManage={Boolean(metaCatalog)} />
                     <p className="muted">{part.shortDescription || part.description || "No description."}</p>
                     <div className="button-row">
                       <button type="button" onClick={() => edit(part)}>Edit</button>
@@ -3542,7 +3548,7 @@ function CouponManager({ coupons = [], products = [], runAction, busy }) {
   );
 }
 
-function ShopProductsManager({ products, runAction, busy }) {
+function ShopProductsManager({ products, metaCatalog, runAction, busy }) {
   const empty = {
     name: "",
     slug: "",
@@ -3842,6 +3848,7 @@ function ShopProductsManager({ products, runAction, busy }) {
 
       <section className="list-panel glass-panel">
         <h2>Shop Products</h2>
+        <MetaCatalogControls metaCatalog={metaCatalog} runAction={runAction} busy={busy} />
         {!products.length && <p className="muted">No shop products added yet.</p>}
         <BatchToolbar
           total={products.length}
@@ -3874,6 +3881,7 @@ function ShopProductsManager({ products, runAction, busy }) {
             <Detail label="Price" value={formatAdminPriceDetail(product)} />
             <Detail label="Quantity" value={product.quantity ?? 1} />
             <Detail label="Top Products" value={product.isTopProduct ? "Yes" : "No"} />
+            <MetaSyncStatus product={product} sourceType="shop-product" runAction={runAction} busy={busy} canManage={Boolean(metaCatalog)} />
             <p className="muted">{product.shortDescription || product.description || "No description."}</p>
             <div className="button-row">
               <button type="button" onClick={() => edit(product)}>Edit</button>
@@ -3882,6 +3890,77 @@ function ShopProductsManager({ products, runAction, busy }) {
           </AccordionCard>
         ))}
       </section>
+    </div>
+  );
+}
+
+function MetaCatalogControls({ metaCatalog, runAction, busy }) {
+  if (!metaCatalog) return null;
+  const jobs = metaCatalog.jobs || {};
+  const test = () => runAction(
+    () => apiFetch("/admin/meta-catalog/test", { method: "POST", body: JSON.stringify({}) }),
+    "Meta Catalog connection successful",
+  );
+  const syncAll = () => runAction(async () => {
+    if (!window.confirm("Queue every shop product and wiring accessory for Meta Catalog sync?")) return false;
+    return apiFetch("/admin/meta-catalog/sync-all", { method: "POST", body: JSON.stringify({}) });
+  }, "All products queued for Meta Catalog sync");
+  const retryFailed = () => runAction(
+    () => apiFetch("/admin/meta-catalog/retry-failed", { method: "POST", body: JSON.stringify({}) }),
+    "Failed Meta Catalog jobs queued again",
+  );
+
+  return (
+    <div className="meta-catalog-toolbar" role="status">
+      <div>
+        <strong>Meta Catalog</strong>
+        <span className={metaCatalog.configured ? "configured" : "not-configured"}>
+          {metaCatalog.configured ? `${metaCatalog.graphApiVersion} configured` : "Setup required"}
+        </span>
+        <small>{jobs.pending || 0} pending · {jobs.failed || 0} failed</small>
+      </div>
+      <div className="button-row">
+        <button type="button" className="ghost-button icon-text" disabled={busy} onClick={test}>
+          <ShieldCheck size={15} /> Test connection
+        </button>
+        <button type="button" className="ghost-button icon-text" disabled={busy} onClick={syncAll}>
+          <RefreshCw size={15} /> Sync all products
+        </button>
+        {(jobs.failed || 0) > 0 && (
+          <button type="button" className="ghost-button icon-text" disabled={busy} onClick={retryFailed}>
+            <RefreshCw size={15} /> Retry failed
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function MetaSyncStatus({ product, sourceType, runAction, busy, canManage }) {
+  const meta = product.metaCatalog || {};
+  const status = meta.status || "not_synced";
+  const labels = {
+    not_synced: "Not synced",
+    pending: "Pending",
+    syncing: "Syncing",
+    synced: "Synced",
+    failed: "Failed",
+  };
+  const retry = () => runAction(
+    () => apiFetch(`/admin/meta-catalog/products/${sourceType}/${product._id || product.id}/sync`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    }),
+    "Meta Catalog sync queued",
+  );
+  return (
+    <div className="meta-sync-row">
+      <span className={`meta-sync-badge ${status}`}>Meta: {labels[status] || status}</span>
+      {meta.lastSyncedAt && <small>Last synced {formatDateTime(meta.lastSyncedAt)}</small>}
+      {status === "failed" && meta.error && <small className="meta-sync-error" title={meta.error}>{meta.error}</small>}
+      {canManage && ["failed", "not_synced"].includes(status) && (
+        <button type="button" className="ghost-button" disabled={busy} onClick={retry}>Retry sync</button>
+      )}
     </div>
   );
 }

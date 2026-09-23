@@ -5,6 +5,8 @@ const catchAsync = require("../utils/asyncHandler");
 const { normalizeStockQuantity } = require("../utils/inventory");
 const { applyPricingFields } = require("../utils/productPricing");
 const { collectPublicIdsFromSources, deleteImagesStrict } = require("../services/cloudinaryService");
+const { enqueueProductDelete, enqueueProductSync } = require("../services/metaCatalogService");
+const { logger } = require("../utils/logger");
 
 function positiveInt(value, fallback) {
   const parsed = Number.parseInt(value, 10);
@@ -233,6 +235,9 @@ exports.createProjectPart = catchAsync(async (req, res) => {
     displayOrder: displayOrder || 0,
   });
   await normalizeDisplayOrders(part);
+  await enqueueProductSync("project-part", part).catch((error) => {
+    logger.error("meta_catalog.enqueue_failed", { sourceType: "project-part", productId: part.id, error: error.message });
+  });
 
   res.status(201).json({
     success: true,
@@ -253,7 +258,7 @@ exports.updateProjectPart = catchAsync(async (req, res) => {
   const updateData = {
     ...req.body,
     gtin,
-    sku: String(req.body.sku || existing.sku || `PE-WA-${String(existing._id).slice(-8)}`).trim().toUpperCase(),
+    sku: String(existing.sku || req.body.sku || `PE-WA-${String(existing._id).slice(-8)}`).trim().toUpperCase(),
     ...pricing,
     stock: normalizeStockQuantity(req.body.stock ?? req.body.quantity, 1),
   };
@@ -278,6 +283,9 @@ exports.updateProjectPart = catchAsync(async (req, res) => {
   const nextIds = new Set(collectPublicIdsFromSources(part.imagePublicId, part.imageUrl, part.images));
   await deleteCloudinaryImages(collectPublicIdsFromSources(existing.imagePublicId, existing.imageUrl, existing.images).filter((imageId) => !nextIds.has(imageId)));
   await normalizeDisplayOrders(part);
+  await enqueueProductSync("project-part", part).catch((error) => {
+    logger.error("meta_catalog.enqueue_failed", { sourceType: "project-part", productId: part.id, error: error.message });
+  });
 
   res.json({
     success: true,
@@ -295,6 +303,7 @@ exports.deleteProjectPart = catchAsync(async (req, res) => {
     throw new AppError("Project part not found", 404);
   }
 
+  await enqueueProductDelete("project-part", part);
   await part.deleteOne();
   await deleteCloudinaryImages(collectPublicIdsFromSources(part.imagePublicId, part.imageUrl, part.images));
 

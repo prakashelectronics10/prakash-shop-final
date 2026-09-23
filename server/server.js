@@ -5,6 +5,8 @@ const { validateRuntimeConfig } = require("./config/runtimeChecks");
 const { logger } = require("./utils/logger");
 const { setupDiscussionSocket } = require("./services/discussionSocket");
 const { startDiscussionRetentionCleanup } = require("./services/discussionRetentionService");
+const { startMetaCatalogWorker } = require("./services/metaCatalogWorker");
+const { ensureMetaCatalogIndexes } = require("./services/metaCatalogService");
 
 let server;
 
@@ -21,7 +23,11 @@ async function startServer() {
   server.keepAliveTimeout = 65000;
   server.headersTimeout = 66000;
 
-  connectDB().catch((error) => {
+  connectDB().then(async () => {
+    await ensureMetaCatalogIndexes();
+    logger.info("mongodb.meta_catalog_indexes_ready");
+    startMetaCatalogWorker();
+  }).catch((error) => {
     logger.error("mongodb.initial_connection_failed", {
       error: error.message,
       action: "Server remains online with fallback public content. Fix MONGODB_URI or Atlas network access for admin/database features.",

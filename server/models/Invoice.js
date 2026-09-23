@@ -60,7 +60,7 @@ const invoiceSchema = new mongoose.Schema(
     template: {
       type: String,
       enum: ["minimal", "glass", "modern-blue", "dark", "corporate"],
-      default: "modern-blue",
+      default: "minimal",
     },
     theme: {
       primaryColor: { type: String, trim: true, default: "#2563eb" },

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import {
   CheckCircle2,
@@ -51,6 +51,45 @@ function apiUrl(path) {
   return `${API_BASE}${path.startsWith("/") ? path : `/${path}`}`;
 }
 
+function absoluteApiUrl(path) {
+  return new URL(apiUrl(path), window.location.origin).href;
+}
+
+function validateInvoiceForm(form) {
+  const required = [
+    [form.business?.name, "Business name is required."],
+    [form.business?.contactNumber, "Business contact number is required."],
+    [form.business?.email, "Business email is required."],
+    [form.business?.address, "Business address is required."],
+    [form.customer?.name, "Customer name is required."],
+    [form.customer?.phone, "Customer phone number is required."],
+    [form.customer?.address, "Customer address is required."],
+    [form.invoiceDate, "Invoice date is required."],
+    [form.dueDate, "Due date is required."],
+  ];
+  const missing = required.find(([value]) => !String(value || "").trim());
+  if (missing) return missing[1];
+  if (!/^\S+@\S+\.\S+$/.test(String(form.business.email))) return "Enter a valid business email address.";
+  if (form.customer.email && !/^\S+@\S+\.\S+$/.test(String(form.customer.email))) return "Enter a valid customer email address.";
+  if (form.dueDate < form.invoiceDate) return "Due date cannot be before the invoice date.";
+  if (!Array.isArray(form.items) || !form.items.length) return "Add at least one invoice item.";
+  for (let index = 0; index < form.items.length; index += 1) {
+    const item = form.items[index];
+    if (!String(item.name || "").trim()) return `Enter a name for item ${index + 1}.`;
+    const quantity = Number(item.quantity);
+    const unitPrice = Number(item.unitPrice);
+    const discount = Number(item.discount || 0);
+    const taxRate = Number(item.taxRate || 0);
+    if (!Number.isFinite(quantity) || quantity <= 0) return `Item ${index + 1} quantity must be greater than zero.`;
+    if (!Number.isFinite(unitPrice) || unitPrice < 0) return `Item ${index + 1} unit price cannot be negative.`;
+    if (!Number.isFinite(discount) || discount < 0 || discount > quantity * unitPrice) {
+      return `Item ${index + 1} discount cannot exceed its price.`;
+    }
+    if (!Number.isFinite(taxRate) || taxRate < 0 || taxRate > 100) return `Item ${index + 1} tax must be between 0 and 100%.`;
+  }
+  return "";
+}
+
 export default function InvoiceModule({ apiFetch }) {
   const [route, setRoute] = useState(getInvoiceRoute);
   const [invoices, setInvoices] = useState([]);
@@ -63,6 +102,7 @@ export default function InvoiceModule({ apiFetch }) {
   const [saving, setSaving] = useState(false);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [successInvoice, setSuccessInvoice] = useState(null);
+  const invoiceRequestRef = useRef(0);
 
   const totals = useMemo(() => calculateInvoiceTotals(form.items), [form.items]);
 
@@ -72,6 +112,8 @@ export default function InvoiceModule({ apiFetch }) {
   };
 
   const loadInvoices = async (nextFilters = filters) => {
+    const requestId = invoiceRequestRef.current + 1;
+    invoiceRequestRef.current = requestId;
     setLoading(true);
     try {
       const query = new URLSearchParams();
@@ -80,12 +122,14 @@ export default function InvoiceModule({ apiFetch }) {
         if (value) query.set(key, value);
       });
       const response = await apiFetch(`/invoices?${query.toString()}`);
-      setInvoices(response.data?.items || []);
-      setStats(response.data?.stats || {});
+      if (requestId === invoiceRequestRef.current) {
+        setInvoices(response.data?.items || []);
+        setStats(response.data?.stats || {});
+      }
     } catch (error) {
       toast.error(error.message || "Unable to load invoices");
     } finally {
-      setLoading(false);
+      if (requestId === invoiceRequestRef.current) setLoading(false);
     }
   };
 
@@ -153,6 +197,11 @@ export default function InvoiceModule({ apiFetch }) {
   };
 
   const saveInvoice = async () => {
+    const validationError = validateInvoiceForm(form);
+    if (validationError) {
+      toast.error(validationError);
+      return;
+    }
     setSaving(true);
     try {
       const payload = formToInvoicePayload({ ...form, totals });
@@ -191,7 +240,7 @@ export default function InvoiceModule({ apiFetch }) {
 
   const printInvoice = (invoice) => {
     const printable = invoice || { ...form, totals };
-    const printWindow = window.open("", "_blank", "noopener,noreferrer,width=920,height=860");
+    const printWindow = window.open("", "_blank", "width=920,height=860");
     if (!printWindow) {
       toast.error("Popup blocked. Allow popups to print the invoice.");
       return;
@@ -199,8 +248,22 @@ export default function InvoiceModule({ apiFetch }) {
     printWindow.document.open();
     printWindow.document.write(invoicePrintHtml(printable));
     printWindow.document.close();
+    printWindow.opener = null;
     printWindow.focus();
-    window.setTimeout(() => printWindow.print(), 350);
+    const images = Array.from(printWindow.document.images || []);
+    const ready = images.map((image) => image.complete
+      ? Promise.resolve()
+      : new Promise((resolve) => {
+          image.addEventListener("load", resolve, { once: true });
+          image.addEventListener("error", resolve, { once: true });
+        }));
+    Promise.race([
+      Promise.all(ready),
+      new Promise((resolve) => window.setTimeout(resolve, 1500)),
+    ]).then(() => {
+      printWindow.focus();
+      printWindow.print();
+    });
   };
 
   const downloadPdf = async (invoice) => {
@@ -216,7 +279,7 @@ export default function InvoiceModule({ apiFetch }) {
 
   const shareInvoice = async (invoice) => {
     if (!invoice) return;
-    const url = apiUrl(invoice.pdfUrl || `/invoices/${invoice._id || invoice.id}/pdf`);
+    const url = absoluteApiUrl(invoice.pdfUrl || `/invoices/${invoice._id || invoice.id}/pdf`);
     try {
       if (navigator.share) {
         await navigator.share({
@@ -618,10 +681,10 @@ function InvoiceItemCard({ item, index, onChange, onRemove, canRemove }) {
       </div>
       <div className="invoice-item-grid">
         <TextField label="Product/Service Name" value={item.name} onChange={(value) => onChange({ name: value })} required />
-        <TextField label="Quantity" value={item.quantity} onChange={(value) => onChange({ quantity: value })} type="number" />
-        <TextField label="Unit Price" value={item.unitPrice} onChange={(value) => onChange({ unitPrice: value })} type="number" />
-        <TextField label="Discount" value={item.discount} onChange={(value) => onChange({ discount: value })} type="number" />
-        <TextField label="Tax %" value={item.taxRate} onChange={(value) => onChange({ taxRate: value })} type="number" />
+        <TextField label="Quantity" value={item.quantity} onChange={(value) => onChange({ quantity: value })} type="number" min="0.01" step="0.01" />
+        <TextField label="Unit Price (Rs.)" value={item.unitPrice} onChange={(value) => onChange({ unitPrice: value })} type="number" min="0" step="0.01" />
+        <TextField label="Discount (Rs.)" value={item.discount} onChange={(value) => onChange({ discount: value })} type="number" min="0" step="0.01" />
+        <TextField label="Tax %" value={item.taxRate} onChange={(value) => onChange({ taxRate: value })} type="number" min="0" max="100" step="0.01" />
         <div className="invoice-item-total">
           <span>Total Price</span>
           <strong>{formatCurrency(calculated.grandTotal)}</strong>
@@ -702,13 +765,15 @@ function InvoicePreview({ invoice }) {
   };
 
   return (
-    <div className={`invoice-preview ${invoice.template || "modern-blue"}`} style={previewStyle}>
+    <div className={`invoice-preview ${invoice.template || "minimal"}`} style={previewStyle}>
       <div className="invoice-preview-header">
         <div className="invoice-preview-brand">
-          {invoice.business?.logoUrl ? <img src={invoice.business.logoUrl} alt="" /> : <span>PE</span>}
+          <PreviewLogo src={invoice.business?.logoUrl} />
           <div>
             <h3>{invoice.business?.name || "Business Name"}</h3>
             <p>{invoice.business?.address || "Business address"}</p>
+            <p>{[invoice.business?.contactNumber, invoice.business?.email].filter(Boolean).join(" | ") || "Contact details"}</p>
+            {invoice.business?.websiteUrl ? <p>{invoice.business.websiteUrl}</p> : null}
           </div>
         </div>
         <div className="invoice-preview-title">
@@ -722,33 +787,40 @@ function InvoicePreview({ invoice }) {
         <div>
           <span>Bill To</span>
           <strong>{invoice.customer?.name || "Customer Name"}</strong>
-          <small>{invoice.customer?.phone || "Phone number"}</small>
           <small>{invoice.customer?.address || "Customer address"}</small>
+          <small>{[invoice.customer?.phone, invoice.customer?.email].filter(Boolean).join(" | ") || "Contact details"}</small>
+          {invoice.customer?.customerId ? <small>Customer ID: {invoice.customer.customerId}</small> : null}
         </div>
         <div>
           <span>Invoice Date</span>
           <strong>{formatDate(invoice.invoiceDate)}</strong>
           <span>Due Date</span>
           <strong>{formatDate(invoice.dueDate)}</strong>
+          <span>GSTIN</span>
+          <strong>{invoice.business?.gstNumber || "N/A"}</strong>
         </div>
       </div>
 
-      <div className="invoice-preview-table">
-        <div className="invoice-preview-row head">
-          <span>Item</span>
-          <span>Qty</span>
-          <span>Total</span>
+      <div className="invoice-preview-table-wrap">
+        <div className="invoice-preview-table">
+          <div className="invoice-preview-row head">
+            <span>#</span><span>Item description</span><span>Qty</span><span>Unit price</span><span>Discount</span><span>Tax</span><span>Amount</span>
+          </div>
+          {(invoice.items || []).map((item, index) => {
+            const row = calculateInvoiceTotals([item]);
+            return (
+              <div className="invoice-preview-row" key={`${item.name}-${index}`}>
+                <span>{index + 1}</span>
+                <span>{item.name || `Item ${index + 1}`}</span>
+                <span>{item.quantity || 0}</span>
+                <span>{formatCurrency(item.unitPrice)}</span>
+                <span>{formatCurrency(item.discount)}</span>
+                <span>{Number(item.taxRate || 0)}%</span>
+                <span>{formatCurrency(row.grandTotal)}</span>
+              </div>
+            );
+          })}
         </div>
-        {(invoice.items || []).map((item, index) => {
-          const row = calculateInvoiceTotals([item]);
-          return (
-            <div className="invoice-preview-row" key={`${item.name}-${index}`}>
-              <span>{item.name || `Item ${index + 1}`}</span>
-              <span>{item.quantity || 0}</span>
-              <span>{formatCurrency(row.grandTotal)}</span>
-            </div>
-          );
-        })}
       </div>
 
       <InvoiceTotals totals={totals} compact />
@@ -885,11 +957,19 @@ function InvoiceTotals({ totals, compact = false }) {
   );
 }
 
-function TextField({ label, value, onChange, type = "text", required = false, readOnly = false }) {
+function PreviewLogo({ src }) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [src]);
+  return src && !failed
+    ? <img src={src} alt="Business logo" onError={() => setFailed(true)} />
+    : <span aria-label="Business logo placeholder">PE</span>;
+}
+
+function TextField({ label, value, onChange, type = "text", required = false, readOnly = false, min, max, step }) {
   return (
     <label className="invoice-field">
       <span>{label}{required ? " *" : ""}</span>
-      <input type={type} value={value ?? ""} readOnly={readOnly} onChange={(event) => onChange(event.target.value)} />
+      <input type={type} value={value ?? ""} readOnly={readOnly} min={min} max={max} step={step} onChange={(event) => onChange(event.target.value)} />
     </label>
   );
 }

@@ -1,4 +1,5 @@
 const express = require("express");
+const rateLimit = require("express-rate-limit");
 const {
   dashboard,
   listAdmins,
@@ -86,10 +87,23 @@ const {
   updateCoupon,
   deleteCoupon,
 } = require("../controllers/couponController");
+const metaCatalogController = require("../controllers/metaCatalogController");
 
 const router = express.Router();
+const metaCatalogLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  limit: 30,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+});
 
 router.get("/dashboard", dashboard);
+
+router.get("/meta-catalog/status", requireSuperAdmin, metaCatalogController.getStatus);
+router.post("/meta-catalog/test", requireSuperAdmin, metaCatalogLimiter, metaCatalogController.testConnection);
+router.post("/meta-catalog/sync-all", requireSuperAdmin, metaCatalogLimiter, metaCatalogController.syncAll);
+router.post("/meta-catalog/retry-failed", requireSuperAdmin, metaCatalogLimiter, metaCatalogController.retryFailed);
+router.post("/meta-catalog/products/:sourceType/:id/sync", requireSuperAdmin, metaCatalogLimiter, metaCatalogController.syncProduct);
 
 router.get("/pulse-ai-instructions", requirePermission("pulseAI"), listPulseAIInstructions);
 router.post("/pulse-ai-instructions", requirePermission("pulseAI"), validateBody(pulseAIInstructionSchema), createPulseAIInstruction);
