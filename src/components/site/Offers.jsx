@@ -14,6 +14,16 @@ function offerDateLabel(offer = {}) {
   }
 }
 
+function offerSeoAlt(offer) {
+  const title = String(offer.alt || offer.title || "").trim();
+  if (title) {
+    return /prakash|chitarpur/i.test(title)
+      ? title
+      : `${title} | Recent update at Prakash Electronics Chitarpur`;
+  }
+  return "Recent products or repairing update at Prakash Electronics shop in Chitarpur";
+}
+
 function OfferCard({ offer, eager }) {
   return (
     <article className="offer-card">
@@ -21,7 +31,7 @@ function OfferCard({ offer, eager }) {
         {offer.imageUrl ? (
           <OptimizedImage
             src={offer.imageUrl}
-            alt={offer.title}
+            alt={offerSeoAlt(offer)}
             className="offer-card-image"
             loading="lazy"
             fetchPriority="low"
@@ -96,7 +106,6 @@ export function Offers({ sectionId = "offers" }) {
           ariaLabel="Recent products and repairing updates"
           activeIndex={activeIndex}
           onActiveIndexChange={setActiveIndex}
-          loop
         >
           {activeOffers.map((offer, index) => (
             <OfferCard

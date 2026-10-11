@@ -767,8 +767,8 @@ export function ProductDetailPage() {
           if (!mounted) return;
           setProduct(fallback.data || null);
           setSource("project-part");
-        } catch (err) {
-          if (mounted) setError(err.message || "Product not found.");
+        } catch (_err) {
+          if (mounted) window.location.replace("/products");
         }
       } finally {
         if (mounted) setLoading(false);

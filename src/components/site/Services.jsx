@@ -188,7 +188,6 @@ export function Services({ sectionId = "services" }) {
             ariaLabel="Services"
             activeIndex={activeIndex}
             onActiveIndexChange={setActiveIndex}
-            loop
           >
             {cards.map((card, index) => {
               const loadImages = true;

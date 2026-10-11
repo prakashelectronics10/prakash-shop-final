@@ -614,8 +614,8 @@ export function ProjectPartDetailPage() {
       try {
         const response = await apiRequest(`/project-parts/public/parts/${encodeURIComponent(slug)}`);
         if (mounted) setPart(response.data || null);
-      } catch (err) {
-        if (mounted) setError(err.message || "Product not found.");
+      } catch (_err) {
+        if (mounted) window.location.replace(CANONICAL_WIRING_PARTS_PATH);
       } finally {
         if (mounted) setLoading(false);
       }

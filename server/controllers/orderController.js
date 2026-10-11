@@ -96,8 +96,14 @@ async function buildOrderQuote(rawItems, couponCode = "") {
 }
 
 function newPublicOrderId() {
-  const date = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-  return `PE-${date}-${crypto.randomBytes(6).toString("hex").toUpperCase()}`;
+  // Short, typeable and unambiguous: no punctuation and no visually-confusing 0/O or 1/I.
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const bytes = crypto.randomBytes(10);
+  let suffix = "";
+  bytes.forEach((byte) => {
+    suffix += alphabet[byte & 31];
+  });
+  return `PE${suffix}`;
 }
 
 function publicOrder(order) {
@@ -318,3 +324,4 @@ exports.updateOrderStatus = asyncHandler(async (req, res) => {
 
 exports.ORDER_STATUSES = ORDER_STATUSES;
 exports.buildOrderQuote = buildOrderQuote;
+exports.newPublicOrderId = newPublicOrderId;

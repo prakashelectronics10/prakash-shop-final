@@ -4,7 +4,7 @@ import "./SnapCarousel.css";
 
 /**
  * Flat, native scroll-snap carousel — finger swipe on mobile, arrows on desktop.
- * Optional infinite loop via cloned slide sets (no animation timers).
+ * Looping is opt-in; finite carousels never render cloned cards.
  */
 export function SnapCarousel({
   children,
@@ -74,9 +74,26 @@ export function SnapCarousel({
     [controlledIndex, onActiveIndexChange, total],
   );
 
-  const getCenteredLeft = useCallback((track, slide) => {
-    return slide.offsetLeft - (track.clientWidth - slide.clientWidth) / 2;
-  }, []);
+  // Mobile + looping carousels center the active card. Desktop multi-card
+  // carousels start-align and clamp so end cards stay flush to the edges.
+  const getScrollLeftForSlide = useCallback(
+    (track, slide) => {
+      const maxScroll = Math.max(0, track.scrollWidth - track.clientWidth);
+      const preferCenter =
+        canLoop || (typeof window !== "undefined" && window.matchMedia("(max-width: 768px)").matches);
+
+      let target;
+      if (preferCenter) {
+        target = slide.offsetLeft - (track.clientWidth - slide.clientWidth) / 2;
+      } else {
+        const padLeft = Number.parseFloat(window.getComputedStyle(track).scrollPaddingLeft) || 0;
+        target = slide.offsetLeft - padLeft;
+      }
+
+      return Math.min(Math.max(0, target), maxScroll);
+    },
+    [canLoop],
+  );
 
   const lockProgrammaticScroll = useCallback((ms) => {
     scrollingProgrammaticallyRef.current = true;
@@ -94,11 +111,11 @@ export function SnapCarousel({
       if (!slide) return;
       lockProgrammaticScroll(behavior === "smooth" ? 450 : 50);
       track.scrollTo({
-        left: Math.max(0, getCenteredLeft(track, slide)),
+        left: getScrollLeftForSlide(track, slide),
         behavior: behavior === "smooth" ? "smooth" : "auto",
       });
     },
-    [getCenteredLeft, lockProgrammaticScroll, total],
+    [getScrollLeftForSlide, lockProgrammaticScroll, total],
   );
 
   const jumpToTrackIndex = useCallback(
@@ -110,11 +127,11 @@ export function SnapCarousel({
       lockProgrammaticScroll(60);
       const previousSnap = track.style.scrollSnapType;
       track.style.scrollSnapType = "none";
-      track.scrollTo({ left: Math.max(0, getCenteredLeft(track, slide)), behavior: "auto" });
+      track.scrollTo({ left: getScrollLeftForSlide(track, slide), behavior: "auto" });
       void track.scrollLeft;
       track.style.scrollSnapType = previousSnap || "";
     },
-    [getCenteredLeft, lockProgrammaticScroll, total],
+    [getScrollLeftForSlide, lockProgrammaticScroll, total],
   );
 
   const go = useCallback(
@@ -174,12 +191,37 @@ export function SnapCarousel({
     if (!track || !canNavigate) return undefined;
 
     const nearestTrackIndex = () => {
-      const center = track.scrollLeft + track.clientWidth / 2;
+      const preferCenter =
+        canLoop || window.matchMedia("(max-width: 768px)").matches;
+      const padLeft = Number.parseFloat(window.getComputedStyle(track).scrollPaddingLeft) || 0;
+      const children = Array.from(track.children);
+
+      if (!preferCenter) {
+        const maxScroll = Math.max(0, track.scrollWidth - track.clientWidth);
+        // Last "page": several indices clamp to maxScroll — keep reported index if valid.
+        if (maxScroll > 0 && track.scrollLeft >= maxScroll - 2) {
+          const clamped = children
+            .map((child, index) => ({
+              index,
+              left: Math.min(Math.max(0, child.offsetLeft - padLeft), maxScroll),
+            }))
+            .filter((entry) => entry.left >= maxScroll - 2)
+            .map((entry) => entry.index);
+          if (clamped.includes(lastReportedRef.current)) return lastReportedRef.current;
+          return clamped[clamped.length - 1] ?? children.length - 1;
+        }
+      }
+
+      const anchor = preferCenter
+        ? track.scrollLeft + track.clientWidth / 2
+        : track.scrollLeft + padLeft;
       let best = 0;
       let bestDist = Infinity;
-      Array.from(track.children).forEach((child, index) => {
-        const mid = child.offsetLeft + child.clientWidth / 2;
-        const dist = Math.abs(mid - center);
+      children.forEach((child, index) => {
+        const point = preferCenter
+          ? child.offsetLeft + child.clientWidth / 2
+          : child.offsetLeft;
+        const dist = Math.abs(point - anchor);
         if (dist < bestDist) {
           bestDist = dist;
           best = index;
@@ -260,12 +302,12 @@ export function SnapCarousel({
 
   if (!total) return null;
 
-  const showPrev = showArrows && canNavigate && (canLoop || activeIndex > 0);
-  const showNext = showArrows && canNavigate && (canLoop || activeIndex < total - 1);
+  const canGoPrev = canLoop || activeIndex > 0;
+  const canGoNext = canLoop || activeIndex < total - 1;
 
   return (
     <div
-      className={`snap-carousel ${className}`.trim()}
+      className={`snap-carousel${canLoop ? " snap-carousel--loop" : ""}${className ? ` ${className}` : ""}`}
       role="region"
       aria-roledescription="carousel"
       aria-label={ariaLabel}
@@ -275,12 +317,11 @@ export function SnapCarousel({
       {showArrows && canNavigate ? (
         <button
           type="button"
-          className={`snap-carousel-nav snap-carousel-nav-prev${showPrev ? "" : " is-hidden"}`}
+          className={`snap-carousel-nav snap-carousel-nav-prev${canGoPrev ? "" : " is-disabled"}`}
           onClick={() => go(-1)}
           aria-label="Previous slide"
-          aria-hidden={!showPrev}
-          tabIndex={showPrev ? 0 : -1}
-          disabled={!showPrev}
+          aria-disabled={!canGoPrev}
+          disabled={!canGoPrev}
         >
           <ChevronLeft className="h-5 w-5" strokeWidth={2.4} />
         </button>
@@ -310,12 +351,11 @@ export function SnapCarousel({
       {showArrows && canNavigate ? (
         <button
           type="button"
-          className={`snap-carousel-nav snap-carousel-nav-next${showNext ? "" : " is-hidden"}`}
+          className={`snap-carousel-nav snap-carousel-nav-next${canGoNext ? "" : " is-disabled"}`}
           onClick={() => go(1)}
           aria-label="Next slide"
-          aria-hidden={!showNext}
-          tabIndex={showNext ? 0 : -1}
-          disabled={!showNext}
+          aria-disabled={!canGoNext}
+          disabled={!canGoNext}
         >
           <ChevronRight className="h-5 w-5" strokeWidth={2.4} />
         </button>

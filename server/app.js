@@ -300,15 +300,134 @@ function xmlEscape(value) {
     .replace(/'/g, "&apos;");
 }
 
-function sitemapUrlEntry(loc, lastmod, changefreq = "weekly", priority = "0.8") {
+function sitemapUrlEntry(loc, lastmod, changefreq = "weekly", priority = "0.8", images = []) {
+  const imageEntries = images.map((image) => [
+    "    <image:image>",
+    `      <image:loc>${xmlEscape(image.loc)}</image:loc>`,
+    image.title ? `      <image:title>${xmlEscape(image.title)}</image:title>` : "",
+    image.caption ? `      <image:caption>${xmlEscape(image.caption)}</image:caption>` : "",
+    "    </image:image>",
+  ].filter(Boolean).join("\n")).filter(Boolean);
   return [
     "  <url>",
     `    <loc>${xmlEscape(loc)}</loc>`,
     lastmod ? `    <lastmod>${xmlEscape(lastmod)}</lastmod>` : "",
     `    <changefreq>${changefreq}</changefreq>`,
     `    <priority>${priority}</priority>`,
+    ...imageEntries,
     "  </url>",
   ].filter(Boolean).join("\n");
+}
+
+function toSitemapImageEntry(source, title, caption, origin) {
+  const loc = absoluteUrl(String(source || "").trim(), origin);
+  if (!/^https?:\/\//i.test(loc)) return null;
+  return {
+    loc,
+    title: String(title || "Prakash Electronics").trim().slice(0, 200),
+    caption: String(caption || "").trim().slice(0, 500),
+  };
+}
+
+function dedupeSitemapImages(images = []) {
+  const seen = new Set();
+  return images.filter((image) => {
+    if (!image?.loc || seen.has(image.loc)) return false;
+    seen.add(image.loc);
+    return true;
+  });
+}
+
+function isCurrentOfferForSitemap(offer, now = Date.now()) {
+  if (!offer || offer.isActive === false) return false;
+  if (offer.startsAt) {
+    const startsAt = new Date(offer.startsAt).getTime();
+    if (Number.isFinite(startsAt) && startsAt > now) return false;
+  }
+  if (offer.endsAt) {
+    const endsAt = new Date(offer.endsAt).getTime();
+    if (Number.isFinite(endsAt) && endsAt < now) return false;
+  }
+  return true;
+}
+
+function currentGallerySitemapImages(site, origin) {
+  const galleryItems = Array.isArray(site?.content?.gallery?.items) ? site.content.gallery.items : [];
+  return dedupeSitemapImages(galleryItems
+    .filter((item) => item && item.isActive !== false)
+    .map((item, index) => toSitemapImageEntry(
+      item.imageUrl || item.src || item.url,
+      item.title || item.label || item.alt || `Prakash Electronics gallery image ${index + 1}`,
+      item.description || item.caption || item.desc || "Workshop and shop photos from Prakash Electronics in Chitarpur",
+      origin,
+    )));
+}
+
+function currentShopHighlightSitemapImages(site, origin) {
+  const items = Array.isArray(site?.content?.shopHighlights?.items) ? site.content.shopHighlights.items : [];
+  return dedupeSitemapImages(items
+    .filter((item) => item && item.isActive !== false)
+    .map((item, index) => toSitemapImageEntry(
+      item.originalUrl || item.imageUrl || item.src || item.url,
+      item.alt || item.title || item.label || `Shop highlight ${index + 1} | Prakash Electronics Chitarpur`,
+      item.description || item.caption || "Shop highlight from Prakash Electronics electronics shop in Chitarpur",
+      origin,
+    )));
+}
+
+function currentOfferSitemapImages(site, origin) {
+  const offers = Array.isArray(site?.offers) ? site.offers : [];
+  const now = Date.now();
+  return dedupeSitemapImages(offers
+    .filter((offer) => isCurrentOfferForSitemap(offer, now))
+    .map((offer, index) => toSitemapImageEntry(
+      offer.imageUrl || offer.image || offer.src,
+      offer.title
+        ? `${offer.title} | Recent update at Prakash Electronics`
+        : `Recent products or repairing update ${index + 1} | Prakash Electronics Chitarpur`,
+      offer.description || "Recent products and repairing updates from Prakash Electronics shop in Chitarpur",
+      origin,
+    )));
+}
+
+function currentAboutSitemapImages(site, origin) {
+  const reasons = Array.isArray(site?.content?.about?.reasons) ? site.content.about.reasons : [];
+  const showcase = Array.isArray(site?.content?.aboutShowcase?.items) ? site.content.aboutShowcase.items : [];
+  const reasonImages = reasons
+    .filter((item) => item && item.isActive !== false)
+    .map((item, index) => toSitemapImageEntry(
+      item.imageUrl || item.coverImageUrl || item.image || item.photoUrl || item.src || item.iconImageUrl,
+      item.title
+        ? `${item.title} | About Prakash Electronics`
+        : `About Prakash Electronics reason ${index + 1}`,
+      item.description || item.desc || "About Prakash Electronics repair shop in Chitarpur",
+      origin,
+    ));
+  const showcaseImages = showcase
+    .filter((item) => item && item.isActive !== false)
+    .map((item, index) => toSitemapImageEntry(
+      item.imageUrl || item.src || item.url,
+      item.title || item.alt || `About Prakash Electronics story ${index + 1}`,
+      item.description || item.caption || "Prakash Electronics electronics repair shop in Chitarpur",
+      origin,
+    ));
+  return dedupeSitemapImages([...reasonImages, ...showcaseImages]);
+}
+
+function productSitemapImages(product, origin) {
+  const name = String(product?.name || "Product").trim();
+  const sources = [
+    product?.imageUrl,
+    ...((Array.isArray(product?.images) ? product.images : []).map((item) => item?.url || item)),
+  ].filter(Boolean);
+  return dedupeSitemapImages(sources.map((source, index) => toSitemapImageEntry(
+    source,
+    index === 0
+      ? `${name} | Buy at Prakash Electronics shop Chitarpur`
+      : `${name} image ${index + 1} | Prakash Electronics`,
+    `${name} available at Prakash Electronics electronics shop in Chitarpur`,
+    origin,
+  )));
 }
 
 app.get("/sitemap.xml", async (req, res, next) => {
@@ -320,10 +439,18 @@ app.get("/sitemap.xml", async (req, res, next) => {
 
     const [shopProducts, projectParts] = await Promise.all([
       isConnected()
-        ? ShopProduct.find({ isActive: true }).select("slug _id updatedAt").sort({ updatedAt: -1 }).lean().catch(() => [])
+        ? ShopProduct.find({ isActive: true })
+          .select("slug _id name updatedAt imageUrl images")
+          .sort({ updatedAt: -1 })
+          .lean()
+          .catch(() => [])
         : [],
       isConnected()
-        ? ProjectPart.find({ isActive: true }).select("slug _id updatedAt").sort({ updatedAt: -1 }).lean().catch(() => [])
+        ? ProjectPart.find({ isActive: true })
+          .select("slug _id name updatedAt imageUrl images")
+          .sort({ updatedAt: -1 })
+          .lean()
+          .catch(() => [])
         : [],
     ]);
 
@@ -350,19 +477,36 @@ app.get("/sitemap.xml", async (req, res, next) => {
     const contentLastmod = contentUpdatedAt
       ? new Date(contentUpdatedAt).toISOString().slice(0, 10)
       : "";
+    const galleryImages = currentGallerySitemapImages(site, origin);
+    const shopHighlightImages = currentShopHighlightSitemapImages(site, origin);
+    const offerImages = currentOfferSitemapImages(site, origin);
+    const aboutImages = currentAboutSitemapImages(site, origin);
+    const homeImages = dedupeSitemapImages([
+      ...shopHighlightImages,
+      ...offerImages,
+      ...aboutImages,
+    ]);
 
     const entries = [
       ...staticPaths.map((item) => ({
         loc: `${origin}${item.path}`,
-        lastmod: item.path === "/" ? contentLastmod : "",
+        lastmod: item.path === "/" || item.path === "/about" || item.path === "/gallery" ? contentLastmod : "",
         changefreq: item.changefreq,
         priority: item.priority,
+        images: item.path === "/"
+          ? homeImages
+          : item.path === "/gallery"
+            ? galleryImages
+            : item.path === "/about"
+              ? aboutImages
+              : [],
       })),
       ...((site?.products || []).filter((service) => service?.slug).map((service) => ({
         loc: `${origin}/learn-more?service=${encodeURIComponent(String(service.slug))}`,
         lastmod: service.updatedAt ? new Date(service.updatedAt).toISOString().slice(0, 10) : "",
         changefreq: "monthly",
         priority: "0.8",
+        images: productSitemapImages(service, origin),
       }))),
       ...shopProducts.map((product) => {
         const id = product.slug || product._id;
@@ -372,6 +516,7 @@ app.get("/sitemap.xml", async (req, res, next) => {
           lastmod: updated,
           changefreq: "weekly",
           priority: "0.85",
+          images: productSitemapImages(product, origin),
         };
       }),
       ...projectParts.map((product) => {
@@ -382,6 +527,7 @@ app.get("/sitemap.xml", async (req, res, next) => {
           lastmod: updated,
           changefreq: "weekly",
           priority: "0.8",
+          images: productSitemapImages(product, origin),
         };
       }),
     ];
@@ -391,8 +537,8 @@ app.get("/sitemap.xml", async (req, res, next) => {
       if (seen.has(entry.loc)) return false;
       seen.add(entry.loc);
       return true;
-    }).map((entry) => sitemapUrlEntry(entry.loc, entry.lastmod, entry.changefreq, entry.priority));
-    const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${uniqueEntries.join("\n")}\n</urlset>\n`;
+    }).map((entry) => sitemapUrlEntry(entry.loc, entry.lastmod, entry.changefreq, entry.priority, entry.images));
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">\n${uniqueEntries.join("\n")}\n</urlset>\n`;
     res.set("Cache-Control", "no-cache");
     res.type("application/xml").send(xml);
   } catch (error) {
@@ -565,16 +711,16 @@ const ROUTE_SHARE_META = [
     match: (pathname) => pathname === "/",
     title: "Prakash Electronics and Electricals | Electronics Repair in Chitarpur",
     description: "Prakash Electronics and Electricals in Chitarpur offers electronics products, wiring accessories, and dependable TV, fan, cooler, AC, speaker, and home-appliance repair.",
-    keywords: "electronics shop Chitarpur, electronics repair Chitarpur, wiring accessories, TV repair, fan repair, cooler repair, AC repair, Prakash Electronics",
+    keywords: "Prakash Electronics, Prakash shop, Electronics Repair shop, Electronics shop in Chitarpur, repair shop in Chitarpur, electronics repair Chitarpur, wiring accessories, TV repair, fan repair, cooler repair, AC repair",
     ogImage: "/og-image.jpg",
-    ogImageAlt: "Prakash Electronics and Electricals in Chitarpur",
+    ogImageAlt: "Prakash Electronics and Electricals electronics shop in Chitarpur",
     canonicalPath: "/",
   },
   {
     match: (pathname) => pathname === "/pulse-ai" || pathname === "/science-ai",
     title: "Pulse AI by Prakash Electronics | Prakash Electronics and Electricals",
     description: "Pulse AI helps you find suitable electronics products, wiring accessories, repair guidance, offers, and service-booking options from Prakash Electronics.",
-    keywords: "Pulse AI, electronics products, wiring accessories, repair assistant, Prakash Electronics",
+    keywords: "Pulse AI, Prakash Electronics, Prakash shop, electronics products, wiring accessories, repair assistant Chitarpur",
     ogImage: "/og-image-pulse-ai.jpg",
     ogImageAlt: "Pulse AI by Prakash Electronics",
     canonicalPath: "/pulse-ai",
@@ -583,9 +729,9 @@ const ROUTE_SHARE_META = [
     match: (pathname) => pathname === "/products" || pathname.startsWith("/products/"),
     title: "Electronics Shop Products in Chitarpur | Prakash Electronics",
     description: "Browse electronics shop products, wiring accessories, RGB lights, electrical parts, and accessories from Prakash Electronics and Electricals in Chitarpur.",
-    keywords: "electronics products Chitarpur, electronics shop, electrical products, home appliances, Prakash Electronics",
+    keywords: "Electronics shop in Chitarpur, Prakash shop, Prakash Electronics, electronics products Chitarpur, electrical products, home appliances",
     ogImage: "/og-image-shop-products.jpg?v=20260910-mobile",
-    ogImageAlt: "Prakash Electronics shop products",
+    ogImageAlt: "Prakash Electronics shop products in Chitarpur",
     ogImageType: "image/jpeg",
     ogImageWidth: 1200,
     ogImageHeight: 630,
@@ -601,7 +747,7 @@ const ROUTE_SHARE_META = [
     ),
     title: "Wiring Accessories in Chitarpur | Prakash Electronics",
     description: "Buy wiring accessories, switches, sockets, wires, MCBs, and electrical fittings by category and brand from Prakash Electronics in Chitarpur.",
-    keywords: "wiring accessories Chitarpur, switches, sockets, wires, MCB, electrical fittings",
+    keywords: "wiring accessories Chitarpur, Prakash Electronics, Prakash shop, switches, sockets, wires, MCB, electrical fittings",
     ogImage: "/og-image-wiring.jpg",
     ogImageAlt: "Prakash Electronics wiring accessories",
     canonicalPath: "/wiring-parts",
@@ -611,7 +757,7 @@ const ROUTE_SHARE_META = [
     match: (pathname) => pathname === "/booking",
     title: "Book Electronics Repair in Chitarpur | Prakash Electronics",
     description: "Book TV, fan, cooler, AC, speaker, or home-appliance repair with Prakash Electronics in Chitarpur, Jharkhand.",
-    keywords: "book electronics repair Chitarpur, TV repair, fan repair, cooler repair, AC repair",
+    keywords: "repair shop in Chitarpur, Electronics Repair shop, book electronics repair Chitarpur, TV repair, fan repair, cooler repair, AC repair, Prakash Electronics",
     ogImage: "/og-image.jpg",
     canonicalPath: "/booking",
   },
@@ -619,7 +765,7 @@ const ROUTE_SHARE_META = [
     match: (pathname) => pathname === "/gallery",
     title: "Gallery | Prakash Electronics and Electricals Chitarpur",
     description: "See workshop photos, electronics products, repair work, and shop moments from Prakash Electronics in Chitarpur.",
-    keywords: "Prakash Electronics gallery, electronics workshop Chitarpur, repair photos",
+    keywords: "Prakash Electronics gallery, Prakash shop, electronics workshop Chitarpur, repair shop in Chitarpur, repair photos",
     ogImage: "/og-image.jpg",
     canonicalPath: "/gallery",
   },
@@ -627,7 +773,7 @@ const ROUTE_SHARE_META = [
     match: (pathname) => pathname === "/about",
     title: "About Prakash Electronics | Trusted Since 2000",
     description: "Learn about Prakash Electronics and its experienced electronics sales, diagnostics, parts, and repair support in Chitarpur since 2000.",
-    keywords: "about Prakash Electronics, electronics shop Chitarpur, repair service since 2000",
+    keywords: "About Prakash Electronics, Prakash shop, Electronics shop in Chitarpur, repair shop in Chitarpur, Electronics Repair shop, repair service since 2000",
     ogImage: "/og-image.jpg",
     canonicalPath: "/about",
   },
@@ -635,7 +781,7 @@ const ROUTE_SHARE_META = [
     match: (pathname) => pathname === "/contact",
     title: "Contact Prakash Electronics | Chitarpur, Jharkhand",
     description: "Call, WhatsApp, email, or visit Prakash Electronics in Chitarpur for products, wiring accessories, repair bookings, and support.",
-    keywords: "contact Prakash Electronics, electronics shop Chitarpur, repair contact Ramgarh",
+    keywords: "contact Prakash Electronics, Prakash shop, Electronics shop in Chitarpur, repair shop in Chitarpur, repair contact Ramgarh",
     ogImage: "/og-image.jpg",
     canonicalPath: "/contact",
   },
@@ -643,7 +789,7 @@ const ROUTE_SHARE_META = [
     match: (pathname) => pathname === "/learn-more",
     title: "Electronics Repair Services | Prakash Electronics Chitarpur",
     description: "Explore TV, fan, cooler, AC, speaker, and home-appliance repair services from Prakash Electronics in Chitarpur.",
-    keywords: "electronics repair services Chitarpur, TV repair, fan repair, cooler repair, AC repair",
+    keywords: "Electronics Repair shop, repair shop in Chitarpur, electronics repair services Chitarpur, TV repair, fan repair, cooler repair, AC repair, Prakash Electronics",
     ogImage: "/og-image.jpg",
     canonicalPath: "/learn-more",
   },
@@ -856,7 +1002,7 @@ function injectProductMetadata(html, productMeta) {
   let output = replaceTitle(html, title);
   output = replaceTag(output, /<link rel="canonical" href="[^"]*"\s*\/?>/i, `<link rel="canonical" href="${escapeAttribute(url)}" />`);
   output = replaceTag(output, /<meta\s+name="description"\s+content="[^"]*"\s*\/?>/i, `<meta name="description" content="${escapeAttribute(description)}" />`);
-  output = replaceTag(output, /<meta\s+name="keywords"\s+content="[^"]*"\s*\/?>/i, `<meta name="keywords" content="${escapeAttribute([productMeta.title, productMeta.category, ...productMeta.tags, "Prakash Electronics", "electronics shop Chitarpur"].filter(Boolean).join(", "))}" />`);
+  output = replaceTag(output, /<meta\s+name="keywords"\s+content="[^"]*"\s*\/?>/i, `<meta name="keywords" content="${escapeAttribute([productMeta.title, productMeta.category, ...productMeta.tags, "Prakash Electronics", "Prakash shop", "Electronics shop in Chitarpur", "electronics shop Chitarpur"].filter(Boolean).join(", "))}" />`);
   output = replaceTag(output, /<meta\s+name="robots"\s+content="[^"]*"\s*\/?>/i, '<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />');
   output = replaceTag(output, /<meta\s+name="googlebot"\s+content="[^"]*"\s*\/?>/i, '<meta name="googlebot" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />');
   output = replaceTag(output, /<meta property="og:type" content="[^"]*"\s*\/?>/i, '<meta property="og:type" content="product" />');
@@ -884,6 +1030,72 @@ function injectProductMetadata(html, productMeta) {
     /<script type="application\/ld\+json" data-product-share>[\s\S]*?<\/script>/i,
     `<script type="application/ld+json" data-product-share>${productJsonLd}</script>`,
   );
+}
+
+function injectImageCollectionStructuredData(html, {
+  dataAttr,
+  name,
+  description,
+  url,
+  images,
+}) {
+  const scriptSelector = new RegExp(
+    `<script type="application\\/ld\\+json" ${dataAttr}>[\\s\\S]*?<\\/script>`,
+    "i",
+  );
+  if (!images.length) return html.replace(scriptSelector, "");
+
+  const jsonLd = JSON.stringify({
+    "@context": "https://schema.org",
+    "@type": "ImageGallery",
+    name,
+    description,
+    url,
+    image: images.map((image) => ({
+      "@type": "ImageObject",
+      contentUrl: image.loc,
+      name: image.title,
+      ...(image.caption ? { caption: image.caption } : {}),
+    })),
+  }).replace(/</g, "\\u003c");
+  const script = `<script type="application/ld+json" ${dataAttr}>${jsonLd}</script>`;
+  return scriptSelector.test(html) ? html.replace(scriptSelector, script) : html.replace("</head>", `${script}</head>`);
+}
+
+function injectGalleryStructuredData(html, site, origin) {
+  const gallery = site?.content?.gallery || {};
+  return injectImageCollectionStructuredData(html, {
+    dataAttr: "data-gallery-seo",
+    name: String(gallery.title || "Prakash Electronics Gallery").trim(),
+    description: String(gallery.description || "Workshop photos, repair work, and shop moments from Prakash Electronics.").trim(),
+    url: `${origin}/gallery`,
+    images: currentGallerySitemapImages(site, origin),
+  });
+}
+
+function injectHomeImageStructuredData(html, site, origin) {
+  const images = dedupeSitemapImages([
+    ...currentShopHighlightSitemapImages(site, origin),
+    ...currentOfferSitemapImages(site, origin),
+    ...currentAboutSitemapImages(site, origin),
+  ]);
+  return injectImageCollectionStructuredData(html, {
+    dataAttr: "data-home-image-seo",
+    name: "Prakash Electronics shop highlights, recent updates, and about images",
+    description: "Shop highlights, recent products or repairing updates, and About Prakash Electronics images from the electronics repair shop in Chitarpur.",
+    url: `${origin}/`,
+    images,
+  });
+}
+
+function injectAboutImageStructuredData(html, site, origin) {
+  return injectImageCollectionStructuredData(html, {
+    dataAttr: "data-about-image-seo",
+    name: "About Prakash Electronics",
+    description: "About Prakash Electronics images from the trusted electronics shop and repair shop in Chitarpur.",
+    url: `${origin}/about`,
+    images: currentAboutSitemapImages(site, origin),
+  });
 }
 
 function productDetailIdentifier(reqPath = "") {
@@ -937,14 +1149,25 @@ app.get("*", async (req, res, next) => {
     const origin = CANONICAL_ORIGIN;
     const staticRouteMeta = getRouteShareMeta(req.path);
     const needsServiceMetadata = req.path === "/learn-more" && Boolean(String(req.query.service || "").trim());
+    const needsGalleryMetadata = req.path === "/gallery";
+    const needsHomeImageMetadata = req.path === "/";
+    const needsAboutImageMetadata = req.path === "/about";
+    const needsFullSitePayload = needsServiceMetadata
+      || needsGalleryMetadata
+      || needsHomeImageMetadata
+      || needsAboutImageMetadata;
     const [html, site, productMeta] = await Promise.all([
       Promise.resolve(clientIndexCache),
-      (needsServiceMetadata ? getSitePayload() : getHtmlShellSiteMeta()).catch(() => ({ webSettings: {} })),
+      (needsFullSitePayload ? getSitePayload() : getHtmlShellSiteMeta()).catch(() => ({ webSettings: {} })),
       identifier ? findProductForMetadata(identifier, origin).catch((error) => {
         logger.warn("product.metadata_lookup_failed", { identifier, error: error.message });
         return null;
       }) : Promise.resolve(null),
     ]);
+    if (identifier && !productMeta) {
+      res.set("Cache-Control", "no-store");
+      return res.redirect(302, "/products");
+    }
     const serviceRouteMeta = getServiceRouteShareMeta(req, site);
     const routeMeta = serviceRouteMeta || staticRouteMeta;
     const isMissingPage = !routeMeta && !productMeta;
@@ -978,6 +1201,9 @@ app.get("*", async (req, res, next) => {
     htmlWithSettings = injectRouteMetadata(htmlWithSettings, responseRouteMeta, origin, {
       preserveOgImage: useGlobalOgImage,
     });
+    if (needsGalleryMetadata) htmlWithSettings = injectGalleryStructuredData(htmlWithSettings, site, origin);
+    if (needsHomeImageMetadata) htmlWithSettings = injectHomeImageStructuredData(htmlWithSettings, site, origin);
+    if (needsAboutImageMetadata) htmlWithSettings = injectAboutImageStructuredData(htmlWithSettings, site, origin);
     res.status(isMissingPage ? 404 : 200).type("html").send(injectProductMetadata(htmlWithSettings, productMeta));
   } catch (_error) {
     next();

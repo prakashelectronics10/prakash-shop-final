@@ -29,6 +29,8 @@ test("sitemap lists canonical service URLs and no legacy page query URLs", async
   await withServer(async (baseUrl) => {
     const sitemap = await fetch(`${baseUrl}/sitemap.xml`).then((response) => response.text());
     assert.match(sitemap, /https:\/\/prakashshop\.in\/learn-more\?service=/);
+    assert.match(sitemap, /xmlns:image="http:\/\/www\.google\.com\/schemas\/sitemap-image\/1\.1"/);
+    assert.match(sitemap, /<image:image>/);
     assert.doesNotMatch(sitemap, /\?page=learn-more/);
     assert.doesNotMatch(sitemap, /\/#/);
   });
@@ -49,6 +51,46 @@ test("unknown routes return a real noindex 404 document", async () => {
     assert.equal(response.status, 404);
     assert.match(html, /<title>Page not found \| Prakash Electronics<\/title>/);
     assert.match(html, /<meta name="robots" content="noindex, nofollow" \/>/);
+  });
+});
+
+test("unavailable product detail URLs redirect customers to the catalogue", async () => {
+  await withServer(async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/product/no-longer-available`, { redirect: "manual" });
+    assert.equal(response.status, 302);
+    assert.equal(response.headers.get("location"), "/products");
+  });
+});
+
+test("gallery page exposes current images as structured data", async () => {
+  await withServer(async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/gallery`);
+    const html = await response.text();
+    assert.equal(response.status, 200);
+    assert.match(html, /<script type="application\/ld\+json" data-gallery-seo>/);
+    assert.match(html, /"@type":"ImageGallery"/);
+  });
+});
+
+test("homepage and about pages expose live section image structured data", async () => {
+  await withServer(async (baseUrl) => {
+    const [home, about] = await Promise.all([
+      fetch(`${baseUrl}/`).then(async (response) => ({ status: response.status, html: await response.text() })),
+      fetch(`${baseUrl}/about`).then(async (response) => ({ status: response.status, html: await response.text() })),
+    ]);
+    assert.equal(home.status, 200);
+    assert.equal(about.status, 200);
+    assert.match(home.html, /Prakash Electronics/);
+    assert.match(home.html, /Electronics shop in Chitarpur|repair shop in Chitarpur|Prakash shop/i);
+    assert.match(about.html, /About Prakash Electronics/);
+    // Structured data scripts are present when live images exist; empty sections omit them.
+    if (home.html.includes("data-home-image-seo")) {
+      assert.match(home.html, /<script type="application\/ld\+json" data-home-image-seo>/);
+      assert.match(home.html, /"@type":"ImageGallery"/);
+    }
+    if (about.html.includes("data-about-image-seo")) {
+      assert.match(about.html, /<script type="application\/ld\+json" data-about-image-seo>/);
+    }
   });
 });
 
@@ -88,7 +130,7 @@ test("products route exposes the mobile-compatible OG image without a host redir
     assert.match(html, /<meta property="og:image:width" content="1200" \/>/);
     assert.match(html, /<meta property="og:image:height" content="630" \/>/);
     assert.match(html, /<meta name="twitter:image" content="https:\/\/prakashshop\.in\/og-image-shop-products\.jpg\?v=20260910-mobile" \/>/);
-    assert.match(html, /<meta name="twitter:image:alt" content="Prakash Electronics shop products" \/>/);
+    assert.match(html, /<meta name="twitter:image:alt" content="Prakash Electronics shop products in Chitarpur" \/>/);
   });
 });
 

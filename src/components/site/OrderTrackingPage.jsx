@@ -126,7 +126,7 @@ export function OrderTrackingPage() {
           <p>Enter the Order ID you received after payment to see products, payment summary and the latest delivery status.</p>
           <form onSubmit={findOrder}>
             <label htmlFor="order-id">Order ID</label>
-            <div><input id="order-id" value={orderId} onChange={(e) => setOrderId(e.target.value.toUpperCase())} placeholder="PE-YYYYMMDD-XXXXXXXXXXXX" autoComplete="off" /><button type="submit" disabled={busy}><Search size={18} /> {busy ? "Finding…" : "Track order"}</button></div>
+            <div><input id="order-id" value={orderId} onChange={(e) => setOrderId(e.target.value.toUpperCase())} placeholder="PEABC234XYZ" autoComplete="off" /><button type="submit" disabled={busy}><Search size={18} /> {busy ? "Finding…" : "Track order"}</button></div>
             {error && <small role="alert">{error}</small>}
           </form>
         </header>

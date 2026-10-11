@@ -8559,11 +8559,25 @@ body.public-light-theme .wiring-filter-hint {
 .public-site-theme .detail-tags span,
 .public-site-theme .detail-tags a,
 .public-site-theme .detail-tag-link,
-.public-site-theme .qty-control,
-.public-site-theme .cart-summary div {
+.public-site-theme .qty-control {
   color: #334155;
   border-color: #d9e2ec;
   background: #f8fafc;
+}
+
+/* Keep the cart totals as a simple receipt list; checkout controls retain their current treatment. */
+.public-site-theme .cart-summary > div {
+  padding: 0.2rem 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.public-site-theme .cart-summary > .cart-summary-total {
+  margin-top: 0.1rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid #d9e2ec;
+  background: transparent;
 }
 
 .public-site-theme .qty-control button,
@@ -8752,12 +8766,21 @@ body.public-light-theme .wiring-filter-hint {
 .public-site-theme .snap-carousel-nav,
 .public-site-theme .card-stack-shell button[aria-label^="Previous"],
 .public-site-theme .card-stack-shell button[aria-label^="Next"] {
-  color: #1d4ed8;
-  border-color: #bfd2e8;
-  background: #ffffff;
-  box-shadow: 0 5px 14px rgba(15, 23, 42, 0.12);
+  color: #1e3a5f;
+  border-color: rgba(148, 163, 184, 0.38);
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
+}
+
+.public-site-theme .snap-carousel-nav:hover,
+.public-site-theme .card-stack-shell button[aria-label^="Previous"]:hover,
+.public-site-theme .card-stack-shell button[aria-label^="Next"]:hover {
+  color: #1d4ed8;
+  border-color: rgba(37, 99, 235, 0.42);
+  background: #ffffff;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.1);
 }
 
 .public-site-theme .card-stack-card {
@@ -8841,7 +8864,8 @@ body.public-light-theme .wiring-filter-hint {
 
 @media (max-width: 768px) {
   .public-site-theme .snap-carousel-nav {
-    background: #ffffff;
+    background: rgba(255, 255, 255, 0.97);
+    border-color: rgba(148, 163, 184, 0.42);
   }
 
   .public-site-theme .card-stack-card {
@@ -8863,19 +8887,66 @@ body.public-light-theme .wiring-filter-hint {
 
 /* Keep service photography bright; contrast is localized behind the copy only. */
 .public-site-theme .service-fan-card .media-card-scrim {
-  background: linear-gradient(180deg, transparent 0%, transparent 58%, rgba(7, 17, 31, 0.15) 70%, rgba(7, 17, 31, 0.68) 100%);
+  background: linear-gradient(180deg, transparent 0%, transparent 61%, rgba(7, 17, 31, 0.08) 76%, rgba(7, 17, 31, 0.22) 100%);
 }
 
+.public-site-theme .service-fan-card .media-card-badge {
+  color: #1e3a5f;
+  border: 1px solid rgba(191, 210, 232, 0.9);
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);
+  text-shadow: none;
+  -webkit-backdrop-filter: saturate(135%) blur(8px);
+  backdrop-filter: saturate(135%) blur(8px);
+}
+
+.public-site-theme .service-fan-card .service-card-copy {
+  margin: -0.55rem;
+  padding: 0.75rem;
+  border-radius: 12px;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.7), rgba(241, 247, 253, 0.58));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.62), 0 10px 24px rgba(15, 23, 42, 0.16);
+  -webkit-backdrop-filter: saturate(135%) blur(12px);
+  backdrop-filter: saturate(135%) blur(12px);
+}
+
+.public-site-theme .service-fan-card .service-card-copy h3 {
+  color: #172033;
+  text-shadow: none;
+}
+
+.public-site-theme .service-fan-card .service-card-copy > p {
+  color: #526176;
+  text-shadow: none;
+}
+
+.public-site-theme .service-fan-card .service-card-copy > p:first-child {
+  color: #2563eb;
+}
+
+.public-site-theme .service-fan-card .service-card-copy > div span {
+  color: #3e536d;
+  border-color: rgba(148, 163, 184, 0.42);
+  background: rgba(255, 255, 255, 0.44);
+  text-shadow: none;
+}
+
+.public-site-theme .service-fan-card .service-card-copy > span {
+  color: #1d4ed8;
+  text-shadow: none;
+}
+
+/* Keep the non-public fallback readable where this component is reused. */
 .service-card-copy {
   margin: -0.55rem;
   padding: 0.75rem;
-  border: 1px solid rgba(255,255,255,.1);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 12px;
-  background: linear-gradient(145deg, rgba(7,17,31,.78), rgba(7,17,31,.68));
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.055), 0 10px 24px rgba(2,6,23,.14);
+  background: linear-gradient(145deg, rgba(7, 17, 31, 0.78), rgba(7, 17, 31, 0.68));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.055), 0 10px 24px rgba(2, 6, 23, 0.14);
 }
 
-/* A tiny desktop-only blur gives the glass effect without taxing mobile carousels. */
+/* Preserve a lightweight fallback for browsers without backdrop-filter support. */
 @media (min-width: 769px) {
   @supports ((-webkit-backdrop-filter: blur(2px)) or (backdrop-filter: blur(2px))) {
     .service-card-copy {

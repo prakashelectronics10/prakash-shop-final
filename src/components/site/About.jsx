@@ -90,7 +90,13 @@ function AboutReasonCard({ item, active }) {
         {image ? (
           <OptimizedImage
             src={image}
-            alt={item.title}
+            alt={
+              item.title
+                ? (/prakash|chitarpur/i.test(item.title)
+                  ? item.title
+                  : `${item.title} | About Prakash Electronics repair shop in Chitarpur`)
+                : "About Prakash Electronics electronics repair shop in Chitarpur"
+            }
             width={720}
             height={480}
             sizes="(min-width: 1024px) 520px, (min-width: 768px) 440px, 90vw"

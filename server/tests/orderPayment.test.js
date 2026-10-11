@@ -8,7 +8,15 @@ process.env.RAZORPAY_WEBHOOK_SECRET = process.env.RAZORPAY_WEBHOOK_SECRET || "un
 
 const Order = require("../models/Order");
 const { verifyPaymentSignature, verifyWebhookSignature } = require("../services/razorpayService");
-const { ORDER_STATUSES } = require("../controllers/orderController");
+const { ORDER_STATUSES, newPublicOrderId } = require("../controllers/orderController");
+
+test("generates compact, punctuation-free public order IDs", () => {
+  const identifiers = new Set(Array.from({ length: 100 }, () => newPublicOrderId()));
+  assert.equal(identifiers.size, 100);
+  identifiers.forEach((identifier) => {
+    assert.match(identifier, /^PE[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{10}$/);
+  });
+});
 
 test("verifies Razorpay signatures with a timing-safe HMAC comparison", () => {
   const razorpayOrderId = "order_unit_123";

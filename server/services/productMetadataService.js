@@ -75,7 +75,9 @@ function serializeProductMeta(product, { origin, sourceType }) {
     shortDescription: trimText(product.shortDescription, description, 500),
     image,
     images,
-    imageAlt: name,
+    imageAlt: /prakash|chitarpur/i.test(name)
+      ? name
+      : `${name} | Prakash Electronics shop in Chitarpur`,
     url,
     type: "product",
     sourceType,

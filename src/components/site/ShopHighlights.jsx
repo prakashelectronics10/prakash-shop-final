@@ -16,12 +16,23 @@ function safeHighlightLink(value) {
   }
 }
 
+function highlightSeoAlt(item, index) {
+  const custom = String(item.alt || item.title || item.label || "").trim();
+  if (custom) {
+    return /prakash|chitarpur/i.test(custom)
+      ? custom
+      : `${custom} | Prakash Electronics shop in Chitarpur`;
+  }
+  return `Shop highlight ${index + 1} at Prakash Electronics electronics shop in Chitarpur`;
+}
+
 function HighlightMedia({ item, index }) {
   const source = item.originalUrl || item.imageUrl || item.src || item.url;
+  const alt = highlightSeoAlt(item, index);
   const image = (
     <OptimizedImage
       src={source}
-      alt={item.alt || `Shop highlight ${index + 1}`}
+      alt={alt}
       width={1920}
       height={800}
       sizes="(min-width: 1024px) 920px, calc(100vw - 32px)"
@@ -43,7 +54,7 @@ function HighlightMedia({ item, index }) {
       href={href}
       target={external ? "_blank" : undefined}
       rel={external ? "noopener noreferrer" : undefined}
-      aria-label={item.alt ? `Open ${item.alt}` : `Open shop highlight ${index + 1}`}
+      aria-label={`Open ${alt}`}
     >
       {image}
     </a>
