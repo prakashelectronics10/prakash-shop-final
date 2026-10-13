@@ -169,11 +169,24 @@ export function CartPage() {
               </div>
               <div>
                 <span>Subtotal</span>
-                <strong>{quote ? formatINR(quote.discountedSubtotal) : chargesLoading ? "Calculating…" : "Unavailable"}</strong>
+                <strong>
+                  <QuoteValue value={quote?.discountedSubtotal} loading={chargesLoading} label="the subtotal" />
+                </strong>
               </div>
               {quote?.discountTotal > 0 && <small className="cart-discount-included">Coupon savings included in product prices.</small>}
               {chargesLoading ? (
-                <div className="cart-summary-charge-loading"><span>Additional charges</span><strong>Calculating…</strong></div>
+                <>
+                  <div className="cart-summary-charge-loading" aria-hidden="true">
+                    <span className="order-quote-label-skeleton" />
+                    <strong><span className="order-quote-value-skeleton" /></strong>
+                  </div>
+                  <div className="cart-summary-charge-loading">
+                    <span className="order-quote-label-skeleton order-quote-label-skeleton--wide" />
+                    <strong>
+                      <span className="order-quote-value-skeleton" role="status" aria-label="Calculating additional charges" />
+                    </strong>
+                  </div>
+                </>
               ) : additionalCharges.map((charge) => (
                 <div key={charge._id || charge.slug || charge.name}>
                   <span>{charge.name}</span>
@@ -182,7 +195,9 @@ export function CartPage() {
               ))}
               <div className="cart-summary-total">
                 <span>Estimated total</span>
-                <strong>{quote ? formatINR(estimatedTotal) : chargesLoading ? "Calculating…" : "Unavailable"}</strong>
+                <strong>
+                  <QuoteValue value={estimatedTotal} loading={chargesLoading} label="the estimated total" />
+                </strong>
               </div>
               {quoteError && <p className="cart-quote-error" role="alert">{quoteError} <button type="button" onClick={refresh}>Retry</button></p>}
               <button type="button" onClick={openCheckout}>
