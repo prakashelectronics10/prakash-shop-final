@@ -86,10 +86,9 @@
 }
 
 /* Keeps authoritative order totals stable while the no-store quote is refreshed. */
-.order-quote-value-skeleton {
+.order-quote-value-skeleton,
+.order-quote-label-skeleton {
   display: inline-block;
-  width: 4.75rem;
-  height: .9em;
   vertical-align: -.05em;
   border-radius: 999px;
   background: linear-gradient(90deg, #dbe7f5 25%, #edf4fb 42%, #dbe7f5 60%);
@@ -97,12 +96,34 @@
   animation: order-quote-shimmer 1.2s ease-in-out infinite;
 }
 
+.order-quote-value-skeleton {
+  width: 4.75rem;
+  height: .9em;
+}
+
+.order-quote-label-skeleton {
+  width: 6.5rem;
+  height: 0.72rem;
+}
+
+.order-quote-label-skeleton--wide {
+  width: 8.25rem;
+}
+
+.cart-summary-total .order-quote-value-skeleton {
+  width: 5.5rem;
+  height: 1em;
+}
+
 @keyframes order-quote-shimmer {
   to { background-position: -220% 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .order-quote-value-skeleton { animation: none; }
+  .order-quote-value-skeleton,
+  .order-quote-label-skeleton {
+    animation: none;
+  }
 }
 
 /* Consistent, professional spacing between homepage sections */
@@ -2574,7 +2595,13 @@ a.cart-item-image:focus-visible {
   font-weight: 900;
 }
 
+.cart-summary .cart-summary-charge-loading {
+  align-items: center;
+}
+
 .cart-summary .cart-summary-charge-loading strong {
+  display: inline-flex;
+  align-items: center;
   color: #64748b;
   font-size: 0.78rem;
 }
