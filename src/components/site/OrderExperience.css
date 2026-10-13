@@ -224,6 +224,41 @@
 .order-success-card > small { color: #64748b; }
 
 .tracking-hero { width: min(780px,100%); margin: 0 auto 2rem; text-align: center; }
+.tracking-hero-visual {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: min(420px, 88%);
+  margin: 0 auto 1.35rem;
+  aspect-ratio: 1.35 / 1;
+  isolation: isolate;
+}
+.tracking-hero-glow {
+  position: absolute;
+  inset: 8% 4% 4%;
+  z-index: 0;
+  border-radius: 50%;
+  background:
+    radial-gradient(ellipse at 50% 42%, rgba(59,130,246,.28), transparent 62%),
+    radial-gradient(ellipse at 30% 70%, rgba(147,197,253,.22), transparent 55%),
+    radial-gradient(ellipse at 72% 68%, rgba(191,219,254,.3), transparent 50%);
+  filter: blur(2px);
+  pointer-events: none;
+}
+.tracking-hero-image {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  max-width: 420px;
+  height: auto;
+  object-fit: contain;
+  mix-blend-mode: screen;
+  filter: drop-shadow(0 18px 34px rgba(37,99,235,.16));
+  user-select: none;
+  pointer-events: none;
+}
+.tracking-hero > .order-kicker { justify-content: center; }
 .tracking-hero > p { max-width: 680px; margin: .8rem auto 1.4rem; }
 .tracking-hero form { display: grid; gap: .55rem; padding: .85rem; border: 1px solid #dbe7f5; border-radius: 18px; text-align: left; background: white; box-shadow: 0 18px 45px rgba(30,64,175,.08); }
 .tracking-hero form > label { padding-left: .25rem; color: #475569; font-size: .72rem; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
@@ -240,6 +275,76 @@
 .tracking-status-pill { padding: .55rem .8rem; border-radius: 999px; color: #1d4ed8; background: #dbeafe; font-size: .72rem; text-transform: capitalize; white-space: nowrap; }
 .tracking-status-pill.delivered { color: #047857; background: #d1fae5; }
 .tracking-status-pill.cancelled { color: #b91c1c; background: #fee2e2; }
+
+.tracking-customer-card {
+  margin-top: 1.15rem;
+  padding: 1rem 1.05rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #f8fbff 0%, #ffffff 100%);
+}
+.tracking-customer-head {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  margin-bottom: .95rem;
+}
+.tracking-customer-head > span {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border-radius: 12px;
+  color: #1d4ed8;
+  background: #dbeafe;
+  flex-shrink: 0;
+}
+.tracking-customer-head h3 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 1rem;
+}
+.tracking-customer-head p {
+  margin: .15rem 0 0;
+  color: #64748b;
+  font-size: .78rem;
+  line-height: 1.4;
+}
+.tracking-customer-grid {
+  display: grid;
+  gap: .7rem;
+  margin: 0;
+}
+.tracking-customer-row {
+  display: grid;
+  gap: .28rem;
+  padding: .72rem .8rem;
+  border: 1px solid #e8eef7;
+  border-radius: 14px;
+  background: #fff;
+}
+.tracking-customer-row dt {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  color: #64748b;
+  font-size: .72rem;
+  font-weight: 800;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+.tracking-customer-row dd {
+  margin: 0;
+  color: #0f172a;
+  font-size: .95rem;
+  font-weight: 700;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.tracking-customer-note dd {
+  font-weight: 600;
+  color: #334155;
+}
 
 .tracking-products { padding: 1.3rem 0; }
 .tracking-products h3,
@@ -299,13 +404,19 @@
   .checkout-summary-card,
   .tracking-result { border-radius: 18px; }
   .checkout-summary-items { max-height: none; }
+  .tracking-hero-visual { width: min(300px, 92%); margin-bottom: 1rem; }
   .tracking-hero form > div { grid-template-columns: 1fr; }
   .tracking-order-head { display: grid; }
   .tracking-status-pill { justify-self: start; }
+  .tracking-customer-card { padding: .9rem; border-radius: 16px; }
   .tracking-products > a { grid-template-columns: 64px minmax(0,1fr); }
   .tracking-products > a > div { width: 64px; height: 64px; }
   .tracking-products > a > b { grid-column: 2; }
   .order-success-actions { flex-direction: column; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tracking-hero-image { filter: none; }
 }
 .checkout-coupon-discount span { display: inline-flex; align-items: center; gap: .4rem; color: #047857; font-weight: 800; }
 .checkout-coupon-discount strong { color: #059669 !important; }

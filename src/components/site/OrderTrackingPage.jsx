@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { Check, Clock3, PackageCheck, Search, Truck, WalletCards } from "lucide-react";
+import { Check, Clock3, MapPin, PackageCheck, Phone, Search, Truck, UserRound, WalletCards } from "lucide-react";
 import { apiRequest } from "../../api/client";
 import { formatINR } from "../../utils/productPricing";
+import trackOrderHero from "../../assets/track-order-hero.jpg";
 import { Navbar } from "./Navbar";
 import { Footer } from "./Footer";
 import { OptimizedImage } from "./OptimizedImage";
@@ -19,17 +20,77 @@ function formatDate(value) {
   return new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 }
 
+function formatPhone(phone) {
+  const digits = String(phone || "").replace(/\D/g, "");
+  if (digits.length === 10) return `+91 ${digits.slice(0, 5)} ${digits.slice(5)}`;
+  return phone || "—";
+}
+
+function CustomerDetails({ customer }) {
+  if (!customer) return null;
+  const rows = [
+    { icon: UserRound, label: "Customer", value: customer.name },
+    { icon: Phone, label: "Phone", value: formatPhone(customer.phone) },
+    {
+      icon: MapPin,
+      label: "Delivery address",
+      value: [customer.address, customer.pincode ? `PIN ${customer.pincode}` : "", customer.landmark]
+        .filter(Boolean)
+        .join(" · "),
+    },
+  ].filter((row) => row.value);
+
+  if (!rows.length && !customer.message) return null;
+
+  return (
+    <section className="tracking-customer-card" aria-label="Customer details">
+      <div className="tracking-customer-head">
+        <span><UserRound size={18} /></span>
+        <div>
+          <h3>Customer details</h3>
+          <p>Delivery information for this Order ID</p>
+        </div>
+      </div>
+      <dl className="tracking-customer-grid">
+        {rows.map((row) => {
+          const Icon = row.icon;
+          return (
+            <div className="tracking-customer-row" key={row.label}>
+              <dt><Icon size={15} aria-hidden="true" /> {row.label}</dt>
+              <dd>{row.value}</dd>
+            </div>
+          );
+        })}
+        {customer.message ? (
+          <div className="tracking-customer-row tracking-customer-note">
+            <dt>Delivery note</dt>
+            <dd>{customer.message}</dd>
+          </div>
+        ) : null}
+      </dl>
+    </section>
+  );
+}
+
 function OrderResult({ order }) {
   const activeIndex = order.orderStatus === "cancelled" ? -1 : STEPS.findIndex((step) => step.key === order.orderStatus);
   const chargeRows = Array.isArray(order.additionalCharges) && order.additionalCharges.length
     ? order.additionalCharges
     : [{ name: "Delivery charge", slug: "delivery-charge", amount: order.deliveryCharge || 0 }];
+  const customer = order.customer || { name: order.customerName };
+
   return (
     <section className="tracking-result">
       <header className="tracking-order-head">
-        <div><p className="order-kicker">Order details</p><h2>{order.orderId}</h2><span>Placed {formatDate(order.placedAt)}</span></div>
+        <div>
+          <p className="order-kicker">Order details</p>
+          <h2>{order.orderId}</h2>
+          <span>Placed {formatDate(order.placedAt)}</span>
+        </div>
         <strong className={`tracking-status-pill ${order.orderStatus}`}>{order.orderStatus.replaceAll("_", " ")}</strong>
       </header>
+
+      <CustomerDetails customer={customer} />
 
       <div className="tracking-products">
         <h3>Items in your order</h3>
@@ -121,12 +182,27 @@ export function OrderTrackingPage() {
       <Navbar />
       <main className="order-tracking-page">
         <header className="tracking-hero">
+          <div className="tracking-hero-visual" aria-hidden="true">
+            <span className="tracking-hero-glow" />
+            <img
+              className="tracking-hero-image"
+              src={trackOrderHero}
+              alt=""
+              width={520}
+              height={360}
+              decoding="async"
+              fetchPriority="high"
+            />
+          </div>
           <p className="order-kicker"><Clock3 size={15} /> Live order tracking</p>
           <h1>Track your order</h1>
           <p>Enter the Order ID you received after payment to see products, payment summary and the latest delivery status.</p>
           <form onSubmit={findOrder}>
             <label htmlFor="order-id">Order ID</label>
-            <div><input id="order-id" value={orderId} onChange={(e) => setOrderId(e.target.value.toUpperCase())} placeholder="PEABC234XYZ" autoComplete="off" /><button type="submit" disabled={busy}><Search size={18} /> {busy ? "Finding…" : "Track order"}</button></div>
+            <div>
+              <input id="order-id" value={orderId} onChange={(e) => setOrderId(e.target.value.toUpperCase())} placeholder="PEABC234XYZ" autoComplete="off" />
+              <button type="submit" disabled={busy}><Search size={18} /> {busy ? "Finding…" : "Track order"}</button>
+            </div>
             {error && <small role="alert">{error}</small>}
           </form>
         </header>

@@ -9,8 +9,8 @@ import { getPhoneHref, getWhatsappHref } from "../../utils/contactDefaults";
 const FORMSPREE_ENDPOINT = "https://formspree.io/f/xykobjne";
 
 export function Contact({ sectionId = "contact", showHeading = true, requireRating = true }) {
-  const { contact, content } = useSiteData("contact");
-  const section = content.contactSection || {};
+  const { contact } = useSiteData("contact");
+  // const section = content.contactSection || {};
   const [status, setStatus] = useState("");
   const [reviewRating, setReviewRating] = useState(0);
   const [hoverRating, setHoverRating] = useState(0);

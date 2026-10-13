@@ -16,6 +16,7 @@ const {
   verifyPaymentSignature,
   verifyWebhookSignature,
 } = require("../services/razorpayService");
+const { enqueueOrderPaidNotification } = require("../services/orderNotificationService");
 
 const ORDER_STATUSES = ["confirmed", "shipped", "out_for_delivery", "delivered"];
 
@@ -27,15 +28,19 @@ function cleanText(value, maxLength, required = false) {
 }
 
 function sanitizeCustomer(input = {}) {
+  const digitsOnly = String(input.phone || "").replace(/\D/g, "");
+  const phone = digitsOnly.length === 12 && digitsOnly.startsWith("91")
+    ? digitsOnly.slice(2)
+    : digitsOnly;
   const customer = {
     name: cleanText(input.name, 100, true),
-    phone: cleanText(input.phone, 15, true).replace(/[^\d+]/g, ""),
+    phone: cleanText(phone, 10, true),
     address: cleanText(input.address, 500, true),
     pincode: cleanText(input.pincode, 6, true),
     landmark: cleanText(input.landmark, 160),
     message: cleanText(input.message, 1000),
   };
-  if (!/^(?:\+91)?[6-9]\d{9}$/.test(customer.phone)) throw new AppError("Enter a valid Indian phone number", 400);
+  if (!/^[6-9]\d{9}$/.test(customer.phone)) throw new AppError("Enter a valid 10-digit Indian phone number", 400);
   if (!/^\d{6}$/.test(customer.pincode)) throw new AppError("Pincode must contain exactly 6 digits", 400);
   return customer;
 }
@@ -107,9 +112,18 @@ function newPublicOrderId() {
 }
 
 function publicOrder(order) {
+  const customer = order.customer || {};
   return {
     orderId: order.orderId,
-    customerName: order.customer?.name || "Customer",
+    customerName: customer.name || "Customer",
+    customer: {
+      name: customer.name || "Customer",
+      phone: customer.phone || "",
+      address: customer.address || "",
+      pincode: customer.pincode || "",
+      landmark: customer.landmark || "",
+      message: customer.message || "",
+    },
     items: order.items,
     itemCount: order.itemCount,
     subtotal: order.subtotal,
@@ -219,6 +233,7 @@ exports.verifyPayment = asyncHandler(async (req, res) => {
   order.paidAt = new Date();
   order.statusUpdatedAt = new Date();
   await order.save();
+  enqueueOrderPaidNotification(order);
   res.json({ success: true, data: publicOrder(order) });
 });
 
@@ -244,6 +259,7 @@ exports.handleRazorpayWebhook = asyncHandler(async (req, res) => {
         order.paidAt = payment.created_at ? new Date(payment.created_at * 1000) : new Date();
         order.statusUpdatedAt = new Date();
         await order.save();
+        enqueueOrderPaidNotification(order);
       }
     }
   }

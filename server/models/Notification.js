@@ -6,6 +6,7 @@ const notificationSchema = new mongoose.Schema(
       type: String,
       enum: [
         "booking",
+        "order",
         "admin_request",
         "discussion_message",
         "system",
@@ -68,6 +69,18 @@ const notificationSchema = new mongoose.Schema(
       default: null,
       index: true,
     },
+    relatedOrder: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Order",
+      default: null,
+      index: true,
+    },
+    orderId: {
+      type: String,
+      trim: true,
+      default: "",
+      index: true,
+    },
     discussionMessageId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "DiscussionMessage",
@@ -127,6 +140,10 @@ notificationSchema.index({ receiverAdmins: 1, createdAt: -1 });
 notificationSchema.index(
   { targetAdmin: 1, type: 1, relatedBooking: 1 },
   { unique: true, partialFilterExpression: { type: "booking", relatedBooking: { $type: "objectId" } } },
+);
+notificationSchema.index(
+  { targetAdmin: 1, type: 1, relatedOrder: 1 },
+  { unique: true, partialFilterExpression: { type: "order", relatedOrder: { $type: "objectId" } } },
 );
 
 module.exports = mongoose.model("Notification", notificationSchema);

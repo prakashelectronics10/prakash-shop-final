@@ -255,6 +255,141 @@ async function notifyBookingCreated(booking) {
   return notifications.map((item) => item.notification);
 }
 
+function orderProductsLabel(order) {
+  const items = Array.isArray(order.items) ? order.items.filter((item) => item?.productName) : [];
+  if (!items.length) return "Product order";
+  return items
+    .slice(0, 3)
+    .map((item) => `${cleanText(item.productName)}${Number(item.quantity || 1) > 1 ? ` x${item.quantity}` : ""}`)
+    .join(", ");
+}
+
+function orderImageUrl(order) {
+  return safeImageUrl(order.items?.find((item) => item?.productImageUrl)?.productImageUrl);
+}
+
+function orderPushBody(order) {
+  const customer = order.customer || {};
+  return [
+    `Order: ${cleanText(order.orderId, "N/A")}`,
+    `Name: ${cleanText(customer.name, "Customer")}`,
+    `Phone: ${cleanText(customer.phone, "N/A")}`,
+    `Address: ${cleanText(customer.address, "N/A")}`,
+    `Pincode: ${cleanText(customer.pincode, "N/A")}`,
+    `Products: ${orderProductsLabel(order)}`,
+    `Total: ₹${Number(order.total || 0).toLocaleString("en-IN")}`,
+  ].join("\n");
+}
+
+async function notifyOrderCreated(order) {
+  const admins = await mobileEnabledAdmins();
+  const title = "New Product Order";
+  const message = orderPushBody(order);
+  const image = orderImageUrl(order);
+  const customer = order.customer || {};
+  const metadata = {
+    orderId: cleanText(order.orderId),
+    customerName: cleanText(customer.name),
+    phoneNumber: cleanText(customer.phone),
+    address: cleanText(customer.address),
+    pincode: cleanText(customer.pincode),
+    landmark: cleanText(customer.landmark),
+    productName: orderProductsLabel(order),
+    total: order.total,
+    itemCount: order.itemCount,
+    image,
+    paidAt: order.paidAt || order.createdAt,
+  };
+  const pushData = {
+    type: "order",
+    orderId: cleanText(order.orderId),
+    relatedOrderId: String(order._id),
+    customerName: cleanText(customer.name),
+    phoneNumber: cleanText(customer.phone),
+    address: cleanText(customer.address),
+    pincode: cleanText(customer.pincode),
+    productName: orderProductsLabel(order),
+    total: String(order.total ?? ""),
+    image,
+    screen: "Orders",
+  };
+
+  console.log("[push] Order notification admin lookup:", {
+    orderId: String(order.orderId || order._id),
+    adminCount: admins.length,
+    adminIds: admins.map((admin) => String(admin._id)),
+  });
+
+  if (!admins.length) return [];
+
+  const notifications = (await Promise.all(admins.map(async (admin) => {
+    const existing = await Notification.findOne({
+      type: "order",
+      targetAdmin: admin._id,
+      relatedOrder: order._id,
+    });
+    if (existing) {
+      console.log("[notification] Duplicate order notification prevented:", {
+        orderId: String(order.orderId || order._id),
+        targetAdmin: String(admin._id),
+        notificationId: String(existing._id),
+      });
+      existing.isRead = false;
+      existing.readAt = undefined;
+      existing.title = title;
+      existing.message = message;
+      existing.body = message;
+      existing.image = image;
+      existing.orderId = cleanText(order.orderId);
+      existing.deepLinkData = { ...pushData, notificationId: String(existing._id) };
+      existing.metadata = { ...metadata, duplicatePreventedAt: new Date() };
+      await existing.save();
+      return { notification: existing, shouldPush: false };
+    }
+    const notification = await Notification.create({
+      type: "order",
+      title,
+      message,
+      body: message,
+      targetAdmin: admin._id,
+      receiverAdmins: [admin._id],
+      relatedOrder: order._id,
+      orderId: cleanText(order.orderId),
+      image,
+      icon: "package",
+      screen: "Orders",
+      deepLinkData: pushData,
+      metadata,
+    });
+    return { notification, shouldPush: true };
+  }))).filter(Boolean);
+
+  await Promise.all(notifications.filter((item) => item.shouldPush).map(({ notification }) => {
+    console.log("[push] Order push notification triggered:", {
+      orderId: String(order.orderId || order._id),
+      notificationId: String(notification._id),
+      targetAdmin: String(notification.targetAdmin),
+      source: "notifyOrderCreated",
+    });
+    return sendPushToAdmins([notification.targetAdmin], {
+      ...(notification.toObject?.() || notification),
+      data: {
+        notificationId: String(notification._id),
+        ...pushData,
+      },
+      channelId: "orders",
+    });
+  }));
+
+  await Promise.all(notifications.map(async ({ notification }) => {
+    const unreadCount = await Notification.countDocuments({ targetAdmin: notification.targetAdmin, isRead: false });
+    emitNotificationToAdmins([notification.targetAdmin], "notification:new", { notification, unreadCount });
+    emitNotificationToAdmins([notification.targetAdmin], "notification:unread-count", { unreadCount });
+  }));
+
+  return notifications.map((item) => item.notification);
+}
+
 async function notifyReviewCreated({ name, phone, email, message, reviewRating }) {
   if (!reviewRating) return [];
   const body = [
@@ -403,6 +538,7 @@ module.exports = {
   notifyAndroidAccessGranted,
   notifyAndroidAccessRequested,
   notifyBookingCreated,
+  notifyOrderCreated,
   notifyReviewCreated,
   notifySystemAlert,
 };

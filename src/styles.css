@@ -8968,6 +8968,128 @@ body.public-light-theme .wiring-filter-hint {
   filter: none;
 }
 
+/* Explore Products CTA between Recent Updates and Shop Highlights */
+.explore-products-banner {
+  padding-block: clamp(1.5rem, 3.5vw, 2.75rem);
+}
+
+.explore-products-banner__inner {
+  display: grid;
+  justify-items: center;
+  gap: clamp(1.1rem, 2.8vw, 1.75rem);
+  width: min(720px, calc(100% - 2rem));
+  margin-inline: auto;
+  text-align: center;
+}
+
+.explore-products-banner__visual {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: min(100%, 520px);
+  isolation: isolate;
+}
+
+.explore-products-banner__glow {
+  position: absolute;
+  inset: 10% 6% 12%;
+  z-index: 0;
+  border-radius: 50%;
+  background:
+    radial-gradient(ellipse at 50% 45%, rgba(59, 130, 246, 0.26), transparent 64%),
+    radial-gradient(ellipse at 28% 70%, rgba(147, 197, 253, 0.2), transparent 55%),
+    radial-gradient(ellipse at 74% 68%, rgba(191, 219, 254, 0.24), transparent 52%);
+  pointer-events: none;
+}
+
+.explore-products-banner__image {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  max-width: 520px;
+  height: auto;
+  object-fit: contain;
+  filter: drop-shadow(0 18px 36px rgba(37, 99, 235, 0.14));
+  user-select: none;
+  pointer-events: none;
+}
+
+.explore-products-banner__button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  min-height: 52px;
+  width: fit-content;
+  max-width: 100%;
+  padding: 0 1.45rem;
+  border-radius: 999px;
+  color: #fff;
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  box-shadow: 0 14px 34px rgba(37, 99, 235, 0.28);
+  font-size: 0.98rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  text-decoration: none;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease;
+}
+
+.explore-products-banner__button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 18px 40px rgba(37, 99, 235, 0.34);
+  filter: brightness(1.04);
+}
+
+.explore-products-banner__button:active {
+  transform: translateY(0);
+}
+
+.explore-products-banner__button:focus-visible {
+  outline: 3px solid rgba(59, 130, 246, 0.45);
+  outline-offset: 3px;
+}
+
+@media (max-width: 768px) {
+  .explore-products-banner {
+    padding-block: 1.35rem;
+  }
+
+  .explore-products-banner__inner {
+    width: min(100% - 1.25rem, 720px);
+    gap: 1rem;
+  }
+
+  .explore-products-banner__visual {
+    width: min(100%, 340px);
+  }
+
+  .explore-products-banner__image {
+    max-width: 340px;
+  }
+
+  .explore-products-banner__button {
+    min-height: 48px;
+    width: min(100%, 280px);
+    font-size: 0.94rem;
+  }
+}
+
+@media (min-width: 1100px) {
+  .explore-products-banner__visual,
+  .explore-products-banner__image {
+    max-width: 560px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .explore-products-banner__button,
+  .explore-products-banner__button:hover {
+    transition: none;
+    transform: none;
+  }
+}
+
 /* Image-only sticky stack modeled on the supplied scroll reference. */
 .shop-highlights-section {
   --shop-highlights-heading-top: 112px;

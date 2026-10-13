@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, BadgePercent, Check, Copy, CreditCard, LockKeyhole, MapPin, PackageCheck, ShieldCheck } from "lucide-react";
 import toast from "react-hot-toast";
 import { apiRequest } from "../../api/client";
@@ -10,6 +10,8 @@ import { clearAppliedCouponCode } from "../../utils/coupons";
 import { useOrderQuote } from "../../hooks/useOrderQuote";
 import { formatINR } from "../../utils/productPricing";
 import "./OrderExperience.css";
+
+const REQUIRED_FIELD_ORDER = ["name", "phone", "address", "pincode"];
 
 let razorpayScriptPromise;
 
@@ -75,6 +77,12 @@ export function CheckoutPage() {
   const [fieldErrors, setFieldErrors] = useState({});
   const [busy, setBusy] = useState(false);
   const [confirmedOrder, setConfirmedOrder] = useState(null);
+  const fieldRefs = {
+    name: useRef(null),
+    phone: useRef(null),
+    address: useRef(null),
+    pincode: useRef(null),
+  };
   const { quote, loading: chargesLoading, error: chargesError, payload, refresh: loadAdditionalCharges } = useOrderQuote(items);
   const [paymentQuote, setPaymentQuote] = useState(null);
   const currentQuote = paymentQuote || quote;
@@ -96,8 +104,18 @@ export function CheckoutPage() {
     if (!items.length && !confirmedOrder) window.location.replace("/cart");
   }, [confirmedOrder, items.length]);
 
+  const focusFirstInvalidField = (errors) => {
+    const firstKey = REQUIRED_FIELD_ORDER.find((key) => errors[key]);
+    const field = firstKey ? fieldRefs[firstKey]?.current : null;
+    if (!field) return;
+    field.focus({ preventScroll: true });
+    field.scrollIntoView({ behavior: "smooth", block: "center" });
+  };
+
   const update = (key, value) => {
-    const nextValue = key === "pincode" ? value.replace(/\D/g, "").slice(0, 6) : value;
+    let nextValue = value;
+    if (key === "pincode") nextValue = value.replace(/\D/g, "").slice(0, 6);
+    if (key === "phone") nextValue = value.replace(/\D/g, "").slice(0, 10);
     setForm((current) => ({ ...current, [key]: nextValue }));
     setFieldErrors((current) => ({ ...current, [key]: "" }));
   };
@@ -105,11 +123,15 @@ export function CheckoutPage() {
   const validate = () => {
     const errors = {};
     if (form.name.trim().length < 2) errors.name = "Enter your full name";
-    if (!/^(?:\+91)?[6-9]\d{9}$/.test(form.phone.replace(/[\s-]/g, ""))) errors.phone = "Enter a valid 10-digit phone number";
+    if (!/^[6-9]\d{9}$/.test(form.phone)) errors.phone = "Enter a valid 10-digit phone number";
     if (form.address.trim().length < 8) errors.address = "Enter your complete delivery address";
     if (!/^\d{6}$/.test(form.pincode)) errors.pincode = "Enter exactly 6 digits";
     setFieldErrors(errors);
-    return Object.keys(errors).length === 0;
+    if (Object.keys(errors).length) {
+      focusFirstInvalidField(errors);
+      return false;
+    }
+    return true;
   };
 
   const beginPayment = async (event) => {
@@ -205,22 +227,22 @@ export function CheckoutPage() {
             <div className="checkout-form-grid">
               <label className="checkout-field">
                 <span>Full name *</span>
-                <input autoComplete="name" value={form.name} onChange={(e) => update("name", e.target.value)} placeholder="Your full name" aria-invalid={Boolean(fieldErrors.name)} />
+                <input ref={fieldRefs.name} autoComplete="name" value={form.name} onChange={(e) => update("name", e.target.value)} placeholder="Your full name" aria-invalid={Boolean(fieldErrors.name)} />
                 {fieldErrors.name && <small>{fieldErrors.name}</small>}
               </label>
               <label className="checkout-field">
                 <span>Phone number *</span>
-                <input inputMode="tel" autoComplete="tel" value={form.phone} onChange={(e) => update("phone", e.target.value)} placeholder="10-digit mobile number" aria-invalid={Boolean(fieldErrors.phone)} />
+                <input ref={fieldRefs.phone} inputMode="numeric" pattern="[6-9][0-9]{9}" maxLength="10" autoComplete="tel" value={form.phone} onChange={(e) => update("phone", e.target.value)} placeholder="10-digit mobile number" aria-invalid={Boolean(fieldErrors.phone)} />
                 {fieldErrors.phone && <small>{fieldErrors.phone}</small>}
               </label>
               <label className="checkout-field checkout-field-wide">
                 <span>Complete address *</span>
-                <textarea rows="3" autoComplete="street-address" value={form.address} onChange={(e) => update("address", e.target.value)} placeholder="House / shop no., street, area and city" aria-invalid={Boolean(fieldErrors.address)} />
+                <textarea ref={fieldRefs.address} rows="3" autoComplete="street-address" value={form.address} onChange={(e) => update("address", e.target.value)} placeholder="House / shop no., street, area and city" aria-invalid={Boolean(fieldErrors.address)} />
                 {fieldErrors.address && <small>{fieldErrors.address}</small>}
               </label>
               <label className="checkout-field">
                 <span>Pincode *</span>
-                <input inputMode="numeric" pattern="[0-9]{6}" maxLength="6" autoComplete="postal-code" value={form.pincode} onChange={(e) => update("pincode", e.target.value)} placeholder="6-digit pincode" aria-invalid={Boolean(fieldErrors.pincode)} />
+                <input ref={fieldRefs.pincode} inputMode="numeric" pattern="[0-9]{6}" maxLength="6" autoComplete="postal-code" value={form.pincode} onChange={(e) => update("pincode", e.target.value)} placeholder="6-digit pincode" aria-invalid={Boolean(fieldErrors.pincode)} />
                 {fieldErrors.pincode && <small>{fieldErrors.pincode}</small>}
               </label>
               <label className="checkout-field">

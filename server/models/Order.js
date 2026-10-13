@@ -72,6 +72,7 @@ const orderSchema = new mongoose.Schema(
     razorpayOrderId: { type: String, required: true, index: true },
     razorpayPaymentId: { type: String, trim: true, default: "", index: true },
     paidAt: Date,
+    notifiedAt: { type: Date, default: null },
     statusUpdatedAt: { type: Date, default: Date.now },
     refund: {
       status: { type: String, enum: ["not_required", "processing", "processed", "failed"], default: "not_required" },
