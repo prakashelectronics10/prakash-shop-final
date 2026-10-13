@@ -136,3 +136,60 @@ export function CatalogGridSkeleton({ count = 6, className = "" }) {
     </div>
   );
 }
+
+/** Product detail layout skeleton — mirrors image + info panel. */
+export function ProductDetailSkeleton({ className = "" }) {
+  return (
+    <section
+      className={`part-detail-panel product-detail-skeleton ${className}`.trim()}
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+      aria-label="Loading product details"
+    >
+      <div className="product-detail-skeleton-media product-skeleton-shimmer" aria-hidden="true" />
+      <div className="product-detail-skeleton-content" aria-hidden="true">
+        <span className="product-detail-skeleton-line is-kicker product-skeleton-shimmer" />
+        <span className="product-detail-skeleton-line is-title product-skeleton-shimmer" />
+        <div className="product-detail-skeleton-meta">
+          <span className="product-skeleton-shimmer" />
+          <span className="product-skeleton-shimmer" />
+        </div>
+        <span className="product-detail-skeleton-line product-skeleton-shimmer" />
+        <span className="product-detail-skeleton-line product-skeleton-shimmer" />
+        <span className="product-detail-skeleton-line is-medium product-skeleton-shimmer" />
+        <span className="product-detail-skeleton-line is-short product-skeleton-shimmer" />
+        <div className="product-detail-skeleton-actions">
+          <span className="product-skeleton-shimmer is-price" />
+          <span className="product-skeleton-shimmer is-button" />
+          <span className="product-skeleton-shimmer is-button" />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/** Compact section / route suspense skeleton. */
+export function PageSectionSkeleton({ className = "" }) {
+  return (
+    <div
+      className={`page-section-skeleton ${className}`.trim()}
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+      aria-label="Loading content"
+    >
+      <div className="page-section-skeleton-hero product-skeleton-shimmer" aria-hidden="true" />
+      <div className="page-section-skeleton-body" aria-hidden="true">
+        <span className="page-section-skeleton-line is-title product-skeleton-shimmer" />
+        <span className="page-section-skeleton-line product-skeleton-shimmer" />
+        <span className="page-section-skeleton-line is-short product-skeleton-shimmer" />
+        <div className="page-section-skeleton-cards">
+          <span className="product-skeleton-shimmer" />
+          <span className="product-skeleton-shimmer" />
+          <span className="product-skeleton-shimmer" />
+        </div>
+      </div>
+    </div>
+  );
+}

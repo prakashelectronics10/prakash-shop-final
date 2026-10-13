@@ -946,6 +946,10 @@ export function ScienceAIPage() {
             <PanelLeftClose size={18} />
           </button>
         </div>
+        <a className="ai-back-nav" href="/" aria-label="Back to home">
+          <ChevronLeft size={16} aria-hidden="true" />
+          Back
+        </a>
         <button type="button" onClick={newChat}><Plus size={16} /> New Chat</button>
         <button type="button" onClick={deleteChat} className="ai-delete-chat"><Trash2 size={16} /> Delete Current Chat</button>
         <p className="ai-session-storage-note">Temporary chats stay in this tab and clear when the tab is closed.</p>

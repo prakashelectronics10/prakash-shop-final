@@ -93,7 +93,7 @@ export function Offers({ sectionId = "offers" }) {
               Recent updates
             </span>
             <h2 className="mt-4 font-display text-3xl font-bold sm:text-4xl">
-              Recent <span className="text-gradient">Products</span> or <span className="text-gradient">Repairing</span>
+              Recent <span className="text-gradient">Offers</span> and <span className="text-gradient">Updates</span>
             </h2>
           </div>
           <a href="/booking" className="inline-flex items-center gap-2 text-sm font-semibold text-accent">

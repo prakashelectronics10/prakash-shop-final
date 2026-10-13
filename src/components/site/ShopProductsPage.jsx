@@ -14,7 +14,7 @@ import { CatalogInfiniteLoader } from "./CatalogInfiniteLoader";
 import { RelatedProductsSection } from "./RelatedProductsSection";
 import { Lightbox } from "./Lightbox";
 import { SuccessCelebrationOverlay } from "./BookingSuccessOverlay";
-import { CatalogGridSkeleton, EmptyProductsState, LoadingState } from "./StateLottie";
+import { CatalogGridSkeleton, EmptyProductsState, ProductDetailSkeleton } from "./StateLottie";
 import { applyProductPageMeta, getProductSharePath } from "../../utils/productShare";
 import { trackProductPageView } from "../../utils/productViews";
 import {
@@ -934,7 +934,7 @@ export function ProductDetailPage() {
           </a>
         </div>
         {product && !loading && <nav className="product-breadcrumbs" aria-label="Breadcrumb"><a href="/">Home</a><span>/</span><a href={source === "shop" ? "/products" : CANONICAL_WIRING_PARTS_PATH}>{source === "shop" ? "Products" : "Wiring accessories"}</a><span>/</span><strong>{product.name}</strong></nav>}
-        {loading && <LoadingState message="Loading product details..." className="site-state-lottie--detail" />}
+        {loading && <ProductDetailSkeleton />}
         {error && !loading && <div className="parts-state">{error}</div>}
 
         {product && !loading && (
@@ -948,18 +948,23 @@ export function ProductDetailPage() {
             <div className="part-detail-content">
               <p className="parts-kicker"><ShoppingBag size={16} /> {source === "shop" ? "Shop product" : "Wiring accessory"}</p>
               <h1>{product.name}</h1>
-              <div className="detail-meta-row" style={{marginBottom:"15px"}}>
-                <span><Tag size={16} /> {product.category || "Electronics"}</span>
-                {product.originalCategory && <span>{product.originalCategory}</span>}
-                <small className="stock-limit-text">{cartStockMessage(product)}</small>
+              <div className="detail-meta-row">
+                <span className="detail-meta-chip">
+                  <Tag size={14} aria-hidden="true" />
+                  {product.category || "Electronics"}
+                </span>
+                {product.originalCategory ? (
+                  <span className="detail-meta-chip">{product.originalCategory}</span>
+                ) : null}
+                <span className="detail-meta-chip detail-meta-chip--stock">{cartStockMessage(product)}</span>
               </div>
               {product.shortDescription && <p className="detail-lead" style={{marginLeft:"6px", fontWeight:"800"}}>{product.shortDescription}</p>}
               <ExpandableDescription text={product.description} />
               {Array.isArray(product.specifications) && product.specifications.length > 0 && (
-                <div className="part-tags" style={{marginTop:"10px"}}>
+                <div className="part-tags product-detail-spec-tags">
                   {product.specifications.map((item) => (
                     <div key={`${item.label}-${item.value}`}>
-                      <span style={{letterSpacing:"1px",fontWeight:"500"}}>{item.label}</span>
+                      <span>{item.label}</span>
                       <strong>{item.value}</strong>
                     </div>
                   ))}

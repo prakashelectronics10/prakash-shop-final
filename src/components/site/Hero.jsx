@@ -7,7 +7,7 @@ import { OptimizedImage } from "./OptimizedImage";
 import { ProgressSliderDots } from "./ProgressSliderDots";
 
 const fallbackHero = {
-  eyebrow: "Trusted by 25,000+ customers since 2009",
+  eyebrow: "Book Karo, Repair Karo !",
   title: "Repair service, Wiring services, and",
   highlight: "Electronics products",
   titleSuffix: "Sales and Service",
@@ -174,7 +174,7 @@ export function Hero() {
         <div className="animate-fade-up">
           <div className="inline-flex items-center gap-2 rounded-full glass px-4 py-1.5 text-xs font-medium text-muted-foreground">
             <Sparkles className="h-3.5 w-3.5 text-accent" />
-            {heroData.eyebrow}
+            Book Karo, Repair Karo !
           </div>
 
           <h1 className="mt-6 font-display text-4xl font-bold leading-[1.05] tracking-tight sm:text-5xl md:text-6xl lg:text-7xl">
@@ -213,11 +213,13 @@ export function Hero() {
                       {Array.from({ length: 5 }).map((_, i) => (
                         <Star key={i} className="h-4 w-4 fill-accent text-accent" />
                       ))}
+                        
                     </div>
                   ) : (
                     <Icon className="h-5 w-5 text-accent" />
                   )}
-                  {badge.label}
+                  {isRating ? "Top Rated Products" : badge.label}
+             
                 </div>
               );
             })}

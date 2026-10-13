@@ -103,7 +103,7 @@ function ServiceFanCard({ card, loadImages = true }) {
             </div>
           ) : null}
 
-          <span className="mt-3 inline-flex items-center gap-1.5 text-[11px] font-semibold text-accent sm:mt-4 sm:text-xs">
+          <span style={{ color: "#2166E7"}} className="mt-3 inline-flex items-center gap-1.5 text-[11px] font-semibold text-accent sm:mt-4 sm:text-xs">
             {card.ctaLabel || "Learn more"}
             <ArrowRight className="h-3.5 w-3.5" />
           </span>

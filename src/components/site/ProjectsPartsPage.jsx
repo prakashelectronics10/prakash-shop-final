@@ -12,7 +12,7 @@ import { ProductPriceDisplay } from "./ProductPriceDisplay";
 import { CatalogInfiniteLoader } from "./CatalogInfiniteLoader";
 import { ProgressSliderDots } from "./ProgressSliderDots";
 import { RelatedProductsSection } from "./RelatedProductsSection";
-import { CatalogGridSkeleton, EmptyProductsState, LoadingState } from "./StateLottie";
+import { CatalogGridSkeleton, EmptyProductsState, ProductDetailSkeleton } from "./StateLottie";
 import { applyProductPageMeta, getProductSharePath } from "../../utils/productShare";
 import { trackProductPageView } from "../../utils/productViews";
 import {
@@ -681,7 +681,7 @@ export function ProjectPartDetailPage() {
           </a>
         </div>
 
-        {loading && <LoadingState message="Loading product details..." className="site-state-lottie--detail" />}
+        {loading && <ProductDetailSkeleton />}
         {error && !loading && <div className="parts-state">{error}</div>}
 
         {part && !loading && (
@@ -708,9 +708,14 @@ export function ProjectPartDetailPage() {
               <p className="parts-kicker"><Zap size={16} /> Wiring accessory</p>
               <h1>{part.name}</h1>
               <div className="detail-meta-row">
-                <span><Tag size={16} /> {part.category || "Wiring Products"}</span>
-                {part.subCategory ? <span>{part.subCategory}</span> : null}
-                {part.stock !== undefined && <span>{cartStockMessage(part)}</span>}
+                <span className="detail-meta-chip">
+                  <Tag size={14} aria-hidden="true" />
+                  {part.category || "Wiring Products"}
+                </span>
+                {part.subCategory ? <span className="detail-meta-chip">{part.subCategory}</span> : null}
+                {part.stock !== undefined ? (
+                  <span className="detail-meta-chip detail-meta-chip--stock">{cartStockMessage(part)}</span>
+                ) : null}
               </div>
               {part.shortDescription && <p className="detail-lead">{part.shortDescription}</p>}
               <p>{part.description || "This wiring accessory is available at Prakash Electronics."}</p>

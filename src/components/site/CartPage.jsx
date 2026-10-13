@@ -8,6 +8,7 @@ import { CANONICAL_WIRING_PARTS_PATH } from "../../utils/routes";
 import { setAppliedCouponCode } from "../../utils/coupons";
 import { useOrderQuote } from "../../hooks/useOrderQuote";
 import { formatINR } from "../../utils/productPricing";
+import cartEmptyImage from "../../assets/cartimage.png";
 
 function QuoteValue({ value, loading, label }) {
   if (value !== undefined && value !== null) return formatINR(value);
@@ -52,12 +53,23 @@ export function CartPage() {
 
         {!items.length ? (
           <section className="cart-empty-panel">
-            <PackageSearch size={48} />
+            <div className="cart-empty-visual" aria-hidden="true">
+              <span className="cart-empty-glow" />
+              <img
+                className="cart-empty-image"
+                src={cartEmptyImage}
+                alt=""
+                width={520}
+                height={400}
+                decoding="async"
+                fetchPriority="high"
+              />
+            </div>
             <h2>Your cart is empty</h2>
             <p>Browse shop products or wiring accessories and add items instantly without login.</p>
             <div className="cart-empty-actions">
-              <a href="/products">Browse Products</a>
-              <a href={CANONICAL_WIRING_PARTS_PATH}>Wiring Accessories</a>
+              <a href="/products">Shop products</a>
+              <a href={CANONICAL_WIRING_PARTS_PATH}>Browse accessories</a>
               <a className="cart-track-order-link" href="/orders">
                 <PackageCheck size={18} /> Track Your Order
               </a>
