@@ -2339,11 +2339,30 @@ html {
   place-items: center;
   width: 150px;
   aspect-ratio: 1 / 1;
+  overflow: hidden;
   border-radius: 18px;
   color: rgba(255, 255, 255, 0.68);
+  text-decoration: none;
   background:
     radial-gradient(circle at 20% 16%, rgba(103, 232, 249, 0.18), transparent 42%),
     rgba(15, 23, 42, 0.58);
+}
+
+a.cart-item-image {
+  cursor: pointer;
+  transition: transform 160ms ease, box-shadow 160ms ease;
+}
+
+a.cart-item-image:hover,
+a.cart-item-image:focus-visible {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.12);
+  outline: none;
+}
+
+a.cart-item-image:focus-visible {
+  outline: 2px solid #2166e7;
+  outline-offset: 2px;
 }
 
 .cart-item-image img {

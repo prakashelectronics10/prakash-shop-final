@@ -8,6 +8,7 @@ import { CANONICAL_WIRING_PARTS_PATH } from "../../utils/routes";
 import { setAppliedCouponCode } from "../../utils/coupons";
 import { useOrderQuote } from "../../hooks/useOrderQuote";
 import { formatINR } from "../../utils/productPricing";
+import { getProductSharePath } from "../../utils/productShare";
 import cartEmptyImage from "../../assets/cartimage.png";
 
 function QuoteValue({ value, loading, label }) {
@@ -82,21 +83,36 @@ export function CartPage() {
                 const quoteItem = quotedItems[index];
                 const itemQuoteReady = Boolean(quoteItem);
                 const hasDiscount = Number(quoteItem?.discountAmount || 0) > 0;
+                const detailHref = getProductSharePath({
+                  slug: item.productSlug,
+                  _id: item.productId,
+                  sourceId: item.sourceId,
+                });
+                const hasDetailLink = Boolean(item.productSlug || item.productId || item.sourceId);
+                const imageContent = item.productImageUrl ? (
+                  <OptimizedImage
+                    src={item.productImageUrl}
+                    alt={item.productName}
+                    width={180}
+                    height={180}
+                    sizes="(min-width: 900px) 180px, 34vw"
+                  />
+                ) : (
+                  <PackageSearch size={40} />
+                );
                 return (
                 <article className={`cart-item-card ${hasDiscount ? "has-coupon-discount" : ""}`} key={item.cartId}>
-                  <div className="cart-item-image">
-                    {item.productImageUrl ? (
-                      <OptimizedImage
-                        src={item.productImageUrl}
-                        alt={item.productName}
-                        width={180}
-                        height={180}
-                        sizes="(min-width: 900px) 180px, 34vw"
-                      />
-                    ) : (
-                      <PackageSearch size={40} />
-                    )}
-                  </div>
+                  {hasDetailLink ? (
+                    <a
+                      className="cart-item-image"
+                      href={detailHref}
+                      aria-label={`View details for ${item.productName}`}
+                    >
+                      {imageContent}
+                    </a>
+                  ) : (
+                    <div className="cart-item-image">{imageContent}</div>
+                  )}
                   <div className="cart-item-content">
                     <span>{item.productCategory}</span>
                     <h2>{item.productName}</h2>
