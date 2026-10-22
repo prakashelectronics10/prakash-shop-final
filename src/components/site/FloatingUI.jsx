@@ -77,7 +77,7 @@ export function FloatingUI() {
         aria-label="Back to top"
         className={`back-to-top${raiseAboveCheckout ? " back-to-top--above-cart" : ""}${show ? " is-visible" : ""}`}
       >
-        <ArrowUp className="back-to-top-icon" strokeWidth={2.75} aria-hidden="true" />
+        <ArrowUp className="back-to-top-icon" strokeWidth={3} aria-hidden="true" />
       </button>
     </>
   );

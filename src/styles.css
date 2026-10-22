@@ -3155,13 +3155,16 @@ a.cart-item-image:focus-visible {
   width: 2.85rem;
   height: 2.85rem;
   padding: 0;
-  border: 1px solid rgba(37, 99, 235, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.55);
   border-radius: 999px;
   color: #1d4ed8;
-  background: rgba(255, 255, 255, 0.68);
-  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.1);
-  backdrop-filter: blur(16px) saturate(165%);
-  -webkit-backdrop-filter: blur(16px) saturate(165%);
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.52), rgba(255, 255, 255, 0.22));
+  box-shadow:
+    0 10px 28px rgba(15, 23, 42, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.65);
+  backdrop-filter: blur(18px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(18px) saturate(180%) !important;
   opacity: 0;
   pointer-events: none;
   transform: translateY(0.55rem) scale(0.94);
@@ -3181,8 +3184,11 @@ a.cart-item-image:focus-visible {
 
 .back-to-top:hover,
 .back-to-top:focus-visible {
-  background: rgba(255, 255, 255, 0.86);
-  box-shadow: 0 14px 32px rgba(15, 23, 42, 0.14);
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.68), rgba(255, 255, 255, 0.34));
+  box-shadow:
+    0 14px 32px rgba(15, 23, 42, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.75);
   outline: none;
 }
 
@@ -4907,6 +4913,11 @@ a.cart-item-image:focus-visible {
     bottom: 0.9rem !important;
     width: 2.7rem;
     height: 2.7rem;
+    border-color: rgba(255, 255, 255, 0.58);
+    background:
+      linear-gradient(145deg, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0.2));
+    backdrop-filter: blur(18px) saturate(180%) !important;
+    -webkit-backdrop-filter: blur(18px) saturate(180%) !important;
   }
 
   .back-to-top--above-cart {
@@ -8508,7 +8519,6 @@ footer {
   .site-nav.scrolled,
   .floating-ui,
   .floating-progress,
-  .back-to-top,
   #offers .offer-card,
   #services .glass,
   #services .glass-strong,
