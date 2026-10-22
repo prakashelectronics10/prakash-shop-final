@@ -491,7 +491,10 @@ export function ScienceAIPage() {
   const [images, setImages] = useState([]);
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [theme, setTheme] = useState(() => localStorage.getItem("pulse-ai-theme") || "dark");
+  const [theme, setTheme] = useState(() => {
+    const saved = localStorage.getItem("pulse-ai-theme");
+    return saved === "dark" || saved === "light" ? saved : "light";
+  });
   const [, setError] = useState("");
   const [dragging, setDragging] = useState(false);
   const [navOpen, setNavOpen] = useState(() => (typeof window === "undefined" ? true : window.innerWidth > 860));
@@ -1306,7 +1309,19 @@ function SuggestionCards({ suggestions, theme }) {
           {availableSuggestions.map((item) => (
             <article className="ai-suggestion-card" key={`${item.name}-${item.component}`}>
               <div className="ai-suggestion-image">
-                {item.imageUrl ? <OptimizedImage src={item.imageUrl} alt={item.name} width={180} height={140} /> : <PackageSearch size={34} />}
+                {item.imageUrl ? (
+                  <OptimizedImage
+                    src={item.imageUrl}
+                    alt={item.name}
+                    width={720}
+                    height={540}
+                    sizes="(max-width: 520px) 88vw, (max-width: 900px) 42vw, 280px"
+                    loading="lazy"
+                    decoding="async"
+                  />
+                ) : (
+                  <PackageSearch size={34} />
+                )}
               </div>
               <div className="ai-suggestion-content">
                 <div className="ai-suggestion-meta">

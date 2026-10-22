@@ -65,8 +65,8 @@ function seedImageUrl(base, width, format = "webp") {
 }
 
 function qualityForWidth(width) {
-  if (width <= 360) return "q_auto:good";
-  if (width <= 720) return "q_auto:good";
+  // Prefer sharper delivery for product thumbs / retina UI surfaces.
+  if (width <= 720) return "q_auto:best";
   if (width <= 1200) return "q_auto:good";
   return "q_auto:good";
 }
@@ -110,8 +110,8 @@ function cloudinaryImageUrl(value, width, format) {
   if (!root) return "";
   const quality = qualityForWidth(width);
   const transform = format === "auto"
-    ? `f_auto,${quality},c_limit,w_${width}`
-    : `f_${format},${quality},c_limit,w_${width}`;
+    ? `f_auto,${quality},c_limit,dpr_auto,w_${width}`
+    : `f_${format},${quality},c_limit,dpr_auto,w_${width}`;
   return root.replace("/image/upload/", `/image/upload/${transform}/`);
 }
 

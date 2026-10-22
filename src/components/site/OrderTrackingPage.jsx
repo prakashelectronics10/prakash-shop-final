@@ -96,7 +96,21 @@ function OrderResult({ order }) {
         <h3>Items in your order</h3>
         {order.items.map((item) => (
           <a href={`/product/${encodeURIComponent(item.productSlug || item.productId)}`} key={`${item.productId}-${item.productName}`}>
-            <div>{item.productImageUrl ? <OptimizedImage src={item.productImageUrl} alt={item.productName} width={84} height={84} /> : <PackageCheck size={30} />}</div>
+            <div>
+              {item.productImageUrl ? (
+                <OptimizedImage
+                  src={item.productImageUrl}
+                  alt={item.productName}
+                  width={240}
+                  height={240}
+                  sizes="84px"
+                  loading="lazy"
+                  decoding="async"
+                />
+              ) : (
+                <PackageCheck size={30} />
+              )}
+            </div>
             <span><strong>{item.productName}</strong><small>{item.productCategory}</small><em>{formatINR(item.unitPrice)} × {item.quantity}</em></span>
             <b>{formatINR(item.lineTotal)}</b>
           </a>
@@ -184,12 +198,13 @@ export function OrderTrackingPage() {
         <header className="tracking-hero">
           <div className="tracking-hero-visual" aria-hidden="true">
             <span className="tracking-hero-glow" />
-            <img
+            <OptimizedImage
               className="tracking-hero-image"
               src={trackOrderHero}
               alt=""
-              width={520}
-              height={360}
+              width={1040}
+              height={720}
+              sizes="(max-width: 720px) 88vw, 520px"
               decoding="async"
               fetchPriority="high"
             />

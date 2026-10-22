@@ -56,12 +56,13 @@ export function CartPage() {
           <section className="cart-empty-panel">
             <div className="cart-empty-visual" aria-hidden="true">
               <span className="cart-empty-glow" />
-              <img
+              <OptimizedImage
                 className="cart-empty-image"
                 src={cartEmptyImage}
                 alt=""
-                width={520}
-                height={400}
+                width={1040}
+                height={800}
+                sizes="(max-width: 720px) 88vw, 520px"
                 decoding="async"
                 fetchPriority="high"
               />
@@ -93,9 +94,11 @@ export function CartPage() {
                   <OptimizedImage
                     src={item.productImageUrl}
                     alt={item.productName}
-                    width={180}
-                    height={180}
-                    sizes="(min-width: 900px) 180px, 34vw"
+                    width={360}
+                    height={360}
+                    sizes="(min-width: 900px) 150px, 34vw"
+                    loading="lazy"
+                    decoding="async"
                   />
                 ) : (
                   <PackageSearch size={40} />

@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { ArrowUp, Bot } from "lucide-react";
+import { useCart } from "../../context/CartContext";
 import { useSiteData } from "../../context/SiteDataContext";
 import { getWhatsappHref } from "../../utils/contactDefaults";
 import { usePageScroll } from "../../hooks/usePageScroll";
@@ -7,6 +8,7 @@ import whatsappImage from "../../assets/whatsapp.png";
 
 export function FloatingUI() {
   const { contact } = useSiteData();
+  const { items } = useCart();
   const [show, setShow] = useState(false);
   const progressRef = useRef(null);
   const showRef = useRef(false);
@@ -24,6 +26,7 @@ export function FloatingUI() {
 
   const whatsappUrl = getWhatsappHref(contact);
   const isCartPage = window.location.pathname.replace(/\/+$/, "") === "/cart";
+  const raiseAboveCheckout = isCartPage && items.length > 0;
 
   return (
     <>
@@ -33,25 +36,31 @@ export function FloatingUI() {
         className="fixed inset-x-0 top-0 z-[60] h-[3px] origin-left bg-gradient-primary shadow-glow"
       />
 
-      <div className={`home-floating-actions ${isCartPage ? "home-floating-actions--above-cart" : ""}`} data-floating-actions>
+      <div
+        className={`home-floating-actions${raiseAboveCheckout ? " home-floating-actions--above-cart" : ""}`}
+        data-floating-actions
+      >
+        {whatsappUrl ? (
+          <a
+            href={whatsappUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Chat with Prakash Electronics on WhatsApp"
+            className="relative z-10 inline-flex cursor-pointer pointer-events-auto home-floating-button whatsapp-home-button"
+          >
+            <img
+              src={whatsappImage}
+              alt=""
+              aria-hidden="true"
+              className="pointer-events-none h-9 w-9 object-contain"
+              width={36}
+              height={36}
+              decoding="async"
+              loading="lazy"
+            />
+          </a>
+        ) : null}
 
-        {whatsappUrl && (
-        <a
-          href={whatsappUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label="Chat with Prakash Electronics on WhatsApp"
-          className="relative z-10 inline-flex cursor-pointer pointer-events-auto home-floating-button whatsapp-home-button"
-        >
-          <img
-            src={whatsappImage}
-            alt=""
-            aria-hidden="true"
-            className="pointer-events-none h-9 w-9 object-contain"
-          />
-        </a>
-        )}
-        
         <a
           href="/pulse-ai"
           aria-label="Open Pulse AI"
@@ -60,19 +69,15 @@ export function FloatingUI() {
           <Bot className="h-6 w-6" />
           <span>Pulse AI</span>
         </a>
-
-        
       </div>
 
       <button
         type="button"
         onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
         aria-label="Back to top"
-        className={`back-to-top ${isCartPage ? "back-to-top--above-cart" : ""} fixed bottom-40 right-0 left-auto z-[70] inline-flex h-12 items-center justify-center gap-2 rounded-full glass-strong border-glow px-4 text-sm font-semibold text-foreground shadow-card transition-transform duration-200 hover:scale-105 ${
-          show ? "translate-y-0 scale-100 opacity-100" : "pointer-events-none translate-y-4 scale-95 opacity-0"
-        }`}
+        className={`back-to-top${raiseAboveCheckout ? " back-to-top--above-cart" : ""}${show ? " is-visible" : ""}`}
       >
-        <ArrowUp className="h-4 w-4 text-accent" />
+        <ArrowUp className="back-to-top-icon" strokeWidth={2.75} aria-hidden="true" />
       </button>
     </>
   );

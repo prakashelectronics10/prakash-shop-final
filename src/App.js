@@ -19,7 +19,6 @@ const CheckoutPage = lazy(() => import('./components/site/CheckoutPage').then((m
 const OrderTrackingPage = lazy(() => import('./components/site/OrderTrackingPage').then((module) => ({ default: module.OrderTrackingPage })));
 const AdminApp = lazy(() => import('./admin/AdminApp'));
 const Offers = lazy(() => import('./components/site/Offers').then((module) => ({ default: module.Offers })));
-const ExploreProductsBanner = lazy(() => import('./components/site/ExploreProductsBanner').then((module) => ({ default: module.ExploreProductsBanner })));
 const ShopHighlights = lazy(() => import('./components/site/ShopHighlights').then((module) => ({ default: module.ShopHighlights })));
 const Services = lazy(() => import('./components/site/Services').then((module) => ({ default: module.Services })));
 const TrendingProducts = lazy(() => import('./components/site/TrendingProducts').then((module) => ({ default: module.TrendingProducts })));
@@ -646,7 +645,6 @@ function App() {
         </Suspense>
         <main>
           <DeferredSection eager anchorId="offers" minHeight={420}><Offers sectionId="" /></DeferredSection>
-          <DeferredSection minHeight={360}><ExploreProductsBanner /></DeferredSection>
           <DeferredSection anchorId="shop-highlights" minHeight={420}><ShopHighlights sectionId="" /></DeferredSection>
           <DeferredSection anchorId="services" minHeight={420}><Services sectionId="" /></DeferredSection>
           <DeferredSection anchorId="trending" minHeight={320}><TrendingProducts sectionId="" /></DeferredSection>
