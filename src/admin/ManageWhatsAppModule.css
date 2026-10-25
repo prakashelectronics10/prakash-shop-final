@@ -606,12 +606,43 @@
   border-top-right-radius: 0;
 }
 
-.wa-bubble p {
+.wa-bubble p,
+.wa-rich-text {
   margin: 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   font-size: 14px;
   line-height: 1.45;
+}
+
+.wa-rich-text strong { font-weight: 800; }
+.wa-rich-text em { font-style: italic; }
+.wa-rich-text s { text-decoration: line-through; }
+.wa-mono {
+  display: inline-block;
+  margin-top: 4px;
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  background: rgba(0, 0, 0, 0.22);
+  white-space: pre-wrap;
+}
+
+.wa-reactions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.wa-reactions span {
+  border-radius: 999px;
+  padding: 2px 7px;
+  font-size: 12px;
+  line-height: 1.2;
+  background: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08);
 }
 
 .wa-bubble small {

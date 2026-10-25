@@ -6,12 +6,11 @@ const {
   verifyWebhookSignature,
   parseInboundWebhook,
 } = require("../services/whatsappCloudApiService");
-const {
-  sendGreetingForAccount,
-  handleCopyCodeReply,
-} = require("../services/whatsappGreetingService");
-const { recordMessage } = require("../services/whatsappConversationService");
+const { sendGreetingForAccount } = require("../services/whatsappGreetingService");
+const { recordMessage, applyReactionToMessage } = require("../services/whatsappConversationService");
 const { maybeReplyWithAI } = require("../services/whatsappAIService");
+const { formatCopyCodeMessage } = require("../services/whatsappFormatService");
+const { sendTextMessage } = require("../services/whatsappCloudApiService");
 const { logger } = require("../utils/logger");
 
 async function ensureAccountFromEnv(phoneNumberId) {
@@ -92,6 +91,16 @@ exports.handleWhatsAppWebhook = catchAsync(async (req, res) => {
         continue;
       }
 
+      if (event.isReaction) {
+        await applyReactionToMessage({
+          targetWaMessageId: event.reactionTargetWaMessageId,
+          emoji: event.reactionEmoji,
+          fromWaId: event.customerWaId,
+          fromName: event.customerName,
+        });
+        continue;
+      }
+
       const inboundType = event.isWelcomeRequest
         ? "text"
         : ["image", "document", "audio", "video", "sticker", "interactive", "button"].includes(event.type)
@@ -117,12 +126,15 @@ exports.handleWhatsAppWebhook = catchAsync(async (req, res) => {
       if (duplicate) continue;
 
       if (event.buttonReplyId?.startsWith("copy:")) {
-        const handled = await handleCopyCodeReply({
-          account,
-          customerWaId: event.customerWaId,
-          buttonReplyId: event.buttonReplyId,
-        });
-        if (handled) {
+        const code = event.buttonReplyId.slice(5).trim();
+        if (code) {
+          const text = formatCopyCodeMessage(code, "Your code");
+          const result = await sendTextMessage({
+            phoneNumberId: account.phoneNumberId,
+            accessToken: account.accessToken,
+            to: event.customerWaId,
+            text,
+          });
           await recordMessage({
             accountId: account._id,
             conversationId: conversation._id,
@@ -130,10 +142,12 @@ exports.handleWhatsAppWebhook = catchAsync(async (req, res) => {
             direction: "outbound",
             sender: "system",
             type: "text",
-            text: `Your code: ${event.buttonReplyId.slice(5)}`,
+            text,
+            waMessageId: result?.messages?.[0]?.id || "",
+            meta: { copyCode: code },
           });
-          continue;
         }
+        continue;
       }
 
       // First chat open (Meta request_welcome) OR first real message → greeting sequence

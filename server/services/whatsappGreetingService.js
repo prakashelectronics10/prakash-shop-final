@@ -7,6 +7,7 @@ const {
   sendInteractiveMessage,
   configureConversationalAutomation,
 } = require("./whatsappCloudApiService");
+const { formatCopyCodeMessage, markdownToWhatsApp } = require("./whatsappFormatService");
 const { logger } = require("../utils/logger");
 
 function sanitizeButtons(buttons = []) {
@@ -71,13 +72,21 @@ function normalizeGreetingMessages(greeting) {
 }
 
 function buildInteractivePlan(step) {
-  const bodyText = step.bodyText;
+  const bodyText = markdownToWhatsApp(step.bodyText);
   const footerText = step.footerText;
   const imageUrl = step.imageUrls[0] || "";
   const buttons = step.buttons;
   const header = imageUrl ? { type: "image", image: { link: imageUrl } } : undefined;
   const urlButtons = buttons.filter((button) => button.type === "url" && button.url);
-  const replyButtons = buttons.filter((button) => button.type === "copy_code" || button.type === "quick_reply");
+  const copyButtons = buttons.filter((button) => button.type === "copy_code" && button.code);
+  const replyButtons = buttons.filter((button) => button.type === "quick_reply");
+
+  // Native clipboard copy on WhatsApp requires approved AUTH/marketing templates.
+  // For session messages we send a monospace code block (tap-and-hold to copy).
+  const copyFollowUps = copyButtons.map((button) => ({
+    text: formatCopyCodeMessage(button.code, button.label || "Your code"),
+    code: button.code,
+  }));
 
   if (urlButtons.length === 1 && replyButtons.length === 0) {
     const button = urlButtons[0];
@@ -94,6 +103,7 @@ function buildInteractivePlan(step) {
         },
       },
       extraImages: step.imageUrls.slice(1),
+      copyFollowUps,
     };
   }
 
@@ -109,11 +119,7 @@ function buildInteractivePlan(step) {
           buttons: replyButtons.slice(0, 3).map((button) => ({
             type: "reply",
             reply: {
-              id: String(
-                button.type === "copy_code"
-                  ? `copy:${button.code || button.id}`
-                  : (button.payload || button.id),
-              ).slice(0, 256),
+              id: String(button.payload || button.id).slice(0, 256),
               title: button.label,
             },
           })),
@@ -121,6 +127,7 @@ function buildInteractivePlan(step) {
       },
       followUpUrls: urlButtons,
       extraImages: step.imageUrls.slice(header ? 1 : 0),
+      copyFollowUps,
     };
   }
 
@@ -129,11 +136,18 @@ function buildInteractivePlan(step) {
       mode: "images",
       imageUrls: step.imageUrls,
       caption: bodyText,
+      copyFollowUps,
+      followUpUrls: urlButtons,
     };
   }
 
-  if (bodyText) {
-    return { mode: "text", text: bodyText };
+  if (bodyText || copyFollowUps.length || urlButtons.length) {
+    return {
+      mode: "text",
+      text: bodyText,
+      copyFollowUps,
+      followUpUrls: urlButtons,
+    };
   }
 
   return null;
@@ -167,6 +181,22 @@ async function markGreetingSent(accountId, customerWaId) {
   );
 }
 
+async function sendPlanFollowUps(creds, plan, sent) {
+  for (const button of plan.followUpUrls || []) {
+    const text = `${button.label}: ${button.url}`;
+    const resultText = await sendTextMessage({ ...creds, text });
+    sent.push({ type: "text", result: resultText, text });
+  }
+  for (const imageUrl of plan.extraImages || []) {
+    const resultImage = await sendImageMessage({ ...creds, imageUrl });
+    sent.push({ type: "image", result: resultImage, mediaUrl: imageUrl });
+  }
+  for (const copy of plan.copyFollowUps || []) {
+    const resultCopy = await sendTextMessage({ ...creds, text: copy.text });
+    sent.push({ type: "text", result: resultCopy, text: copy.text, meta: { copyCode: copy.code } });
+  }
+}
+
 async function sendGreetingStep(creds, step) {
   const plan = buildInteractivePlan(step);
   if (!plan) return [];
@@ -176,17 +206,7 @@ async function sendGreetingStep(creds, step) {
   if (plan.mode === "interactive") {
     const result = await sendInteractiveMessage({ ...creds, interactive: plan.interactive });
     sent.push({ type: "interactive", result, text: step.bodyText, buttons: step.buttons });
-    for (const button of plan.followUpUrls || []) {
-      const resultText = await sendTextMessage({
-        ...creds,
-        text: `${button.label}: ${button.url}`,
-      });
-      sent.push({ type: "text", result: resultText, text: `${button.label}: ${button.url}` });
-    }
-    for (const imageUrl of plan.extraImages || []) {
-      const resultImage = await sendImageMessage({ ...creds, imageUrl });
-      sent.push({ type: "image", result: resultImage, mediaUrl: imageUrl });
-    }
+    await sendPlanFollowUps(creds, plan, sent);
   } else if (plan.mode === "images") {
     for (let index = 0; index < plan.imageUrls.length; index += 1) {
       const imageUrl = plan.imageUrls[index];
@@ -194,9 +214,13 @@ async function sendGreetingStep(creds, step) {
       const resultImage = await sendImageMessage({ ...creds, imageUrl, caption });
       sent.push({ type: "image", result: resultImage, mediaUrl: imageUrl, text: caption });
     }
+    await sendPlanFollowUps(creds, plan, sent);
   } else if (plan.mode === "text") {
-    const result = await sendTextMessage({ ...creds, text: plan.text });
-    sent.push({ type: "text", result, text: plan.text });
+    if (plan.text) {
+      const result = await sendTextMessage({ ...creds, text: plan.text });
+      sent.push({ type: "text", result, text: plan.text });
+    }
+    await sendPlanFollowUps(creds, plan, sent);
   }
 
   return sent;
@@ -271,7 +295,7 @@ async function handleCopyCodeReply({ account, customerWaId, buttonReplyId }) {
     phoneNumberId: account.phoneNumberId,
     accessToken: account.accessToken,
     to: customerWaId,
-    text: `Your code: ${code}`,
+    text: formatCopyCodeMessage(code, "Your code"),
   });
   return true;
 }

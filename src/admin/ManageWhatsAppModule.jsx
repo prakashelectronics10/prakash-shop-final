@@ -23,9 +23,11 @@ const TABS = [
   { id: "customers", label: "Customers" },
 ];
 
+const API_BASE = process.env.REACT_APP_API_URL || process.env.VITE_API_URL || "/api";
+
 const BUTTON_TYPES = [
   { value: "url", label: "Go Now (URL)" },
-  { value: "copy_code", label: "Copy code" },
+  { value: "copy_code", label: "Copy code (monospace block)" },
   { value: "quick_reply", label: "Quick reply" },
 ];
 
@@ -95,6 +97,41 @@ function formatTime(value) {
   return new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 }
 
+function escapeHtml(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/** Render WhatsApp-style *bold* _italic_ ~strike~ ```code``` in admin bubbles */
+function WhatsAppText({ text }) {
+  let html = escapeHtml(text);
+  html = html.replace(/```([\s\S]*?)```/g, "<code class=\"wa-mono\">$1</code>");
+  html = html.replace(/\*([^*\n]+)\*/g, "<strong>$1</strong>");
+  html = html.replace(/_([^_\n]+)_/g, "<em>$1</em>");
+  html = html.replace(/~([^~\n]+)~/g, "<s>$1</s>");
+  html = html.replace(/\n/g, "<br />");
+  return <p className="wa-rich-text" dangerouslySetInnerHTML={{ __html: html }} />;
+}
+
+function ReactionBar({ reactions = [] }) {
+  if (!reactions.length) return null;
+  const grouped = reactions.reduce((acc, item) => {
+    const key = item.emoji || "👍";
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+  return (
+    <div className="wa-reactions" aria-label="Reactions">
+      {Object.entries(grouped).map(([emoji, count]) => (
+        <span key={emoji}>{emoji}{count > 1 ? ` ${count}` : ""}</span>
+      ))}
+    </div>
+  );
+}
+
 export default function ManageWhatsAppModule({ apiFetch }) {
   const [tab, setTab] = useState("accounts");
   const [loading, setLoading] = useState(true);
@@ -119,6 +156,7 @@ export default function ManageWhatsAppModule({ apiFetch }) {
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [composer, setComposer] = useState("");
   const chatEndRef = useRef(null);
+  const activeConversationRef = useRef(null);
 
   const loadAccounts = useCallback(async () => {
     setLoading(true);
@@ -209,6 +247,107 @@ export default function ManageWhatsAppModule({ apiFetch }) {
     if (tab === "ai") loadAI(selectedAccountId);
     if (tab === "customers") loadConversations(selectedAccountId, conversationSearch);
   }, [tab, selectedAccountId, loadGreeting, loadAI, loadConversations, conversationSearch]);
+
+  useEffect(() => {
+    activeConversationRef.current = activeConversation;
+  }, [activeConversation]);
+
+  // Live inbox via SSE (+ light polling backup)
+  useEffect(() => {
+    if (tab !== "customers" || !selectedAccountId) return undefined;
+
+    const params = new URLSearchParams({ accountId: selectedAccountId });
+    const source = new EventSource(`${API_BASE}/whatsapp/admin/events?${params.toString()}`, {
+      withCredentials: true,
+    });
+
+    const upsertConversationLocal = (conversation) => {
+      if (!conversation) return;
+      setConversations((current) => {
+        const id = conversation._id || conversation.id;
+        const without = current.filter((item) => String(item._id || item.id) !== String(id));
+        return [conversation, ...without].sort(
+          (a, b) => new Date(b.lastMessageAt || 0) - new Date(a.lastMessageAt || 0),
+        );
+      });
+    };
+
+    const onConversation = (event) => {
+      try {
+        upsertConversationLocal(JSON.parse(event.data).payload?.conversation);
+      } catch (_error) {
+        // ignore malformed events
+      }
+    };
+
+    const onMessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        const message = data.payload?.message;
+        upsertConversationLocal(data.payload?.conversation);
+        if (!message) return;
+        const active = activeConversationRef.current;
+        if (!active) return;
+        const activeId = String(active._id || active.id);
+        if (String(message.conversationId) !== activeId) return;
+        setMessages((current) => {
+          const id = message._id || message.id;
+          const exists = current.some((item) => (
+            String(item._id || item.id) === String(id)
+            || (message.waMessageId && item.waMessageId === message.waMessageId)
+          ));
+          if (exists) {
+            return current.map((item) => (
+              String(item._id || item.id) === String(id)
+              || (message.waMessageId && item.waMessageId === message.waMessageId)
+                ? { ...item, ...message }
+                : item
+            ));
+          }
+          return [...current, message];
+        });
+      } catch (_error) {
+        // ignore
+      }
+    };
+
+    const onReaction = (event) => {
+      try {
+        const message = JSON.parse(event.data).payload?.message;
+        if (!message) return;
+        setMessages((current) => current.map((item) => (
+          String(item._id || item.id) === String(message._id || message.id)
+          || (message.waMessageId && item.waMessageId === message.waMessageId)
+            ? { ...item, reactions: message.reactions || [] }
+            : item
+        )));
+      } catch (_error) {
+        // ignore
+      }
+    };
+
+    source.addEventListener("whatsapp:conversation", onConversation);
+    source.addEventListener("whatsapp:message", onMessage);
+    source.addEventListener("whatsapp:reaction", onReaction);
+
+    const poll = window.setInterval(() => {
+      loadConversations(selectedAccountId, conversationSearch);
+      const active = activeConversationRef.current;
+      if (!active) return;
+      const id = active._id || active.id;
+      apiFetch(`/whatsapp/admin/conversations/${id}/messages`)
+        .then((response) => {
+          if (response.data?.messages) setMessages(response.data.messages);
+          if (response.data?.conversation) setActiveConversation(response.data.conversation);
+        })
+        .catch(() => {});
+    }, 5000);
+
+    return () => {
+      source.close();
+      window.clearInterval(poll);
+    };
+  }, [tab, selectedAccountId, conversationSearch, loadConversations, apiFetch]);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -694,6 +833,10 @@ export default function ManageWhatsAppModule({ apiFetch }) {
                         <Plus size={14} /> Add button
                       </button>
                     </div>
+                    <p className="wa-hint">
+                      Copy code sends a WhatsApp monospace code block (customer tap-and-hold to copy).
+                      Native one-tap clipboard buttons need Meta AUTH/marketing templates.
+                    </p>
                     {(message.buttons || []).map((button, buttonIndex) => (
                       <div key={button.id || buttonIndex} className="wa-grid-2">
                         <Field label="Type">
@@ -992,7 +1135,8 @@ export default function ManageWhatsAppModule({ apiFetch }) {
                             <FileText size={16} /> {message.mediaFilename || "Document"}
                           </a>
                         ) : null}
-                        {message.text ? <p>{message.text}</p> : null}
+                        {message.text ? <WhatsAppText text={message.text} /> : null}
+                        <ReactionBar reactions={message.reactions} />
                         <small>
                           {message.sender === "ai" ? "AI · " : message.sender === "admin" ? "You · " : ""}
                           {formatTime(message.createdAt)}

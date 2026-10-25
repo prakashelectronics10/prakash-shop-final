@@ -26,6 +26,7 @@ const {
   sendDocumentMessage,
 } = require("../services/whatsappCloudApiService");
 const { collectPublicIdsFromSources, deleteImagesStrict, uploadBuffer } = require("../services/cloudinaryService");
+const { addClient } = require("../services/whatsappRealtimeService");
 const env = require("../config/env");
 const multer = require("multer");
 
@@ -495,4 +496,31 @@ exports.uploadWhatsAppDocument = catchAsync(async (req, res) => {
       mimeType: req.file.mimetype,
     },
   });
+});
+
+exports.streamWhatsAppEvents = catchAsync(async (req, res) => {
+  const accountId = String(req.query.accountId || "");
+  const conversationId = String(req.query.conversationId || "");
+  if (accountId && !mongoose.Types.ObjectId.isValid(accountId)) {
+    throw new AppError("Valid accountId is required", 400);
+  }
+
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache, no-transform");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+  if (typeof res.flushHeaders === "function") res.flushHeaders();
+
+  res.write(`event: connected\ndata: ${JSON.stringify({ ok: true })}\n\n`);
+  addClient(res, { accountId, conversationId });
+
+  const heartbeat = setInterval(() => {
+    try {
+      res.write(`: ping\n\n`);
+    } catch (_error) {
+      clearInterval(heartbeat);
+    }
+  }, 25000);
+
+  req.on("close", () => clearInterval(heartbeat));
 });

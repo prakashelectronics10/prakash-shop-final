@@ -12,6 +12,7 @@ const {
   sendInteractiveMessage,
 } = require("./whatsappCloudApiService");
 const { recordMessage } = require("./whatsappConversationService");
+const { markdownToWhatsApp, formatCopyCodeMessage } = require("./whatsappFormatService");
 const { logger } = require("../utils/logger");
 
 const FALLBACK_MODELS = ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-2.5-flash"];
@@ -150,6 +151,14 @@ async function generateWhatsAppAIReply({
 Reply in clear, polite WhatsApp style. Keep answers concise (usually under 900 characters) unless the customer needs steps.
 Use shop knowledge, offers, and catalog truth. Never invent prices or stock.
 
+WHATSAPP TEXT FORMATTING (critical):
+- WhatsApp does NOT support Markdown. Never use **double asterisks**, __underscores__, # headings, or [links](url).
+- For bold use single asterisks: *Product Name*
+- For italic use _like this_
+- For monospace/code use triple backticks around the code
+- For lists use • or 1. 2. 3.
+- Write product names in *bold* so they stand out.
+
 ${settings.systemPromptExtra ? `EXTRA ADMIN INSTRUCTIONS:\n${settings.systemPromptExtra}\n` : ""}
 
 ADMIN LIVE BEHAVIOR INSTRUCTIONS:
@@ -215,7 +224,9 @@ CONVERSATION_MEMORY: {"summary":"...","importantFacts":[],"openTopics":[]}
   const imageRefs = extractJsonBlock(raw, "WHATSAPP_IMAGES");
   const buttonRefs = extractJsonBlock(raw, "WHATSAPP_BUTTONS");
   const memory = extractJsonBlock(raw, "CONVERSATION_MEMORY") || conversation.conversationMemory || {};
-  const text = stripWhatsAppMetadata(raw) || "How can I help you with products, offers, or repairs today?";
+  const text = markdownToWhatsApp(
+    stripWhatsAppMetadata(raw) || "How can I help you with products, offers, or repairs today?",
+  );
 
   const imageLookup = new Map([
     ...imageCatalog.offers.map((item) => [`offer:${item.id}`, item]),
@@ -270,13 +281,18 @@ async function sendAIOutbound({ account, conversation, reply }) {
 
   const recorded = [];
 
-  if (reply.buttons?.length === 1 && reply.buttons[0].type === "url" && reply.buttons[0].url) {
-    const button = reply.buttons[0];
+  const formattedText = markdownToWhatsApp(reply.text);
+  const urlButtons = (reply.buttons || []).filter((button) => button.type === "url" && button.url);
+  const copyButtons = (reply.buttons || []).filter((button) => button.type === "copy_code" && button.code);
+  const quickButtons = (reply.buttons || []).filter((button) => button.type === "quick_reply");
+
+  if (urlButtons.length === 1 && !quickButtons.length) {
+    const button = urlButtons[0];
     const result = await sendInteractiveMessage({
       ...creds,
       interactive: {
         type: "cta_url",
-        body: { text: reply.text.slice(0, 1024) },
+        body: { text: formattedText.slice(0, 1024) },
         action: {
           name: "cta_url",
           parameters: { display_text: button.label, url: button.url },
@@ -290,28 +306,26 @@ async function sendAIOutbound({ account, conversation, reply }) {
       direction: "outbound",
       sender: "ai",
       type: "interactive",
-      text: reply.text,
+      text: formattedText,
       buttons: reply.buttons,
       waMessageId: result?.messages?.[0]?.id || "",
       meta: { model: reply.model },
     }));
-  } else if (reply.buttons?.some((button) => button.type !== "url")) {
-    const replyButtons = reply.buttons
-      .filter((button) => button.type !== "url")
-      .slice(0, 3)
-      .map((button) => ({
-        type: "reply",
-        reply: {
-          id: button.type === "copy_code" ? `copy:${button.code}` : (button.payload || button.id),
-          title: button.label,
-        },
-      }));
+  } else if (quickButtons.length) {
     const result = await sendInteractiveMessage({
       ...creds,
       interactive: {
         type: "button",
-        body: { text: reply.text.slice(0, 1024) },
-        action: { buttons: replyButtons },
+        body: { text: formattedText.slice(0, 1024) },
+        action: {
+          buttons: quickButtons.slice(0, 3).map((button) => ({
+            type: "reply",
+            reply: {
+              id: button.payload || button.id,
+              title: button.label,
+            },
+          })),
+        },
       },
     });
     recorded.push(await recordMessage({
@@ -321,12 +335,12 @@ async function sendAIOutbound({ account, conversation, reply }) {
       direction: "outbound",
       sender: "ai",
       type: "interactive",
-      text: reply.text,
+      text: formattedText,
       buttons: reply.buttons,
       waMessageId: result?.messages?.[0]?.id || "",
       meta: { model: reply.model },
     }));
-    for (const button of reply.buttons.filter((item) => item.type === "url" && item.url)) {
+    for (const button of urlButtons) {
       const text = `${button.label}: ${button.url}`;
       const resultText = await sendTextMessage({ ...creds, text });
       recorded.push(await recordMessage({
@@ -341,7 +355,7 @@ async function sendAIOutbound({ account, conversation, reply }) {
       }));
     }
   } else {
-    const result = await sendTextMessage({ ...creds, text: reply.text });
+    const result = await sendTextMessage({ ...creds, text: formattedText });
     recorded.push(await recordMessage({
       accountId: account._id,
       conversationId: conversation._id,
@@ -349,9 +363,39 @@ async function sendAIOutbound({ account, conversation, reply }) {
       direction: "outbound",
       sender: "ai",
       type: "text",
-      text: reply.text,
+      text: formattedText,
       waMessageId: result?.messages?.[0]?.id || "",
       meta: { model: reply.model },
+    }));
+    for (const button of urlButtons) {
+      const text = `${button.label}: ${button.url}`;
+      const resultText = await sendTextMessage({ ...creds, text });
+      recorded.push(await recordMessage({
+        accountId: account._id,
+        conversationId: conversation._id,
+        customerWaId: conversation.customerWaId,
+        direction: "outbound",
+        sender: "ai",
+        type: "text",
+        text,
+        waMessageId: resultText?.messages?.[0]?.id || "",
+      }));
+    }
+  }
+
+  for (const button of copyButtons) {
+    const text = formatCopyCodeMessage(button.code, button.label || "Your code");
+    const result = await sendTextMessage({ ...creds, text });
+    recorded.push(await recordMessage({
+      accountId: account._id,
+      conversationId: conversation._id,
+      customerWaId: conversation.customerWaId,
+      direction: "outbound",
+      sender: "ai",
+      type: "text",
+      text,
+      waMessageId: result?.messages?.[0]?.id || "",
+      meta: { copyCode: button.code },
     }));
   }
 

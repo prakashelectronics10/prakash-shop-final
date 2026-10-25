@@ -181,6 +181,7 @@ function parseInboundWebhook(body) {
         const type = String(message.type || "");
         const media = extractInboundMedia(message);
         const isWelcome = type === "request_welcome";
+        const isReaction = type === "reaction";
         events.push({
           phoneNumberId: String(metadata.phone_number_id || ""),
           displayPhoneNumber: String(metadata.display_phone_number || ""),
@@ -190,6 +191,9 @@ function parseInboundWebhook(body) {
           timestamp: message.timestamp ? new Date(Number(message.timestamp) * 1000) : new Date(),
           type,
           isWelcomeRequest: isWelcome,
+          isReaction,
+          reactionEmoji: isReaction ? String(message.reaction?.emoji || "") : "",
+          reactionTargetWaMessageId: isReaction ? String(message.reaction?.message_id || "") : "",
           text: String(
             message.text?.body
             || message.button?.text

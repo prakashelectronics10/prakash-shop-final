@@ -1,5 +1,10 @@
 const WhatsAppConversation = require("../models/WhatsAppConversation");
 const WhatsAppMessage = require("../models/WhatsAppMessage");
+const {
+  publishConversationUpsert,
+  publishMessage,
+  publishReaction,
+} = require("./whatsappRealtimeService");
 
 function previewFromPayload({ text, type, mediaFilename }) {
   if (text) return String(text).slice(0, 240);
@@ -110,7 +115,42 @@ async function recordMessage({
     meta,
   });
 
+  const serializedConversation = serializeConversation(conversation);
+  const serializedMessage = serializeMessage(message);
+  publishConversationUpsert(serializedConversation);
+  publishMessage(serializedMessage, serializedConversation);
+
   return { conversation, message, duplicate: false };
+}
+
+async function applyReactionToMessage({
+  targetWaMessageId,
+  emoji,
+  fromWaId,
+  fromName = "",
+}) {
+  if (!targetWaMessageId) return null;
+  const message = await WhatsAppMessage.findOne({ waMessageId: targetWaMessageId });
+  if (!message) return null;
+
+  // Empty emoji = remove that user's reaction (WhatsApp un-react)
+  const next = (message.reactions || []).filter((item) => item.fromWaId !== fromWaId);
+  if (emoji) {
+    next.push({
+      emoji: String(emoji),
+      fromWaId: String(fromWaId),
+      fromName: String(fromName || ""),
+      at: new Date(),
+    });
+  }
+  message.reactions = next;
+  await message.save();
+
+  const conversation = await WhatsAppConversation.findById(message.conversation);
+  const serializedConversation = conversation ? serializeConversation(conversation) : null;
+  const serializedMessage = serializeMessage(message);
+  publishReaction(serializedMessage, serializedConversation);
+  return { message, conversation };
 }
 
 async function markConversationRead(conversationId) {
@@ -155,6 +195,7 @@ function serializeMessage(doc) {
     mediaMimeType: item.mediaMimeType || "",
     mediaFilename: item.mediaFilename || "",
     buttons: item.buttons || [],
+    reactions: Array.isArray(item.reactions) ? item.reactions : [],
     waMessageId: item.waMessageId || "",
     status: item.status,
     createdAt: item.createdAt,
@@ -164,6 +205,7 @@ function serializeMessage(doc) {
 module.exports = {
   upsertConversation,
   recordMessage,
+  applyReactionToMessage,
   markConversationRead,
   serializeConversation,
   serializeMessage,

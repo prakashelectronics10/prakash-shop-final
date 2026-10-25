@@ -23,7 +23,7 @@ const whatsAppMessageSchema = new mongoose.Schema(
     },
     type: {
       type: String,
-      enum: ["text", "image", "document", "interactive", "button", "audio", "video", "sticker", "unknown"],
+      enum: ["text", "image", "document", "interactive", "button", "audio", "video", "sticker", "reaction", "unknown"],
       default: "text",
     },
     text: { type: String, default: "", trim: true },
@@ -34,6 +34,16 @@ const whatsAppMessageSchema = new mongoose.Schema(
     buttons: { type: Array, default: [] },
     waMessageId: { type: String, default: "", trim: true, index: true },
     status: { type: String, enum: ["pending", "sent", "delivered", "read", "failed"], default: "sent" },
+    // Customer / system reactions on this message (WhatsApp-style)
+    reactions: {
+      type: [{
+        emoji: { type: String, trim: true },
+        fromWaId: { type: String, trim: true },
+        fromName: { type: String, trim: true, default: "" },
+        at: { type: Date, default: Date.now },
+      }],
+      default: [],
+    },
     meta: { type: mongoose.Schema.Types.Mixed, default: {} },
   },
   { timestamps: true },

@@ -30,12 +30,14 @@ const {
   sendWhatsAppDocument,
   uploadWhatsAppDocument,
   documentUploadMiddleware,
+  streamWhatsAppEvents,
 } = require("../controllers/whatsappAdminController");
 
 const router = express.Router();
 
 router.use(requireAdmin, requirePermission("manageWhatsApp"));
 
+router.get("/events", streamWhatsAppEvents);
 router.get("/accounts", listWhatsAppAccounts);
 router.post("/accounts", validateBody(whatsAppAccountSchema), createWhatsAppAccount);
 router.post("/accounts/import-env", importWhatsAppAccountFromEnv);
