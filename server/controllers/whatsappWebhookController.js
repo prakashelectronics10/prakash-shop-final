@@ -10,6 +10,8 @@ const {
   sendGreetingForAccount,
   handleCopyCodeReply,
 } = require("../services/whatsappGreetingService");
+const { recordMessage } = require("../services/whatsappConversationService");
+const { maybeReplyWithAI } = require("../services/whatsappAIService");
 const { logger } = require("../utils/logger");
 
 async function ensureAccountFromEnv(phoneNumberId) {
@@ -55,7 +57,6 @@ exports.verifyWhatsAppWebhook = catchAsync(async (req, res) => {
 });
 
 exports.handleWhatsAppWebhook = catchAsync(async (req, res) => {
-  // Always ACK quickly; process after respond when possible.
   const rawBody = Buffer.isBuffer(req.body)
     ? req.body
     : Buffer.from(typeof req.body === "string" ? req.body : JSON.stringify(req.body || {}));
@@ -75,7 +76,6 @@ exports.handleWhatsAppWebhook = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: "Invalid JSON" });
   }
 
-  // Respond immediately so Meta does not retry.
   res.status(200).json({ success: true });
 
   if (!env.whatsapp.enabled) {
@@ -92,18 +92,89 @@ exports.handleWhatsAppWebhook = catchAsync(async (req, res) => {
         continue;
       }
 
-      if (event.buttonReplyId) {
+      const inboundType = event.isWelcomeRequest
+        ? "text"
+        : ["image", "document", "audio", "video", "sticker", "interactive", "button"].includes(event.type)
+          ? event.type
+          : "text";
+
+      const { conversation, duplicate } = await recordMessage({
+        accountId: account._id,
+        customerWaId: event.customerWaId,
+        customerName: event.customerName,
+        direction: "inbound",
+        sender: "customer",
+        type: event.isWelcomeRequest ? "text" : inboundType,
+        text: event.isWelcomeRequest ? "[Chat opened]" : (event.text || ""),
+        waMessageId: event.messageId,
+        meta: {
+          isWelcomeRequest: Boolean(event.isWelcomeRequest),
+          rawType: event.type,
+          mediaId: event.mediaId || "",
+        },
+      });
+
+      if (duplicate) continue;
+
+      if (event.buttonReplyId?.startsWith("copy:")) {
         const handled = await handleCopyCodeReply({
           account,
           customerWaId: event.customerWaId,
           buttonReplyId: event.buttonReplyId,
         });
-        if (handled) continue;
+        if (handled) {
+          await recordMessage({
+            accountId: account._id,
+            conversationId: conversation._id,
+            customerWaId: event.customerWaId,
+            direction: "outbound",
+            sender: "system",
+            type: "text",
+            text: `Your code: ${event.buttonReplyId.slice(5)}`,
+          });
+          continue;
+        }
       }
 
-      await sendGreetingForAccount({
+      // First chat open (Meta request_welcome) OR first real message → greeting sequence
+      const greetingResult = await sendGreetingForAccount({
         account,
         customerWaId: event.customerWaId,
+        force: Boolean(event.isWelcomeRequest),
+        onOutbound: async (item) => {
+          await recordMessage({
+            accountId: account._id,
+            conversationId: conversation._id,
+            customerWaId: event.customerWaId,
+            direction: "outbound",
+            sender: "system",
+            type: item.type || "text",
+            text: item.text || "",
+            mediaUrl: item.mediaUrl || "",
+            buttons: item.buttons || [],
+            waMessageId: item.result?.messages?.[0]?.id || "",
+            meta: { greeting: true },
+          });
+        },
+      });
+
+      if (greetingResult.sent) {
+        conversation.greetingSentAt = new Date();
+        await conversation.save();
+      }
+
+      // Welcome-only open: greeting is enough. Real questions → AI.
+      if (event.isWelcomeRequest) continue;
+      if (!event.text && !event.buttonReplyId) continue;
+
+      const aiInput = event.text
+        || (event.buttonReplyId ? `Button: ${event.buttonReplyId}` : "");
+      if (!aiInput) continue;
+
+      await maybeReplyWithAI({
+        account,
+        conversation,
+        customerMessage: aiInput,
       });
     } catch (error) {
       logger.error("whatsapp.webhook.event_failed", {

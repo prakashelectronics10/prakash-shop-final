@@ -29,15 +29,24 @@ function verifyWebhookChallenge({ mode, token, challenge }) {
   return String(challenge || "");
 }
 
-async function graphRequest({ phoneNumberId, accessToken, path = "messages", method = "POST", body }) {
+async function graphRequest({ phoneNumberId, accessToken, path = "messages", method = "POST", body, query }) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), env.whatsapp.requestTimeoutMs || 15000);
   try {
-    const response = await fetch(`${graphBase()}/${phoneNumberId}/${path}`, {
+    const qs = query
+      ? `?${new URLSearchParams(
+        Object.entries(query).reduce((acc, [key, value]) => {
+          if (value === undefined || value === null) return acc;
+          acc[key] = typeof value === "string" ? value : JSON.stringify(value);
+          return acc;
+        }, {}),
+      ).toString()}`
+      : "";
+    const response = await fetch(`${graphBase()}/${phoneNumberId}/${path}${qs}`, {
       method,
       headers: {
         Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
+        ...(body ? { "Content-Type": "application/json" } : {}),
       },
       body: body ? JSON.stringify(body) : undefined,
       signal: controller.signal,
@@ -91,6 +100,20 @@ async function sendImageMessage({ phoneNumberId, accessToken, to, imageUrl, capt
   });
 }
 
+async function sendDocumentMessage({ phoneNumberId, accessToken, to, documentUrl, filename = "file", caption = "" }) {
+  return sendWhatsAppPayload({
+    phoneNumberId,
+    accessToken,
+    to,
+    type: "document",
+    payload: {
+      link: documentUrl,
+      filename: String(filename || "file").slice(0, 240),
+      ...(caption ? { caption: String(caption).slice(0, 1024) } : {}),
+    },
+  });
+}
+
 async function sendInteractiveMessage({ phoneNumberId, accessToken, to, interactive }) {
   return sendWhatsAppPayload({
     phoneNumberId,
@@ -99,6 +122,45 @@ async function sendInteractiveMessage({ phoneNumberId, accessToken, to, interact
     type: "interactive",
     payload: interactive,
   });
+}
+
+async function configureConversationalAutomation({ phoneNumberId, accessToken, enableWelcomeMessage, prompts = [] }) {
+  const cleanPrompts = (Array.isArray(prompts) ? prompts : [])
+    .map((item) => String(item || "").trim().slice(0, 80))
+    .filter(Boolean)
+    .slice(0, 4);
+
+  const body = {
+    enable_welcome_message: Boolean(enableWelcomeMessage),
+  };
+  if (cleanPrompts.length) {
+    body.prompts = cleanPrompts;
+  }
+
+  logger.info("whatsapp.conversational_automation", {
+    phoneNumberId,
+    enableWelcomeMessage: body.enable_welcome_message,
+    prompts: cleanPrompts.length,
+  });
+
+  return graphRequest({
+    phoneNumberId,
+    accessToken,
+    path: "conversational_automation",
+    method: "POST",
+    body,
+  });
+}
+
+function extractInboundMedia(message) {
+  const type = String(message?.type || "");
+  const media = message?.[type] || {};
+  return {
+    mediaId: String(media.id || ""),
+    caption: String(media.caption || "").trim(),
+    mimeType: String(media.mime_type || ""),
+    filename: String(media.filename || ""),
+  };
 }
 
 function parseInboundWebhook(body) {
@@ -116,6 +178,9 @@ function parseInboundWebhook(body) {
 
       for (const message of messages) {
         const contact = contacts.find((item) => item.wa_id === message.from) || contacts[0] || {};
+        const type = String(message.type || "");
+        const media = extractInboundMedia(message);
+        const isWelcome = type === "request_welcome";
         events.push({
           phoneNumberId: String(metadata.phone_number_id || ""),
           displayPhoneNumber: String(metadata.display_phone_number || ""),
@@ -123,9 +188,19 @@ function parseInboundWebhook(body) {
           customerName: String(contact?.profile?.name || ""),
           messageId: String(message.id || ""),
           timestamp: message.timestamp ? new Date(Number(message.timestamp) * 1000) : new Date(),
-          type: String(message.type || ""),
-          text: String(message.text?.body || message.button?.text || message.interactive?.button_reply?.title || "").trim(),
+          type,
+          isWelcomeRequest: isWelcome,
+          text: String(
+            message.text?.body
+            || message.button?.text
+            || message.interactive?.button_reply?.title
+            || media.caption
+            || "",
+          ).trim(),
           buttonReplyId: String(message.interactive?.button_reply?.id || message.button?.payload || "").trim(),
+          mediaId: media.mediaId,
+          mediaMimeType: media.mimeType,
+          mediaFilename: media.filename,
           raw: message,
         });
       }
@@ -140,6 +215,9 @@ module.exports = {
   verifyWebhookChallenge,
   sendTextMessage,
   sendImageMessage,
+  sendDocumentMessage,
   sendInteractiveMessage,
+  configureConversationalAutomation,
   parseInboundWebhook,
+  graphRequest,
 };

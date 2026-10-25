@@ -23,6 +23,33 @@ const greetingButtonSchema = z.object({
   }
 });
 
+const greetingMessageSchema = z.object({
+  id: z.string().trim().min(1).max(80).optional(),
+  type: z.enum(["text", "image", "interactive"]).optional().default("text"),
+  bodyText: z.string().trim().max(1024).optional().default(""),
+  footerText: z.string().trim().max(60).optional().default(""),
+  imageUrl: z.string().trim().optional().default(""),
+  imagePublicId: z.string().trim().optional().default(""),
+  imageSourceUrl: z.string().trim().optional().default(""),
+  imageUrls: z.array(z.string().trim()).max(8).optional().default([]),
+  imagePublicIds: z.array(z.string().trim()).max(8).optional().default([]),
+  buttons: z.array(greetingButtonSchema).max(3).optional().default([]),
+}).superRefine((message, ctx) => {
+  const hasContent = Boolean(
+    String(message.bodyText || "").trim()
+    || String(message.imageUrl || "").trim()
+    || (message.imageUrls || []).length
+    || (message.buttons || []).length,
+  );
+  if (!hasContent) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Each greeting step needs text, an image, or a button",
+      path: ["bodyText"],
+    });
+  }
+});
+
 const whatsAppAccountSchema = z.object({
   label: z.string().trim().min(2, "Account name is required").max(120),
   phoneNumberId: z.string().trim().min(5, "Phone number ID is required").max(80),
@@ -34,7 +61,6 @@ const whatsAppAccountSchema = z.object({
 });
 
 const whatsAppAccountUpdateSchema = whatsAppAccountSchema.extend({
-  // Empty string keeps the existing token on update.
   accessToken: z.union([
     z.literal(""),
     z.string().trim().min(20, "Access token is required").max(5000),
@@ -44,44 +70,60 @@ const whatsAppAccountUpdateSchema = whatsAppAccountSchema.extend({
 const whatsAppGreetingSchema = z.object({
   accountId: z.string().trim().min(1, "WhatsApp account is required"),
   enabled: booleanValue.default(true),
-  bodyText: z.string().trim().max(1024).optional().default(""),
-  footerText: z.string().trim().max(60).optional().default(""),
-  imageUrl: z.string().trim().optional().default(""),
-  imagePublicId: z.string().trim().optional().default(""),
-  imageSourceUrl: z.string().trim().optional().default(""),
-  buttons: z.array(greetingButtonSchema).max(3).optional().default([]),
+  enableWelcomeMessage: booleanValue.default(true),
+  iceBreakers: z.array(z.string().trim().max(80)).max(4).optional().default([]),
+  messages: z.array(greetingMessageSchema).max(10).optional().default([]),
 }).superRefine((value, ctx) => {
-  const hasContent = Boolean(
-    String(value.bodyText || "").trim()
-    || String(value.imageUrl || "").trim()
-    || (value.buttons || []).length,
-  );
-  if (!hasContent) {
+  if (!(value.messages || []).length) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: "Add text, an image, or at least one button",
-      path: ["bodyText"],
+      message: "Add at least one greeting message",
+      path: ["messages"],
     });
   }
+});
 
-  const urlCount = (value.buttons || []).filter((button) => button.type === "url").length;
-  const replyCount = (value.buttons || []).filter((button) => button.type !== "url").length;
-  if (urlCount > 1 && replyCount === 0) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "WhatsApp allows only one Go Now (URL) button per greeting",
-      path: ["buttons"],
-    });
-  }
+const whatsAppAISettingsSchema = z.object({
+  accountId: z.string().trim().min(1),
+  enabled: booleanValue.default(true),
+  systemPromptExtra: z.string().trim().max(4000).optional().default(""),
+  sendProductImages: booleanValue.default(true),
+  sendOfferImages: booleanValue.default(true),
+  maxImagesPerReply: z.coerce.number().int().min(0).max(5).optional().default(3),
+  allowButtons: booleanValue.default(true),
+  pauseOnHumanReply: booleanValue.default(true),
 });
 
 const ogImageSchema = z.object({
   url: z.string().trim().url("Enter a valid URL"),
 });
 
+const sendTextSchema = z.object({
+  conversationId: z.string().trim().min(1),
+  text: z.string().trim().min(1).max(4096),
+});
+
+const sendMediaSchema = z.object({
+  conversationId: z.string().trim().min(1),
+  mediaUrl: z.string().trim().url(),
+  caption: z.string().trim().max(1024).optional().default(""),
+  filename: z.string().trim().max(240).optional().default(""),
+  mediaPublicId: z.string().trim().optional().default(""),
+  mediaMimeType: z.string().trim().optional().default(""),
+});
+
+const conversationFlagsSchema = z.object({
+  humanTakeover: booleanValue.optional(),
+  aiEnabled: booleanValue.optional(),
+});
+
 module.exports = {
   whatsAppAccountSchema,
   whatsAppAccountUpdateSchema,
   whatsAppGreetingSchema,
+  whatsAppAISettingsSchema,
   ogImageSchema,
+  sendTextSchema,
+  sendMediaSchema,
+  conversationFlagsSchema,
 };

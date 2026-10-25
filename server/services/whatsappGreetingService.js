@@ -5,6 +5,7 @@ const {
   sendTextMessage,
   sendImageMessage,
   sendInteractiveMessage,
+  configureConversationalAutomation,
 } = require("./whatsappCloudApiService");
 const { logger } = require("../utils/logger");
 
@@ -22,20 +23,62 @@ function sanitizeButtons(buttons = []) {
     }));
 }
 
-function buildInteractiveFromGreeting(greeting) {
-  const bodyText = String(greeting.bodyText || "").trim().slice(0, 1024);
-  const footerText = String(greeting.footerText || "").trim().slice(0, 60);
-  const imageUrl = String(greeting.imageUrl || "").trim();
-  const buttons = sanitizeButtons(greeting.buttons);
+function sanitizeGreetingMessage(message, index = 0) {
+  const imageUrls = [
+    ...(Array.isArray(message?.imageUrls) ? message.imageUrls : []),
+    message?.imageUrl || "",
+  ]
+    .map((url) => String(url || "").trim())
+    .filter(Boolean);
+  const uniqueUrls = [...new Set(imageUrls)];
 
-  const header = imageUrl
-    ? { type: "image", image: { link: imageUrl } }
-    : undefined;
+  return {
+    id: String(message?.id || `msg_${index + 1}`).slice(0, 80),
+    type: ["text", "image", "interactive"].includes(message?.type) ? message.type : "text",
+    bodyText: String(message?.bodyText || "").trim().slice(0, 1024),
+    footerText: String(message?.footerText || "").trim().slice(0, 60),
+    imageUrl: uniqueUrls[0] || "",
+    imagePublicId: String(message?.imagePublicId || "").trim(),
+    imageSourceUrl: String(message?.imageSourceUrl || "").trim(),
+    imageUrls: uniqueUrls,
+    imagePublicIds: (Array.isArray(message?.imagePublicIds) ? message.imagePublicIds : [])
+      .map((id) => String(id || "").trim())
+      .filter(Boolean),
+    buttons: sanitizeButtons(message?.buttons),
+  };
+}
 
+function normalizeGreetingMessages(greeting) {
+  const configured = Array.isArray(greeting?.messages) ? greeting.messages : [];
+  if (configured.length) {
+    return configured.map((item, index) => sanitizeGreetingMessage(item, index))
+      .filter((item) => item.bodyText || item.imageUrls.length || item.buttons.length);
+  }
+
+  // Legacy single-message shape → one sequence step
+  const legacy = sanitizeGreetingMessage({
+    id: "legacy_1",
+    type: greeting?.buttons?.length ? "interactive" : (greeting?.imageUrl ? "image" : "text"),
+    bodyText: greeting?.bodyText,
+    footerText: greeting?.footerText,
+    imageUrl: greeting?.imageUrl,
+    imagePublicId: greeting?.imagePublicId,
+    imageSourceUrl: greeting?.imageSourceUrl,
+    buttons: greeting?.buttons,
+  }, 0);
+
+  return (legacy.bodyText || legacy.imageUrls.length || legacy.buttons.length) ? [legacy] : [];
+}
+
+function buildInteractivePlan(step) {
+  const bodyText = step.bodyText;
+  const footerText = step.footerText;
+  const imageUrl = step.imageUrls[0] || "";
+  const buttons = step.buttons;
+  const header = imageUrl ? { type: "image", image: { link: imageUrl } } : undefined;
   const urlButtons = buttons.filter((button) => button.type === "url" && button.url);
   const replyButtons = buttons.filter((button) => button.type === "copy_code" || button.type === "quick_reply");
 
-  // WhatsApp allows either one cta_url OR up to 3 reply buttons — not mixed.
   if (urlButtons.length === 1 && replyButtons.length === 0) {
     const button = urlButtons[0];
     return {
@@ -47,29 +90,14 @@ function buildInteractiveFromGreeting(greeting) {
         ...(footerText ? { footer: { text: footerText } } : {}),
         action: {
           name: "cta_url",
-          parameters: {
-            display_text: button.label,
-            url: button.url,
-          },
+          parameters: { display_text: button.label, url: button.url },
         },
       },
+      extraImages: step.imageUrls.slice(1),
     };
   }
 
   if (replyButtons.length) {
-    const actionButtons = replyButtons.slice(0, 3).map((button) => {
-      const replyId = button.type === "copy_code"
-        ? `copy:${button.code || button.id}`
-        : (button.payload || button.id);
-      return {
-        type: "reply",
-        reply: {
-          id: String(replyId).slice(0, 256),
-          title: button.label,
-        },
-      };
-    });
-
     return {
       mode: "interactive",
       interactive: {
@@ -77,26 +105,49 @@ function buildInteractiveFromGreeting(greeting) {
         ...(header ? { header } : {}),
         body: { text: bodyText || "Welcome!" },
         ...(footerText ? { footer: { text: footerText } } : {}),
-        action: { buttons: actionButtons },
+        action: {
+          buttons: replyButtons.slice(0, 3).map((button) => ({
+            type: "reply",
+            reply: {
+              id: String(
+                button.type === "copy_code"
+                  ? `copy:${button.code || button.id}`
+                  : (button.payload || button.id),
+              ).slice(0, 256),
+              title: button.label,
+            },
+          })),
+        },
       },
-      // Extra URL buttons cannot share the same interactive payload — send as follow-up text.
       followUpUrls: urlButtons,
+      extraImages: step.imageUrls.slice(header ? 1 : 0),
     };
   }
 
-  if (imageUrl && bodyText) {
-    return { mode: "image", imageUrl, caption: bodyText };
+  if (step.imageUrls.length) {
+    return {
+      mode: "images",
+      imageUrls: step.imageUrls,
+      caption: bodyText,
+    };
   }
-  if (imageUrl) {
-    return { mode: "image", imageUrl, caption: "" };
-  }
+
   if (bodyText) {
     return { mode: "text", text: bodyText };
   }
+
   return null;
 }
 
-async function shouldSendGreeting(accountId, customerWaId) {
+/** @deprecated kept for tests */
+function buildInteractiveFromGreeting(greeting) {
+  const steps = normalizeGreetingMessages(greeting);
+  if (!steps.length) return null;
+  return buildInteractivePlan(steps[0]);
+}
+
+async function shouldSendGreeting(accountId, customerWaId, { force = false } = {}) {
+  if (force) return true;
   const cooldownHours = Math.max(1, Number(env.whatsapp.greetingCooldownHours || 24));
   const existing = await WhatsAppGreetingLog.findOne({
     account: accountId,
@@ -116,7 +167,42 @@ async function markGreetingSent(accountId, customerWaId) {
   );
 }
 
-async function sendGreetingForAccount({ account, customerWaId }) {
+async function sendGreetingStep(creds, step) {
+  const plan = buildInteractivePlan(step);
+  if (!plan) return [];
+
+  const sent = [];
+
+  if (plan.mode === "interactive") {
+    const result = await sendInteractiveMessage({ ...creds, interactive: plan.interactive });
+    sent.push({ type: "interactive", result, text: step.bodyText, buttons: step.buttons });
+    for (const button of plan.followUpUrls || []) {
+      const resultText = await sendTextMessage({
+        ...creds,
+        text: `${button.label}: ${button.url}`,
+      });
+      sent.push({ type: "text", result: resultText, text: `${button.label}: ${button.url}` });
+    }
+    for (const imageUrl of plan.extraImages || []) {
+      const resultImage = await sendImageMessage({ ...creds, imageUrl });
+      sent.push({ type: "image", result: resultImage, mediaUrl: imageUrl });
+    }
+  } else if (plan.mode === "images") {
+    for (let index = 0; index < plan.imageUrls.length; index += 1) {
+      const imageUrl = plan.imageUrls[index];
+      const caption = index === 0 ? plan.caption : "";
+      const resultImage = await sendImageMessage({ ...creds, imageUrl, caption });
+      sent.push({ type: "image", result: resultImage, mediaUrl: imageUrl, text: caption });
+    }
+  } else if (plan.mode === "text") {
+    const result = await sendTextMessage({ ...creds, text: plan.text });
+    sent.push({ type: "text", result, text: plan.text });
+  }
+
+  return sent;
+}
+
+async function sendGreetingForAccount({ account, customerWaId, force = false, onOutbound } = {}) {
   if (!account?._id || !customerWaId) return { sent: false, reason: "missing_context" };
 
   const greeting = await WhatsAppGreeting.findOne({
@@ -126,11 +212,11 @@ async function sendGreetingForAccount({ account, customerWaId }) {
 
   if (!greeting) return { sent: false, reason: "greeting_disabled_or_missing" };
 
-  const allowed = await shouldSendGreeting(account._id, customerWaId);
+  const allowed = await shouldSendGreeting(account._id, customerWaId, { force });
   if (!allowed) return { sent: false, reason: "cooldown" };
 
-  const plan = buildInteractiveFromGreeting(greeting);
-  if (!plan) return { sent: false, reason: "empty_greeting" };
+  const steps = normalizeGreetingMessages(greeting);
+  if (!steps.length) return { sent: false, reason: "empty_greeting" };
 
   const creds = {
     phoneNumberId: account.phoneNumberId,
@@ -138,27 +224,43 @@ async function sendGreetingForAccount({ account, customerWaId }) {
     to: customerWaId,
   };
 
-  if (plan.mode === "interactive") {
-    await sendInteractiveMessage({ ...creds, interactive: plan.interactive });
-    for (const button of plan.followUpUrls || []) {
-      await sendTextMessage({
-        ...creds,
-        text: `${button.label}: ${button.url}`,
-      });
+  const allSent = [];
+  for (const step of steps) {
+    const sent = await sendGreetingStep(creds, step);
+    allSent.push(...sent);
+    if (typeof onOutbound === "function") {
+      for (const item of sent) {
+        await onOutbound(item);
+      }
     }
-  } else if (plan.mode === "image") {
-    await sendImageMessage({ ...creds, imageUrl: plan.imageUrl, caption: plan.caption });
-  } else if (plan.mode === "text") {
-    await sendTextMessage({ ...creds, text: plan.text });
   }
 
   await markGreetingSent(account._id, customerWaId);
   logger.info("whatsapp.greeting.sent", {
     accountId: String(account._id),
     customerWaId,
-    mode: plan.mode,
+    steps: steps.length,
+    messages: allSent.length,
   });
-  return { sent: true, mode: plan.mode };
+  return { sent: true, steps: steps.length, messages: allSent.length };
+}
+
+async function syncConversationalAutomation(account, greeting) {
+  if (!account?.phoneNumberId || !account?.accessToken) return null;
+  try {
+    return await configureConversationalAutomation({
+      phoneNumberId: account.phoneNumberId,
+      accessToken: account.accessToken,
+      enableWelcomeMessage: greeting?.enableWelcomeMessage !== false && greeting?.enabled !== false,
+      prompts: greeting?.iceBreakers || [],
+    });
+  } catch (error) {
+    logger.warn("whatsapp.conversational_automation.failed", {
+      phoneNumberId: account.phoneNumberId,
+      message: error.message,
+    });
+    throw error;
+  }
 }
 
 async function handleCopyCodeReply({ account, customerWaId, buttonReplyId }) {
@@ -176,7 +278,10 @@ async function handleCopyCodeReply({ account, customerWaId, buttonReplyId }) {
 
 module.exports = {
   sanitizeButtons,
+  sanitizeGreetingMessage,
+  normalizeGreetingMessages,
   buildInteractiveFromGreeting,
   sendGreetingForAccount,
+  syncConversationalAutomation,
   handleCopyCodeReply,
 };
