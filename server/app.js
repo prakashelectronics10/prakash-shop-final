@@ -37,6 +37,11 @@ const { findProductForMetadata, absoluteUrl } = require("./services/productMetad
 const { buildGoogleMerchantFeed } = require("./services/googleMerchantFeedService");
 const { handleRazorpayWebhook } = require("./controllers/orderController");
 const {
+  verifyWhatsAppWebhook,
+  handleWhatsAppWebhook,
+} = require("./controllers/whatsappWebhookController");
+const whatsappAdminRoutes = require("./routes/whatsappRoutes");
+const {
   listAmpProducts,
   renderAmpCatalogPage,
   renderAmpNotFound,
@@ -91,6 +96,9 @@ app.use(compression());
 // Razorpay webhook signatures require the untouched request bytes, so this route
 // must be registered before the global JSON parser.
 app.post("/api/orders/webhook", express.raw({ type: "application/json", limit: "1mb" }), handleRazorpayWebhook);
+// WhatsApp Cloud API signature check needs the raw request body.
+app.get("/api/whatsapp/webhook", verifyWhatsAppWebhook);
+app.post("/api/whatsapp/webhook", express.raw({ type: "application/json", limit: "2mb" }), handleWhatsAppWebhook);
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use(cookieParser());
@@ -159,6 +167,7 @@ app.use("/api/shop-products", shopProductRoutes);
 app.use("/api/brand-sliders", brandSliderRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/science-ai", scienceAIRoutes);
+app.use("/api/whatsapp/admin", whatsappAdminRoutes);
 
 const LEGACY_PAGE_ROUTES = new Map([
   ["learn-more", "/learn-more"],

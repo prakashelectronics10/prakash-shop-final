@@ -172,8 +172,8 @@ router.post("/web-settings/favicon", requirePermission("webSettings"), upload.si
 router.delete("/web-settings/favicon", requirePermission("webSettings"), deleteFavicon);
 
 router.post("/profile-image", upload.single("image"), updateProfileImage);
-router.post("/upload/image", requirePermission("offers", "coupons", "shopHighlights", "services", "featuredRepairs", "gallery", "testimonials", "about", "footer", "projectParts", "projectSliders", "brandsSlider", "shopProducts", "autoSliderBanners", "webSettings", "invoices"), upload.single("image"), uploadImage);
-router.post("/upload/images", requirePermission("offers", "shopHighlights", "services", "featuredRepairs", "gallery", "testimonials", "about", "footer", "projectParts", "projectSliders", "brandsSlider", "shopProducts", "autoSliderBanners", "webSettings", "invoices"), upload.array("images", 8), uploadImages);
-router.delete("/upload/image", requirePermission("offers", "coupons", "shopHighlights", "services", "featuredRepairs", "gallery", "testimonials", "about", "footer", "projectParts", "projectSliders", "brandsSlider", "shopProducts", "autoSliderBanners", "webSettings", "invoices"), deleteUploadedImage);
+router.post("/upload/image", requirePermission("offers", "coupons", "shopHighlights", "services", "featuredRepairs", "gallery", "testimonials", "about", "footer", "projectParts", "projectSliders", "brandsSlider", "shopProducts", "autoSliderBanners", "webSettings", "invoices", "manageWhatsApp"), upload.single("image"), uploadImage);
+router.post("/upload/images", requirePermission("offers", "shopHighlights", "services", "featuredRepairs", "gallery", "testimonials", "about", "footer", "projectParts", "projectSliders", "brandsSlider", "shopProducts", "autoSliderBanners", "webSettings", "invoices", "manageWhatsApp"), upload.array("images", 8), uploadImages);
+router.delete("/upload/image", requirePermission("offers", "coupons", "shopHighlights", "services", "featuredRepairs", "gallery", "testimonials", "about", "footer", "projectParts", "projectSliders", "brandsSlider", "shopProducts", "autoSliderBanners", "webSettings", "invoices", "manageWhatsApp"), deleteUploadedImage);
 
 module.exports = router;

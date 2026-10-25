@@ -61,6 +61,7 @@ const adminPermission = z.enum([
   "webSettings",
   "notificationEmails",
   "invoices",
+  "manageWhatsApp",
 ]);
 
 const adminCreateSchema = z.object({

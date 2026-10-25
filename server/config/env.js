@@ -109,6 +109,20 @@ const env = {
     maxAttempts: number(process.env.META_SYNC_MAX_ATTEMPTS, 5),
     concurrency: Math.max(1, Math.min(5, number(process.env.META_SYNC_CONCURRENCY, 2))),
   },
+  metaApp: {
+    appId: process.env.META_APP_ID || "",
+    appSecret: process.env.META_APP_SECRET || "",
+  },
+  whatsapp: {
+    enabled: bool(process.env.WHATSAPP_ENABLED, false),
+    phoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID || "",
+    businessAccountId: process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || "",
+    accessToken: process.env.WHATSAPP_ACCESS_TOKEN || "",
+    webhookVerifyToken: process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN || "",
+    graphApiVersion: process.env.META_GRAPH_API_VERSION || "v26.0",
+    requestTimeoutMs: number(process.env.WHATSAPP_REQUEST_TIMEOUT_MS, 15000),
+    greetingCooldownHours: number(process.env.WHATSAPP_GREETING_COOLDOWN_HOURS, 24),
+  },
 };
 
 module.exports = env;

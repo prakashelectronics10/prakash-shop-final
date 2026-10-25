@@ -33,6 +33,7 @@ const allPermissions = [
   "invoices",
   "orders",
   "pulseAI",
+  "manageWhatsApp",
 ];
 
 const normalizeEmail = (email) => String(email || "").trim().toLowerCase();

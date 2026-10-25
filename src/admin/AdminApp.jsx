@@ -26,6 +26,7 @@ import { applyDynamicWebSettings } from "../context/SiteDataContext";
 import { getIcon } from "../components/site/iconMap";
 import { buildPricingPayload, formatINR, resolveProductPricing } from "../utils/productPricing";
 import InvoiceModule from "./InvoiceModule";
+import ManageWhatsAppModule from "./ManageWhatsAppModule";
 import OrdersModule from "./OrdersModule";
 import "./AdminApp.css";
 
@@ -92,6 +93,7 @@ function formatAdminPriceDetail(product = {}) {
 const sectionCards = [
   { key: "admins", label: "Admins", note: "Manage admin accounts", superOnly: true },
   { key: "pulseAI", label: "Pulse AI Instructions", note: "Train live responses with editable behavior rules" },
+  { key: "manageWhatsApp", label: "Manage WhatsApp", note: "Business accounts, greeting messages, and Cloud API" },
   { key: "notificationEmails", label: "Email Notifications", note: "Booking and Pulse AI demand-alert recipients", superOnly: true },
   { key: "bookings", label: "Bookings", note: "Repair requests and status" },
   { key: "orders", label: "Orders", note: "Paid orders, delivery details and status" },
@@ -762,6 +764,9 @@ function App() {
         )}
         {active === "pulseAI" && (
           <PulseAIInstructionsManager instructions={data.pulseAIInstructions} runAction={runAction} busy={busy} />
+        )}
+        {active === "manageWhatsApp" && (
+          <ManageWhatsAppModule apiFetch={apiFetch} />
         )}
         {active === "bookings" && (
           <BookingsManager bookings={data.bookings} runAction={runAction} busy={busy} />

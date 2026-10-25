@@ -1,0 +1,431 @@
+.wa-module {
+  display: grid;
+  gap: 16px;
+}
+
+.wa-module-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.wa-module-header h1 {
+  margin: 0;
+  font-size: clamp(1.35rem, 3vw, 1.7rem);
+}
+
+.wa-module-header p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.wa-tabs {
+  display: inline-flex;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 4px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.wa-tabs button {
+  border: 0;
+  border-radius: 10px;
+  padding: 9px 14px;
+  color: var(--muted);
+  background: transparent;
+  font-weight: 750;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.wa-tabs button.active {
+  color: var(--text);
+  background: rgba(20, 184, 166, 0.16);
+}
+
+.wa-panel {
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.wa-panel-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.wa-panel-toolbar h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.wa-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.wa-empty {
+  border: 1px dashed var(--border);
+  border-radius: 14px;
+  padding: 28px 16px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.wa-account-list {
+  display: grid;
+  gap: 10px;
+}
+
+.wa-account-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.wa-account-card h3 {
+  margin: 0 0 4px;
+  font-size: 0.98rem;
+}
+
+.wa-account-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.wa-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.wa-badge.on {
+  color: #99f6e4;
+  background: rgba(20, 184, 166, 0.16);
+}
+
+.wa-badge.off {
+  color: #fecaca;
+  background: rgba(239, 68, 68, 0.14);
+}
+
+.wa-account-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.wa-account-actions button,
+.wa-icon-btn {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  color: var(--text);
+  background: transparent;
+  cursor: pointer;
+}
+
+.wa-greeting-layout {
+  display: grid;
+  gap: 14px;
+}
+
+.wa-greeting-select {
+  display: grid;
+  gap: 7px;
+  max-width: 420px;
+}
+
+.wa-greeting-select label,
+.wa-field label {
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.wa-greeting-select select,
+.wa-field input,
+.wa-field textarea,
+.wa-field select {
+  width: 100%;
+  min-height: 46px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0 12px;
+  color: var(--text);
+  background: var(--surface-strong, rgba(255, 255, 255, 0.04));
+  outline: none;
+}
+
+.wa-field textarea {
+  min-height: 110px;
+  padding: 12px;
+  resize: vertical;
+}
+
+.wa-field input:focus,
+.wa-field textarea:focus,
+.wa-field select:focus,
+.wa-greeting-select select:focus {
+  border-color: rgba(45, 212, 191, 0.65);
+  box-shadow: 0 0 0 4px rgba(20, 184, 166, 0.1);
+}
+
+.wa-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.wa-image-row {
+  display: grid;
+  gap: 10px;
+}
+
+.wa-image-preview {
+  display: grid;
+  place-items: center;
+  width: min(100%, 280px);
+  aspect-ratio: 1.6;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.wa-image-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.wa-image-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.wa-buttons-block {
+  display: grid;
+  gap: 10px;
+}
+
+.wa-button-card {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.025);
+  display: grid;
+  gap: 10px;
+}
+
+.wa-button-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.wa-button-card-head strong {
+  font-size: 13px;
+}
+
+.wa-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.wa-env-note {
+  margin: 0 0 12px;
+  border: 1px solid rgba(96, 165, 250, 0.24);
+  border-radius: 13px;
+  padding: 11px 12px;
+  color: #bfdbfe;
+  background: rgba(37, 99, 235, 0.1);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.wa-toggle-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 12px;
+  cursor: pointer;
+}
+
+.wa-toggle-row input {
+  width: 18px;
+  height: 18px;
+  accent-color: #14b8a6;
+  margin-top: 2px;
+}
+
+.wa-toggle-row span {
+  display: grid;
+  gap: 3px;
+}
+
+.wa-toggle-row small {
+  color: var(--muted);
+}
+
+.wa-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+.wa-primary,
+.wa-secondary,
+.wa-danger {
+  border-radius: 12px;
+  min-height: 42px;
+  padding: 0 14px;
+  font-weight: 800;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.wa-primary {
+  border: 0;
+  color: #042f2e;
+  background: #2dd4bf;
+}
+
+.wa-secondary {
+  border: 1px solid var(--border);
+  color: var(--text);
+  background: transparent;
+}
+
+.wa-danger {
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  color: #fecaca;
+  background: rgba(239, 68, 68, 0.12);
+}
+
+.wa-primary:disabled,
+.wa-secondary:disabled,
+.wa-danger:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Reuse Orders modal/drawer visual language */
+.wa-modal-layer {
+  position: fixed;
+  z-index: 1700;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+}
+
+.wa-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: rgba(2, 6, 23, 0.72);
+  backdrop-filter: blur(8px);
+}
+
+.wa-modal {
+  position: relative;
+  width: min(100%, 520px);
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  padding: 20px;
+  color: var(--text);
+  background: var(--surface, #101a2c);
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.48);
+  animation: wa-modal-in 0.22s ease both;
+}
+
+@keyframes wa-modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+}
+
+.wa-modal > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.wa-modal h3 {
+  margin: 3px 0 0;
+  font-size: 1.3rem;
+}
+
+.wa-modal > header > button {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--text);
+  background: transparent;
+  cursor: pointer;
+}
+
+.wa-modal .wa-field {
+  margin-top: 12px;
+}
+
+.wa-modal footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+@media (max-width: 720px) {
+  .wa-grid-2 {
+    grid-template-columns: 1fr;
+  }
+
+  .wa-account-card {
+    grid-template-columns: 1fr;
+  }
+
+  .wa-account-actions {
+    justify-content: flex-end;
+  }
+}
