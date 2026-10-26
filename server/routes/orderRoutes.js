@@ -3,6 +3,7 @@ const {
   createPaymentOrder,
   getOrderQuote,
   verifyPayment,
+  markPaymentFailed,
   getPublicOrder,
   listOrders,
   updateOrderStatus,
@@ -21,6 +22,7 @@ const router = express.Router();
 router.post("/payment", createPaymentOrder);
 router.post("/quote", getOrderQuote);
 router.post("/payment/verify", verifyPayment);
+router.post("/payment/failed", markPaymentFailed);
 router.get("/charges", getPublicCharges);
 router.get("/track/:orderId", getPublicOrder);
 router.get("/admin/charges", requireAdmin, requirePermission("orders"), listAdminCharges);

@@ -124,6 +124,34 @@ async function sendInteractiveMessage({ phoneNumberId, accessToken, to, interact
   });
 }
 
+async function sendTemplateMessage({
+  phoneNumberId,
+  accessToken,
+  to,
+  templateName,
+  languageCode = "en",
+  components = [],
+}) {
+  const body = {
+    messaging_product: "whatsapp",
+    recipient_type: "individual",
+    to: String(to).replace(/\D/g, ""),
+    type: "template",
+    template: {
+      name: String(templateName || "").trim(),
+      language: { code: String(languageCode || "en") },
+      ...(components.length ? { components } : {}),
+    },
+  };
+  logger.info("whatsapp.send_template", {
+    phoneNumberId,
+    to: body.to,
+    templateName: body.template.name,
+    languageCode: body.template.language.code,
+  });
+  return graphRequest({ phoneNumberId, accessToken, body });
+}
+
 async function configureConversationalAutomation({ phoneNumberId, accessToken, enableWelcomeMessage, prompts = [] }) {
   const cleanPrompts = (Array.isArray(prompts) ? prompts : [])
     .map((item) => String(item || "").trim().slice(0, 80))
@@ -198,10 +226,16 @@ function parseInboundWebhook(body) {
             message.text?.body
             || message.button?.text
             || message.interactive?.button_reply?.title
+            || message.interactive?.nfm_reply?.body
+            || message.interactive?.nfm_reply?.name
             || media.caption
             || "",
           ).trim(),
           buttonReplyId: String(message.interactive?.button_reply?.id || message.button?.payload || "").trim(),
+          isFlowReply: type === "interactive" && Boolean(message.interactive?.nfm_reply),
+          flowReplyName: String(message.interactive?.nfm_reply?.name || "").trim(),
+          flowReplyBody: String(message.interactive?.nfm_reply?.body || "").trim(),
+          flowReplyResponseJson: String(message.interactive?.nfm_reply?.response_json || "").trim(),
           mediaId: media.mediaId,
           mediaMimeType: media.mimeType,
           mediaFilename: media.filename,
@@ -221,6 +255,7 @@ module.exports = {
   sendImageMessage,
   sendDocumentMessage,
   sendInteractiveMessage,
+  sendTemplateMessage,
   configureConversationalAutomation,
   parseInboundWebhook,
   graphRequest,

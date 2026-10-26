@@ -147,7 +147,20 @@ async function generateWhatsAppAIReply({
   const history = await buildHistoryForModel(conversation._id);
   const maxImages = Math.max(0, Math.min(5, Number(settings.maxImagesPerReply ?? 3)));
 
-  const systemPrompt = `You are Pulse AI on WhatsApp for Prakash Electronics and Electricals (Chitarpur, Jharkhand).
+  const flowHint = conversation.flowState?.type
+    ? `ACTIVE FLOW: ${JSON.stringify(conversation.flowState)}. Follow this flow carefully; do not send a normal greeting.`
+    : "";
+  const copyHint = conversation.lastCopyCodes
+    ? `KNOWN IDS FOR THIS CUSTOMER: bookingId=${conversation.lastCopyCodes.bookingId || "-"}, orderId=${conversation.lastCopyCodes.orderId || "-"}.`
+    : "";
+
+  const systemPrompt = `You are Pulse AI chatting with this customer ON WHATSAPP (WhatsApp Cloud API channel) for Prakash Electronics and Electricals (Chitarpur, Jharkhand).
+CHANNEL AWARENESS (critical):
+- Ye conversation WhatsApp ke through ho rahi hai — website chat nahi.
+- Customer WhatsApp pe message kar raha/rahi hai. Replies WhatsApp-native style mein do.
+- Booking OTP, booking confirmation, order confirmation, aur payment-failed messages system already bhej sakta hai. Un cases mein normal greeting mat do.
+- Prefer clear Hinglish when the customer writes in Hinglish/Hindi mix (jaisa customers usually likhte hain). English is fine if the customer writes in English.
+
 Reply in clear, polite WhatsApp style. Keep answers concise (usually under 900 characters) unless the customer needs steps.
 Use shop knowledge, offers, and catalog truth. Never invent prices or stock.
 
@@ -158,6 +171,9 @@ WHATSAPP TEXT FORMATTING (critical):
 - For monospace/code use triple backticks around the code
 - For lists use • or 1. 2. 3.
 - Write product names in *bold* so they stand out.
+
+${flowHint}
+${copyHint}
 
 ${settings.systemPromptExtra ? `EXTRA ADMIN INSTRUCTIONS:\n${settings.systemPromptExtra}\n` : ""}
 

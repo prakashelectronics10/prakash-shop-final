@@ -18,6 +18,19 @@ const whatsAppConversationSchema = new mongoose.Schema(
     humanTakeover: { type: Boolean, default: false },
     conversationMemory: { type: mongoose.Schema.Types.Mixed, default: {} },
     greetingSentAt: { type: Date, default: null },
+    /** When set in the future, auto-greeting is skipped (OTP / booking / order / payment flows). */
+    suppressGreetingUntil: { type: Date, default: null },
+    /** Last IDs for Copy-to-clipboard quick replies from transactional WhatsApp messages. */
+    lastCopyCodes: {
+      bookingId: { type: String, default: "" },
+      orderId: { type: String, default: "" },
+    },
+    /**
+     * Guided payment-issue flow after OTP verified but payment not completed.
+     * type: payment_issue | null
+     * step: ask_if_issue | awaiting_issue_details | done
+     */
+    flowState: { type: mongoose.Schema.Types.Mixed, default: null },
   },
   { timestamps: true },
 );

@@ -7,6 +7,7 @@ import { Navbar } from "./Navbar";
 import { Footer } from "./Footer";
 import { OptimizedImage } from "./OptimizedImage";
 import { BookingSuccessOverlay } from "./BookingSuccessOverlay";
+import { WhatsAppOtpModal } from "./WhatsAppOtpModal";
 
 const initialForm = {
   fullName: "",
@@ -80,6 +81,7 @@ export function Booking() {
   const [isDragging, setIsDragging] = useState(false);
   const [selectedProducts, setSelectedProducts] = useState([]);
   const [showSuccessAnimation, setShowSuccessAnimation] = useState(false);
+  const [otpOpen, setOtpOpen] = useState(false);
   const fileInputRef = useRef(null);
   const selectionLoadedRef = useRef(false);
   const bookingMessageId = useId();
@@ -261,52 +263,57 @@ export function Booking() {
     }
   }, [processFiles]);
 
+  const validateBookingForm = () => {
+    if (!form.address.trim()) {
+      setStatus("Location / address is required.");
+      return false;
+    }
+    if (!/^\d{10}$/.test(form.phoneNumber)) {
+      setStatus("Phone number must be exactly 10 digits.");
+      return false;
+    }
+    if (!/^[6-9]\d{9}$/.test(form.whatsappNumber)) {
+      setStatus("WhatsApp number must be a valid 10-digit number.");
+      return false;
+    }
+    if (emailCheck.status === "checking") {
+      setStatus("Please wait while we verify your email address.");
+      return false;
+    }
+    if (emailCheck.status !== "valid") {
+      setStatus(emailCheck.message || "Invalid email address");
+      return false;
+    }
+    if (!/^\d{6}$/.test(form.pincode)) {
+      setStatus("Pincode must be exactly 6 digits.");
+      return false;
+    }
+    const invalidStockProduct = selectedProducts.find((product) => {
+      const limit = getCartStockLimit(product);
+      return limit < 1 || Number(product.quantity || 1) > limit;
+    });
+    if (invalidStockProduct) {
+      setStatus(`${invalidStockProduct.productName}: ${cartStockMessage(invalidStockProduct)}`);
+      return false;
+    }
+    return true;
+  };
+
   const submit = async (event) => {
     event.preventDefault();
+    setStatus("");
+    if (!validateBookingForm()) return;
+    setOtpOpen(true);
+  };
+
+  const finalizeBooking = async ({ challengeId, verifiedToken }) => {
     setBusy(true);
     setStatus("");
     try {
-      if (!form.address.trim()) {
-        setStatus("Location / address is required.");
-        setBusy(false);
-        return;
-      }
-      if (!/^\d{10}$/.test(form.phoneNumber)) {
-        setStatus("Phone number must be exactly 10 digits.");
-        setBusy(false);
-        return;
-      }
-      if (!/^\d{10}$/.test(form.whatsappNumber)) {
-        setStatus("WhatsApp number must be exactly 10 digits.");
-        setBusy(false);
-        return;
-      }
-      if (emailCheck.status === "checking") {
-        setStatus("Please wait while we verify your email address.");
-        setBusy(false);
-        return;
-      }
-      if (emailCheck.status !== "valid") {
-        setStatus(emailCheck.message || "Invalid email address");
-        setBusy(false);
-        return;
-      }
-      if (!/^\d{6}$/.test(form.pincode)) {
-        setStatus("Pincode must be exactly 6 digits.");
-        setBusy(false);
-        return;
-      }
-      const invalidStockProduct = selectedProducts.find((product) => {
-        const limit = getCartStockLimit(product);
-        return limit < 1 || Number(product.quantity || 1) > limit;
-      });
-      if (invalidStockProduct) {
-        setStatus(`${invalidStockProduct.productName}: ${cartStockMessage(invalidStockProduct)}`);
-        setBusy(false);
-        return;
-      }
       const payload = new FormData();
       Object.entries(form).forEach(([key, value]) => payload.append(key, value));
+      payload.append("whatsappOtpChallengeId", challengeId);
+      payload.append("whatsappOtpToken", verifiedToken);
       if (selectedProducts.length) {
         const summary = selectedProductsSummary(selectedProducts);
         payload.append("products", JSON.stringify(selectedProducts));
@@ -319,6 +326,7 @@ export function Booking() {
       }
       images.forEach((image) => payload.append("images", image));
       await apiRequest("/public/bookings", { method: "POST", body: payload });
+      setOtpOpen(false);
       const source = new URLSearchParams(window.location.search).get("source");
       const isCartBooking = source === "cart" || selectedProducts.length > 1 || selectedProducts.some((product) => product.bookingSource === "cart");
       revokeAllPreviews(previews);
@@ -330,8 +338,8 @@ export function Booking() {
       sessionStorage.removeItem("selectedProjectPartBooking");
       sessionStorage.removeItem("selectedCartBooking");
       if (isCartBooking) clearCart();
-      setStatus("Booking request submitted. We will contact you soon.");
-      toast.success("Booking request submitted successfully.", { id: "booking-submit" });
+      setStatus("Booking confirm ho gayi. WhatsApp confirmation aapko jald bheji jayegi.");
+      toast.success("Booking confirmed. WhatsApp par confirmation jald milegi.", { id: "booking-submit" });
       setShowSuccessAnimation(true);
     } catch (error) {
       setStatus(error.message || "Unable to submit booking.");
@@ -347,6 +355,14 @@ export function Booking() {
       <BookingSuccessOverlay
         open={showSuccessAnimation}
         onDone={() => setShowSuccessAnimation(false)}
+      />
+      <WhatsAppOtpModal
+        open={otpOpen}
+        purpose="booking"
+        whatsappNumber={form.whatsappNumber}
+        customerName={form.fullName}
+        onClose={() => !busy && setOtpOpen(false)}
+        onVerified={finalizeBooking}
       />
       <main className="relative min-h-screen overflow-hidden pt-32 pb-20">
         <div className="pointer-events-none absolute left-1/2 top-20 hidden h-96 w-[80%] -translate-x-1/2 rounded-full bg-gradient-primary opacity-20 blur-3xl md:block" />

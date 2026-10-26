@@ -14,6 +14,9 @@ const { renderContactAdminEmail } = require("../services/email/templates/contact
 const { notifyReviewCreated } = require("../services/mobileNotificationService");
 const { validateEmailDeliverability } = require("../utils/validateEmail");
 const { suggestAddresses, validateAddress } = require("../utils/validateAddress");
+const { consumeVerifiedWhatsAppOtp } = require("../services/customerWhatsAppOtpService");
+const { sendBookingConfirmationWhatsApp } = require("../services/whatsappTransactionalService");
+const { logger } = require("../utils/logger");
 
 const SCIENCE_PROJECTS_CATEGORY = "Wiring Accessories";
 const LEGACY_SCIENCE_PROJECTS_CATEGORY = "Science Projects and Parts";
@@ -341,6 +344,13 @@ const createBooking = asyncHandler(async (req, res) => {
   if (!/^\d{10}$/.test(phoneNumber)) throw new AppError("Phone number must be exactly 10 digits", 400);
   if (!/^\d{10}$/.test(whatsappNumber)) throw new AppError("WhatsApp number must be exactly 10 digits", 400);
 
+  await consumeVerifiedWhatsAppOtp({
+    challengeId: req.body.whatsappOtpChallengeId || req.body.otpChallengeId,
+    verifiedToken: req.body.whatsappOtpToken || req.body.verifiedToken,
+    whatsappNumber,
+    purpose: "booking",
+  });
+
   const pincode = String(req.body.pincode || "").replace(/\D/g, "");
   if (!/^\d{6}$/.test(pincode)) throw new AppError("Pincode must be exactly 6 digits", 400);
   const landmark = safeString(req.body.landmark, 200);
@@ -419,6 +429,16 @@ const createBooking = asyncHandler(async (req, res) => {
 
   await incrementFormSubmission().catch(() => undefined);
   enqueueBookingNotification(booking);
+
+  setImmediate(() => {
+    sendBookingConfirmationWhatsApp({ booking }).catch((error) => {
+      logger.error("whatsapp.booking_confirmation_failed", {
+        bookingId: String(booking._id),
+        message: error.message,
+      });
+    });
+  });
+
   res.status(201).json({ success: true, data: booking });
 });
 

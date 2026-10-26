@@ -5,12 +5,17 @@ const {
   verifyWebhookChallenge,
   verifyWebhookSignature,
   parseInboundWebhook,
+  sendTextMessage,
 } = require("../services/whatsappCloudApiService");
 const { sendGreetingForAccount } = require("../services/whatsappGreetingService");
 const { recordMessage, applyReactionToMessage } = require("../services/whatsappConversationService");
 const { maybeReplyWithAI } = require("../services/whatsappAIService");
-const { formatCopyCodeMessage } = require("../services/whatsappFormatService");
-const { sendTextMessage } = require("../services/whatsappCloudApiService");
+const {
+  shouldSuppressGreeting,
+  handlePaymentIssueFlow,
+  resolveCopyCodeFromConversation,
+  sendCopyCodeReply,
+} = require("../services/whatsappTransactionalService");
 const { logger } = require("../utils/logger");
 
 async function ensureAccountFromEnv(phoneNumberId) {
@@ -42,6 +47,16 @@ async function resolveAccountByPhoneNumberId(phoneNumberId) {
   });
   if (account) return account;
   return ensureAccountFromEnv(phoneNumberId);
+}
+
+function looksLikeCopyButton(buttonReplyId = "", text = "") {
+  const id = String(buttonReplyId || "").toLowerCase();
+  const title = String(text || "").toLowerCase();
+  if (id.startsWith("copy:")) return true;
+  return title.includes("copy booking")
+    || title.includes("copy order")
+    || title === "copy booking id"
+    || title === "copy order id";
 }
 
 exports.verifyWhatsAppWebhook = catchAsync(async (req, res) => {
@@ -120,61 +135,95 @@ exports.handleWhatsAppWebhook = catchAsync(async (req, res) => {
           isWelcomeRequest: Boolean(event.isWelcomeRequest),
           rawType: event.type,
           mediaId: event.mediaId || "",
+          channel: "whatsapp",
         },
       });
 
       if (duplicate) continue;
 
-      if (event.buttonReplyId?.startsWith("copy:")) {
-        const code = event.buttonReplyId.slice(5).trim();
+      // Copy Booking ID / Copy Order ID (interactive or template quick reply)
+      if (looksLikeCopyButton(event.buttonReplyId, event.text)) {
+        const code = await resolveCopyCodeFromConversation(
+          conversation,
+          event.buttonReplyId,
+          event.text,
+        );
         if (code) {
-          const text = formatCopyCodeMessage(code, "Your code");
-          const result = await sendTextMessage({
-            phoneNumberId: account.phoneNumberId,
-            accessToken: account.accessToken,
-            to: event.customerWaId,
-            text,
-          });
-          await recordMessage({
-            accountId: account._id,
-            conversationId: conversation._id,
-            customerWaId: event.customerWaId,
-            direction: "outbound",
-            sender: "system",
-            type: "text",
-            text,
-            waMessageId: result?.messages?.[0]?.id || "",
-            meta: { copyCode: code },
-          });
+          const label = String(event.text || "").toLowerCase().includes("order")
+            ? "Order ID"
+            : String(event.text || "").toLowerCase().includes("booking")
+              ? "Booking ID"
+              : "Code";
+          await sendCopyCodeReply({ account, conversation, code, label });
         }
         continue;
       }
 
-      // First chat open (Meta request_welcome) OR first real message → greeting sequence
-      const greetingResult = await sendGreetingForAccount({
+      // Payment unsuccessful guided flow / WhatsApp Flow reply — skip greeting + normal AI
+      const paymentFlow = await handlePaymentIssueFlow({
         account,
-        customerWaId: event.customerWaId,
-        force: Boolean(event.isWelcomeRequest),
-        onOutbound: async (item) => {
-          await recordMessage({
-            accountId: account._id,
-            conversationId: conversation._id,
-            customerWaId: event.customerWaId,
-            direction: "outbound",
-            sender: "system",
-            type: item.type || "text",
-            text: item.text || "",
-            mediaUrl: item.mediaUrl || "",
-            buttons: item.buttons || [],
-            waMessageId: item.result?.messages?.[0]?.id || "",
-            meta: { greeting: true },
-          });
-        },
+        conversation,
+        customerMessage: event.text || "",
+        buttonReplyId: event.buttonReplyId || "",
+        isFlowReply: Boolean(event.isFlowReply),
+        flowReplyBody: event.flowReplyBody || "",
+        flowReplyResponseJson: event.flowReplyResponseJson || "",
       });
+      if (paymentFlow.handled) continue;
 
-      if (greetingResult.sent) {
-        conversation.greetingSentAt = new Date();
-        await conversation.save();
+      // Other WhatsApp Flow replies (e.g. customer_review) — thank them, no greeting/AI spam
+      if (event.isFlowReply) {
+        const thanks = "Dhanyavaad! Aapka feedback mil gaya. Hum isse better banane ke liye use karenge.";
+        const result = await sendTextMessage({
+          phoneNumberId: account.phoneNumberId,
+          accessToken: account.accessToken,
+          to: event.customerWaId,
+          text: thanks,
+        });
+        await recordMessage({
+          accountId: account._id,
+          conversationId: conversation._id,
+          customerWaId: event.customerWaId,
+          direction: "outbound",
+          sender: "system",
+          type: "text",
+          text: thanks,
+          waMessageId: result?.messages?.[0]?.id || "",
+          meta: { kind: "flow_thanks", flowName: event.flowReplyName || "" },
+        });
+        continue;
+      }
+
+      const suppressGreeting = shouldSuppressGreeting(conversation)
+        || Boolean(conversation.flowState?.type);
+
+      // First chat open OR first real message → greeting (but never during OTP/booking/order/payment flows)
+      if (!suppressGreeting) {
+        const greetingResult = await sendGreetingForAccount({
+          account,
+          customerWaId: event.customerWaId,
+          force: Boolean(event.isWelcomeRequest),
+          onOutbound: async (item) => {
+            await recordMessage({
+              accountId: account._id,
+              conversationId: conversation._id,
+              customerWaId: event.customerWaId,
+              direction: "outbound",
+              sender: "system",
+              type: item.type || "text",
+              text: item.text || "",
+              mediaUrl: item.mediaUrl || "",
+              buttons: item.buttons || [],
+              waMessageId: item.result?.messages?.[0]?.id || "",
+              meta: { greeting: true },
+            });
+          },
+        });
+
+        if (greetingResult.sent) {
+          conversation.greetingSentAt = new Date();
+          await conversation.save();
+        }
       }
 
       // Welcome-only open: greeting is enough. Real questions → AI.

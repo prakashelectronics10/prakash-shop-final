@@ -1,0 +1,194 @@
+.wa-otp-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 12000;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(15, 23, 42, 0.42);
+  backdrop-filter: blur(14px) saturate(1.15);
+  -webkit-backdrop-filter: blur(14px) saturate(1.15);
+  animation: wa-otp-fade 180ms ease-out;
+}
+
+.wa-otp-dialog {
+  position: relative;
+  width: min(420px, 100%);
+  border-radius: 24px;
+  padding: 28px 24px 22px;
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  box-shadow: 0 30px 80px rgba(15, 23, 42, 0.28);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  text-align: center;
+  color: #0f172a;
+  animation: wa-otp-pop 220ms cubic-bezier(0.2, 0.9, 0.25, 1);
+}
+
+.wa-otp-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.06);
+  color: #334155;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.wa-otp-close:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.wa-otp-icon {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 14px;
+  border-radius: 18px;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  background: linear-gradient(135deg, #25d366, #128c7e);
+  box-shadow: 0 12px 28px rgba(18, 140, 126, 0.35);
+}
+
+.wa-otp-dialog h2 {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.wa-otp-subtitle {
+  margin: 10px 0 0;
+  color: #475569;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.wa-otp-subtitle strong {
+  color: #0f172a;
+  font-variant-numeric: tabular-nums;
+}
+
+.wa-otp-form {
+  margin-top: 22px;
+}
+
+.wa-otp-inputs {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+}
+
+.wa-otp-inputs input {
+  width: 48px;
+  height: 56px;
+  border-radius: 14px;
+  border: 1.5px solid rgba(148, 163, 184, 0.55);
+  background: rgba(255, 255, 255, 0.92);
+  text-align: center;
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: #0f172a;
+  outline: none;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.wa-otp-inputs input:focus {
+  border-color: #25d366;
+  box-shadow: 0 0 0 3px rgba(37, 211, 102, 0.22);
+}
+
+.wa-otp-inputs input:disabled {
+  opacity: 0.65;
+}
+
+.wa-otp-error {
+  margin: 12px 0 0;
+  color: #b91c1c;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.wa-otp-submit {
+  margin-top: 18px;
+  width: 100%;
+  border: 0;
+  border-radius: 14px;
+  padding: 13px 16px;
+  font-weight: 800;
+  font-size: 0.98rem;
+  color: #fff;
+  background: linear-gradient(135deg, #0f6fdc, #2563eb);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.wa-otp-submit:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.wa-otp-spin {
+  animation: wa-otp-spin 0.8s linear infinite;
+}
+
+.wa-otp-footer {
+  margin-top: 16px;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.wa-otp-resend,
+.wa-otp-cancel {
+  border: 0;
+  background: transparent;
+  color: #334155;
+  font-size: 0.88rem;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 6px 2px;
+}
+
+.wa-otp-resend:disabled,
+.wa-otp-cancel:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.wa-otp-resend:not(:disabled):hover,
+.wa-otp-cancel:not(:disabled):hover {
+  color: #0f6fdc;
+}
+
+@keyframes wa-otp-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes wa-otp-pop {
+  from { opacity: 0; transform: translateY(10px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes wa-otp-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (max-width: 480px) {
+  .wa-otp-inputs input {
+    width: 44px;
+    height: 52px;
+  }
+}

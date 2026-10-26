@@ -3,6 +3,11 @@ const { getAdminNotificationRecipients } = require("./bookingNotificationService
 const { enqueueEmail, isEmailConfigured } = require("./email");
 const { renderOrderAdminEmail } = require("./email/templates/orderTemplate");
 const { notifyOrderCreated } = require("./mobileNotificationService");
+const {
+  sendPaymentReceivedWhatsApp,
+  sendOrderConfirmationWhatsApp,
+} = require("./whatsappTransactionalService");
+const { logger } = require("../utils/logger");
 
 async function claimOrderNotification(orderId) {
   return Order.findOneAndUpdate(
@@ -67,6 +72,24 @@ async function notifyOrderPaid(orderOrId) {
     await notifyOrderCreated(order);
   } catch (error) {
     console.error("Order mobile push notification failed:", {
+      orderId: order.orderId,
+      error: error.message,
+    });
+  }
+
+  try {
+    await sendPaymentReceivedWhatsApp({ order });
+  } catch (error) {
+    logger.error("Order WhatsApp payment_received failed", {
+      orderId: order.orderId,
+      error: error.message,
+    });
+  }
+
+  try {
+    await sendOrderConfirmationWhatsApp({ order });
+  } catch (error) {
+    logger.error("Order WhatsApp confirmation failed", {
       orderId: order.orderId,
       error: error.message,
     });

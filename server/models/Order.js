@@ -48,11 +48,13 @@ const orderSchema = new mongoose.Schema(
     customer: {
       name: { type: String, required: true, trim: true },
       phone: { type: String, required: true, trim: true, index: true },
+      whatsappNumber: { type: String, trim: true, default: "", index: true },
       address: { type: String, required: true, trim: true },
       pincode: { type: String, required: true, match: /^\d{6}$/ },
       landmark: { type: String, trim: true, default: "" },
       message: { type: String, trim: true, default: "" },
     },
+    whatsappPaymentFailedNotifiedAt: { type: Date, default: null },
     items: { type: [orderItemSchema], required: true, validate: [(items) => items.length > 0, "Order requires at least one item"] },
     itemCount: { type: Number, required: true, min: 1 },
     subtotal: { type: Number, required: true, min: 0 },

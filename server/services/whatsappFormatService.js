@@ -32,7 +32,7 @@ function markdownToWhatsApp(text) {
 function formatCopyCodeMessage(code, label = "Your code") {
   const clean = String(code || "").trim();
   if (!clean) return "";
-  return `*${label}*\n\n\`\`\`${clean}\`\`\`\n\nTap and hold the code above to copy.`;
+  return `*${label}*\n\n\`\`\`${clean}\`\`\`\n\nUpar wale code pe tap & hold karke copy kar lo.`;
 }
 
 module.exports = {

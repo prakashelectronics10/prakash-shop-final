@@ -17,6 +17,13 @@ const {
   verifyWebhookSignature,
 } = require("../services/razorpayService");
 const { enqueueOrderPaidNotification } = require("../services/orderNotificationService");
+const { consumeVerifiedWhatsAppOtp } = require("../services/customerWhatsAppOtpService");
+const {
+  sendPaymentUnsuccessfulWhatsApp,
+  sendOrderShipmentWhatsApp,
+  sendCustomerReviewWhatsApp,
+} = require("../services/whatsappTransactionalService");
+const { logger } = require("../utils/logger");
 
 const ORDER_STATUSES = ["confirmed", "shipped", "out_for_delivery", "delivered"];
 
@@ -27,20 +34,29 @@ function cleanText(value, maxLength, required = false) {
   return text;
 }
 
-function sanitizeCustomer(input = {}) {
-  const digitsOnly = String(input.phone || "").replace(/\D/g, "");
-  const phone = digitsOnly.length === 12 && digitsOnly.startsWith("91")
+function normalizeTenDigitPhone(raw) {
+  const digitsOnly = String(raw || "").replace(/\D/g, "");
+  return digitsOnly.length === 12 && digitsOnly.startsWith("91")
     ? digitsOnly.slice(2)
     : digitsOnly;
+}
+
+function sanitizeCustomer(input = {}) {
+  const phone = normalizeTenDigitPhone(input.phone);
+  const whatsappNumber = normalizeTenDigitPhone(input.whatsappNumber || input.whatsapp || input.phone);
   const customer = {
     name: cleanText(input.name, 100, true),
     phone: cleanText(phone, 10, true),
+    whatsappNumber: cleanText(whatsappNumber, 10, true),
     address: cleanText(input.address, 500, true),
     pincode: cleanText(input.pincode, 6, true),
     landmark: cleanText(input.landmark, 160),
     message: cleanText(input.message, 1000),
   };
   if (!/^[6-9]\d{9}$/.test(customer.phone)) throw new AppError("Enter a valid 10-digit Indian phone number", 400);
+  if (!/^[6-9]\d{9}$/.test(customer.whatsappNumber)) {
+    throw new AppError("Enter a valid 10-digit WhatsApp number", 400);
+  }
   if (!/^\d{6}$/.test(customer.pincode)) throw new AppError("Pincode must contain exactly 6 digits", 400);
   return customer;
 }
@@ -119,6 +135,7 @@ function publicOrder(order) {
     customer: {
       name: customer.name || "Customer",
       phone: customer.phone || "",
+      whatsappNumber: customer.whatsappNumber || customer.phone || "",
       address: customer.address || "",
       pincode: customer.pincode || "",
       landmark: customer.landmark || "",
@@ -148,13 +165,24 @@ function publicOrder(order) {
 
 exports.createPaymentOrder = asyncHandler(async (req, res) => {
   const customer = sanitizeCustomer(req.body.customer);
+  await consumeVerifiedWhatsAppOtp({
+    challengeId: req.body.whatsappOtpChallengeId || req.body.customer?.whatsappOtpChallengeId,
+    verifiedToken: req.body.whatsappOtpToken || req.body.customer?.whatsappOtpToken,
+    whatsappNumber: customer.whatsappNumber,
+    purpose: "checkout",
+  });
   const { items, subtotal, discountedSubtotal, coupon, discountTotal, additionalCharges, deliveryCharge, total } = await buildOrderQuote(req.body.items, req.body.couponCode);
   if (total < 1) throw new AppError("Online payment requires an order total of at least Rs. 1. Please contact the shop for this order.", 400);
   const orderId = newPublicOrderId();
   const razorpayOrder = await createRazorpayOrder({
     amount: Math.round(total * 100),
     receipt: orderId.slice(0, 40),
-    notes: { internalOrderId: orderId, customerName: customer.name, phone: customer.phone },
+    notes: {
+      internalOrderId: orderId,
+      customerName: customer.name,
+      phone: customer.phone,
+      whatsapp: customer.whatsappNumber,
+    },
   });
   const order = await Order.create({
     orderId,
@@ -178,7 +206,11 @@ exports.createPaymentOrder = asyncHandler(async (req, res) => {
       keyId: env.razorpay.keyId,
       amount: razorpayOrder.amount,
       currency: razorpayOrder.currency,
-      customer: { name: customer.name, phone: customer.phone },
+      customer: {
+        name: customer.name,
+        phone: customer.phone,
+        whatsappNumber: customer.whatsappNumber,
+      },
       additionalCharges,
       items,
       subtotal,
@@ -187,6 +219,43 @@ exports.createPaymentOrder = asyncHandler(async (req, res) => {
       discountTotal,
       total,
     },
+  });
+});
+
+exports.markPaymentFailed = asyncHandler(async (req, res) => {
+  const orderId = String(req.body.orderId || "").trim().toUpperCase();
+  if (!orderId) throw new AppError("Order ID is required", 400);
+  const order = await Order.findOne({ orderId });
+  if (!order) throw new AppError("Order not found", 404);
+  if (["paid", "refunded"].includes(order.paymentStatus)) {
+    return res.json({ success: true, data: { orderId: order.orderId, paymentStatus: order.paymentStatus, notified: false } });
+  }
+
+  if (order.paymentStatus !== "failed") {
+    order.paymentStatus = "failed";
+    await order.save();
+  }
+
+  let notified = false;
+  if (!order.whatsappPaymentFailedNotifiedAt) {
+    order.whatsappPaymentFailedNotifiedAt = new Date();
+    await order.save();
+    try {
+      await sendPaymentUnsuccessfulWhatsApp({ order });
+      notified = true;
+    } catch (error) {
+      logger.error("whatsapp.payment_failed_notify_error", {
+        orderId: order.orderId,
+        message: error.message,
+      });
+      order.whatsappPaymentFailedNotifiedAt = null;
+      await order.save().catch(() => undefined);
+    }
+  }
+
+  res.json({
+    success: true,
+    data: { orderId: order.orderId, paymentStatus: order.paymentStatus, notified },
   });
 });
 
@@ -218,6 +287,13 @@ exports.verifyPayment = asyncHandler(async (req, res) => {
   if (!verifyPaymentSignature({ razorpayOrderId, razorpayPaymentId, signature })) {
     order.paymentStatus = "failed";
     await order.save();
+    if (!order.whatsappPaymentFailedNotifiedAt) {
+      order.whatsappPaymentFailedNotifiedAt = new Date();
+      await order.save();
+      sendPaymentUnsuccessfulWhatsApp({ order }).catch((error) => {
+        logger.error("whatsapp.payment_failed_notify_error", { orderId: order.orderId, message: error.message });
+      });
+    }
     throw new AppError("Payment signature could not be verified", 400);
   }
   const payment = await getRazorpayPayment(razorpayPaymentId);
@@ -328,13 +404,39 @@ exports.listOrders = asyncHandler(async (req, res) => {
 exports.updateOrderStatus = asyncHandler(async (req, res) => {
   const orderStatus = String(req.body.orderStatus || "").trim();
   if (!ORDER_STATUSES.includes(orderStatus)) throw new AppError("Invalid order status", 400);
+  const previous = await Order.findById(req.params.id).select("orderStatus").lean();
+  if (!previous) throw new AppError("Order not found", 404);
+
   const update = { orderStatus, statusUpdatedAt: new Date() };
   const order = await Order.findByIdAndUpdate(
     req.params.id,
     update,
     { new: true, runValidators: true },
-  ).lean();
+  );
   if (!order) throw new AppError("Order not found", 404);
+
+  const statusChanged = previous.orderStatus !== orderStatus;
+  if (statusChanged && ["shipped", "out_for_delivery"].includes(orderStatus)) {
+    setImmediate(() => {
+      sendOrderShipmentWhatsApp({ order }).catch((error) => {
+        logger.error("whatsapp.order_shipment_failed", {
+          orderId: order.orderId,
+          message: error.message,
+        });
+      });
+    });
+  }
+  if (statusChanged && orderStatus === "delivered") {
+    setImmediate(() => {
+      sendCustomerReviewWhatsApp({ order }).catch((error) => {
+        logger.error("whatsapp.customer_review_failed", {
+          orderId: order.orderId,
+          message: error.message,
+        });
+      });
+    });
+  }
+
   res.json({ success: true, data: order });
 });
 
