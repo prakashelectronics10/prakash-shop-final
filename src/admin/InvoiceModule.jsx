@@ -13,8 +13,10 @@ import {
   Printer,
   RefreshCw,
   Search,
+  Settings2,
   Share2,
   Trash2,
+  X,
 } from "lucide-react";
 import {
   calculateInvoiceTotals,
@@ -32,6 +34,18 @@ import {
 import "./InvoiceModule.css";
 
 const API_BASE = process.env.REACT_APP_API_URL || process.env.VITE_API_URL || "/api";
+
+function formWithSettings(invoiceNumber, settings) {
+  const base = defaultInvoiceForm(invoiceNumber);
+  if (!settings) return base;
+  return {
+    ...base,
+    business: { ...base.business, ...settings.business },
+    notes: settings.notes,
+    signatureLabel: settings.signatureLabel,
+    signatureUrl: settings.signatureUrl || "",
+  };
+}
 
 function getInvoiceRoute() {
   const path = window.location.pathname.replace(/\/+$/, "") || "/admin/invoice";
@@ -102,6 +116,12 @@ export default function InvoiceModule({ apiFetch }) {
   const [saving, setSaving] = useState(false);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [successInvoice, setSuccessInvoice] = useState(null);
+  const [invoiceSettings, setInvoiceSettings] = useState(() => {
+    const defaults = defaultInvoiceForm();
+    return { business: defaults.business, notes: defaults.notes, signatureLabel: defaults.signatureLabel, signatureUrl: "" };
+  });
+  const invoiceSettingsRef = useRef(invoiceSettings);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const invoiceRequestRef = useRef(0);
 
   const totals = useMemo(() => calculateInvoiceTotals(form.items), [form.items]);
@@ -163,13 +183,20 @@ export default function InvoiceModule({ apiFetch }) {
 
   useEffect(() => {
     loadInvoices();
+    apiFetch("/invoices/settings").then((response) => {
+      invoiceSettingsRef.current = response.data;
+      setInvoiceSettings(response.data);
+      if (getInvoiceRoute().mode === "create" && !editingId) {
+        setForm((current) => formWithSettings(current.invoiceNumber, response.data));
+      }
+    }).catch((error) => toast.error(error.message || "Invoice settings could not be loaded"));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     if (route.mode === "detail") loadInvoice(route.id);
     if (route.mode === "create" && !editingId) {
-      loadNextNumber().then((invoiceNumber) => setForm(defaultInvoiceForm(invoiceNumber)));
+      loadNextNumber().then((invoiceNumber) => setForm(formWithSettings(invoiceNumber, invoiceSettingsRef.current)));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [route.mode, route.id]);
@@ -184,7 +211,7 @@ export default function InvoiceModule({ apiFetch }) {
     setEditingId("");
     setSuccessInvoice(null);
     setSelectedInvoice(null);
-    setForm(defaultInvoiceForm(await loadNextNumber()));
+    setForm(formWithSettings(await loadNextNumber(), invoiceSettingsRef.current));
     navigate("/admin/invoice/create");
   };
 
@@ -316,8 +343,24 @@ export default function InvoiceModule({ apiFetch }) {
     }
   };
 
+  const saveSettings = async (draft) => {
+    const response = await apiFetch("/invoices/settings", { method: "PUT", body: JSON.stringify(draft) });
+    invoiceSettingsRef.current = response.data;
+    setInvoiceSettings(response.data);
+    if (route.mode === "create" && !editingId) {
+      setForm((current) => ({ ...current, business: { ...current.business, ...response.data.business }, notes: response.data.notes, signatureLabel: response.data.signatureLabel, signatureUrl: response.data.signatureUrl || "" }));
+    }
+    setSettingsOpen(false);
+    toast.success("Invoice settings saved");
+  };
+
+  const settingsButton = <button className="invoice-ghost invoice-settings-button" type="button" onClick={() => setSettingsOpen(true)}><Settings2 size={17} /> Invoice Settings</button>;
+  const settingsDialog = settingsOpen && invoiceSettings && <InvoiceSettingsDialog settings={invoiceSettings} apiFetch={apiFetch} onSave={saveSettings} onClose={() => setSettingsOpen(false)} />;
+
   if (successInvoice && route.mode === "create") {
     return (
+      <section className="invoice-module">
+      <div className="invoice-settings-toolbar">{settingsButton}</div>
       <InvoiceSuccessScreen
         invoice={successInvoice}
         onDownload={() => downloadPdf(successInvoice)}
@@ -327,11 +370,14 @@ export default function InvoiceModule({ apiFetch }) {
         onCreateAnother={startCreate}
         pdfLoading={pdfLoading}
       />
+      {settingsDialog}
+      </section>
     );
   }
 
   return (
     <section className="invoice-module">
+      <div className="invoice-settings-toolbar">{settingsButton}</div>
       {route.mode === "dashboard" && (
         <InvoiceDashboard
           stats={stats}
@@ -383,8 +429,133 @@ export default function InvoiceModule({ apiFetch }) {
           pdfLoading={pdfLoading}
         />
       )}
+      {settingsDialog}
     </section>
   );
+}
+
+function InvoiceSettingsDialog({ settings, apiFetch, onSave, onClose }) {
+  const [draft, setDraft] = useState(() => ({ ...settings, business: { ...settings.business } }));
+  const [busy, setBusy] = useState(false);
+  const dialogRef = useRef(null);
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    dialogRef.current?.focus();
+    const onKeyDown = (event) => { if (event.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKeyDown);
+    return () => { document.body.style.overflow = previousOverflow; window.removeEventListener("keydown", onKeyDown); };
+  }, [onClose]);
+
+  const setBusiness = (key, value) => setDraft((current) => ({ ...current, business: { ...current.business, [key]: value } }));
+  const uploadImage = async (file, target) => {
+    if (!file) return;
+    if (!file.type.startsWith("image/") || file.size > 5 * 1024 * 1024) {
+      toast.error("Choose an image smaller than 5 MB");
+      return;
+    }
+    setBusy(true);
+    try {
+      const formData = new FormData();
+      formData.append("image", file);
+      const response = await apiFetch("/admin/upload/image", { method: "POST", body: formData, timeout: 45000 });
+      const url = response.data?.url;
+      if (!url) throw new Error("Image upload did not return a URL");
+      if (target === "signature") setDraft((current) => ({ ...current, signatureUrl: url }));
+      else setBusiness("logoUrl", url);
+      toast.success(target === "signature" ? "Signature ready to save" : "Logo ready to save");
+    } catch (error) {
+      toast.error(error.message || "Image upload failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submit = async (event) => {
+    event.preventDefault();
+    setBusy(true);
+    try { await onSave({ business: draft.business, notes: draft.notes, signatureLabel: draft.signatureLabel, signatureUrl: draft.signatureUrl || "" }); }
+    catch (error) { toast.error(error.message || "Could not save invoice settings"); setBusy(false); }
+  };
+
+  return (
+    <div className="invoice-settings-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <form className="invoice-settings-dialog" role="dialog" aria-modal="true" aria-labelledby="invoice-settings-title" onSubmit={submit} tabIndex={-1} ref={dialogRef}>
+        <header className="invoice-settings-head">
+          <div><span className="invoice-settings-eyebrow">Invoice preferences</span><h2 id="invoice-settings-title">Invoice Settings</h2><p>These details appear on new customer invoices.</p></div>
+          <button className="invoice-icon-button" type="button" onClick={onClose} aria-label="Close invoice settings"><X size={19} /></button>
+        </header>
+        <div className="invoice-settings-body">
+          <section className="invoice-settings-section">
+            <h3>Business details</h3><p>Displayed in the invoice header and Bill From area.</p>
+            <div className="invoice-settings-fields">
+              <label><span>Business name</span><input required maxLength={100} value={draft.business.name || ""} onChange={(event) => setBusiness("name", event.target.value)} /></label>
+              <label><span>Phone number</span><input required maxLength={40} value={draft.business.contactNumber || ""} onChange={(event) => setBusiness("contactNumber", event.target.value)} /></label>
+              <label><span>Email</span><input type="email" value={draft.business.email || ""} onChange={(event) => setBusiness("email", event.target.value)} /></label>
+              <label><span>Website URL</span><input type="url" required value={draft.business.websiteUrl || ""} onChange={(event) => setBusiness("websiteUrl", event.target.value)} placeholder="https://www.prakashshop.in" /></label>
+              <label className="wide"><span>Business address</span><textarea required rows={2} maxLength={500} value={draft.business.address || ""} onChange={(event) => setBusiness("address", event.target.value)} /></label>
+              <label><span>GSTIN (optional)</span><input maxLength={30} value={draft.business.gstNumber || ""} onChange={(event) => setBusiness("gstNumber", event.target.value)} /></label>
+              <label><span>Logo</span><input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => uploadImage(event.target.files?.[0], "logo")} /></label>
+            </div>
+            {draft.business.logoUrl && <img className="invoice-settings-logo" src={draft.business.logoUrl} alt="Invoice logo preview" />}
+          </section>
+          <section className="invoice-settings-section">
+            <h3>Footer and signature</h3><p>Notes and signature appear above the invoice footer.</p>
+            <div className="invoice-settings-fields">
+              <label className="wide"><span>Notes</span><textarea rows={2} maxLength={500} value={draft.notes || ""} onChange={(event) => setDraft((current) => ({ ...current, notes: event.target.value }))} /></label>
+              <label className="wide"><span>Signature label</span><input maxLength={100} value={draft.signatureLabel || ""} onChange={(event) => setDraft((current) => ({ ...current, signatureLabel: event.target.value }))} /></label>
+              <label className="wide"><span>Upload signature image</span><input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => uploadImage(event.target.files?.[0], "signature")} /></label>
+            </div>
+            <div className="invoice-settings-signature-area">
+              <span>Or draw your signature</span>
+              <SignaturePad onUse={(file) => uploadImage(file, "signature")} disabled={busy} />
+              {draft.signatureUrl && <div className="invoice-settings-signature-preview"><img src={draft.signatureUrl} alt="Saved signature preview" /><button type="button" onClick={() => setDraft((current) => ({ ...current, signatureUrl: "" }))}>Remove signature</button></div>}
+            </div>
+          </section>
+        </div>
+        <footer className="invoice-settings-foot"><span>Applies to invoices created after saving.</span><div><button className="invoice-ghost" type="button" onClick={onClose}>Cancel</button><button className="invoice-primary" type="submit" disabled={busy}>{busy ? "Saving…" : "Save Settings"}</button></div></footer>
+      </form>
+    </div>
+  );
+}
+
+function SignaturePad({ onUse, disabled }) {
+  const canvasRef = useRef(null);
+  const drawingRef = useRef(false);
+  const [hasInk, setHasInk] = useState(false);
+  const point = (event) => {
+    const canvas = canvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+    return { x: (event.clientX - rect.left) * canvas.width / rect.width, y: (event.clientY - rect.top) * canvas.height / rect.height };
+  };
+  const start = (event) => {
+    const canvas = canvasRef.current;
+    canvas.setPointerCapture(event.pointerId);
+    const context = canvas.getContext("2d");
+    const position = point(event);
+    context.strokeStyle = "#0f172a";
+    context.lineWidth = 4;
+    context.lineCap = "round";
+    context.lineJoin = "round";
+    context.beginPath();
+    context.moveTo(position.x, position.y);
+    context.lineTo(position.x + 0.1, position.y + 0.1);
+    context.stroke();
+    drawingRef.current = true;
+    setHasInk(true);
+  };
+  const move = (event) => {
+    if (!drawingRef.current) return;
+    const position = point(event);
+    const context = canvasRef.current.getContext("2d");
+    context.lineTo(position.x, position.y);
+    context.stroke();
+  };
+  const stop = () => { drawingRef.current = false; };
+  const clear = () => { const canvas = canvasRef.current; canvas.getContext("2d").clearRect(0, 0, canvas.width, canvas.height); setHasInk(false); };
+  const useDrawing = () => canvasRef.current.toBlob((blob) => { if (blob) onUse(new File([blob], "invoice-signature.png", { type: "image/png" })); }, "image/png");
+  return <div className="invoice-signature-pad"><canvas ref={canvasRef} width={800} height={200} onPointerDown={start} onPointerMove={move} onPointerUp={stop} onPointerCancel={stop} aria-label="Draw a signature" /><div><button type="button" className="invoice-ghost compact" onClick={clear} disabled={!hasInk || disabled}>Clear</button><button type="button" className="invoice-primary compact" onClick={useDrawing} disabled={!hasInk || disabled}>Use drawn signature</button></div></div>;
 }
 
 function InvoiceDashboard({ stats, invoices, loading, onCreate, onHistory, onOpen, onRefresh }) {
@@ -593,8 +764,8 @@ function InvoiceForm({ form, setForm, totals, saving, editing, onSave, onCancel,
           <div className="invoice-form-grid">
             <TextField label="Customer Name" value={form.customer.name} onChange={(value) => update("customer.name", value)} required />
             <TextField label="Phone Number" value={form.customer.phone} onChange={(value) => update("customer.phone", value)} required />
+            <TextField label="WhatsApp Number" value={form.customer.whatsappNumber} onChange={(value) => update("customer.whatsappNumber", value)} />
             <TextField label="Email (optional)" value={form.customer.email} onChange={(value) => update("customer.email", value)} type="email" />
-            <TextField label="Customer ID (optional)" value={form.customer.customerId} onChange={(value) => update("customer.customerId", value)} />
             <TextArea label="Address" value={form.customer.address} onChange={(value) => update("customer.address", value)} required />
           </div>
         </div>
@@ -603,6 +774,8 @@ function InvoiceForm({ form, setForm, totals, saving, editing, onSave, onCancel,
           <h3>Invoice Details</h3>
           <div className="invoice-form-grid">
             <TextField label="Invoice Number" value={form.invoiceNumber} onChange={(value) => update("invoiceNumber", value)} readOnly />
+            <TextField label="Order ID (optional)" value={form.orderId} onChange={(value) => update("orderId", value)} />
+            <TextField label="Transaction ID (optional)" value={form.transactionId} onChange={(value) => update("transactionId", value)} />
             <TextField label="Invoice Date" value={form.invoiceDate} onChange={(value) => update("invoiceDate", value)} type="date" required />
             <TextField label="Due Date" value={form.dueDate} onChange={(value) => update("dueDate", value)} type="date" required />
             <SelectField
@@ -773,7 +946,7 @@ function InvoicePreview({ invoice }) {
             <h3>{invoice.business?.name || "Business Name"}</h3>
             <p>{invoice.business?.address || "Business address"}</p>
             <p>{[invoice.business?.contactNumber, invoice.business?.email].filter(Boolean).join(" | ") || "Contact details"}</p>
-            {invoice.business?.websiteUrl ? <p>{invoice.business.websiteUrl}</p> : null}
+            <p>{invoice.business?.websiteUrl || "https://www.prakashshop.in"}</p>
           </div>
         </div>
         <div className="invoice-preview-title">
@@ -788,16 +961,18 @@ function InvoicePreview({ invoice }) {
           <span>Bill To</span>
           <strong>{invoice.customer?.name || "Customer Name"}</strong>
           <small>{invoice.customer?.address || "Customer address"}</small>
-          <small>{[invoice.customer?.phone, invoice.customer?.email].filter(Boolean).join(" | ") || "Contact details"}</small>
-          {invoice.customer?.customerId ? <small>Customer ID: {invoice.customer.customerId}</small> : null}
+          {invoice.customer?.phone ? <small>Phone: {invoice.customer.phone}</small> : null}
+          {invoice.customer?.whatsappNumber ? <small>WhatsApp: {invoice.customer.whatsappNumber}</small> : null}
+          {invoice.customer?.email ? <small>Email: {invoice.customer.email}</small> : null}
         </div>
         <div>
           <span>Invoice Date</span>
           <strong>{formatDate(invoice.invoiceDate)}</strong>
           <span>Due Date</span>
           <strong>{formatDate(invoice.dueDate)}</strong>
-          <span>GSTIN</span>
-          <strong>{invoice.business?.gstNumber || "N/A"}</strong>
+          {(invoice.orderId || invoice.customer?.customerId) ? <><span>Order ID</span><strong>{invoice.orderId || invoice.customer.customerId}</strong></> : null}
+          {invoice.transactionId ? <><span>Transaction ID</span><strong>{invoice.transactionId}</strong></> : null}
+          {invoice.business?.gstNumber ? <><span>GSTIN</span><strong>{invoice.business.gstNumber}</strong></> : null}
         </div>
       </div>
 
@@ -826,8 +1001,9 @@ function InvoicePreview({ invoice }) {
       <InvoiceTotals totals={totals} compact />
 
       <div className="invoice-preview-footer">
-        <p>{invoice.notes || "Thank you for your business."}</p>
+        <p>{invoice.notes || "Thanks for choosing Us"}</p>
         <div>
+          {invoice.signatureUrl ? <img className="invoice-preview-signature" src={invoice.signatureUrl} alt="Authorised signature" /> : null}
           <span />
           <small>{invoice.signatureLabel || "Authorised Signature"}</small>
         </div>

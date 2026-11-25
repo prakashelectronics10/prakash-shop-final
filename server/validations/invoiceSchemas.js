@@ -50,6 +50,7 @@ const businessSchema = z.object({
 const customerSchema = z.object({
   name: z.string().trim().min(2, "Customer name is required"),
   phone: z.string().trim().min(6, "Phone number is required"),
+  whatsappNumber: optionalString,
   email: optionalEmail,
   address: z.string().trim().min(4, "Customer address is required"),
   customerId: optionalString,
@@ -76,6 +77,8 @@ function validateDateOrder(invoice, context) {
 
 const invoiceSchema = z.object({
   invoiceNumber: invoiceNumberSchema.optional().default(""),
+  orderId: optionalString,
+  transactionId: optionalString,
   invoiceDate: dateString,
   dueDate: dateString,
   paymentStatus: z.enum(["paid", "pending", "partial"]).default("pending"),
@@ -86,10 +89,13 @@ const invoiceSchema = z.object({
   theme: themeSchema.optional().default({}),
   notes: optionalString,
   signatureLabel: optionalString.default("Authorised Signature"),
+  signatureUrl: optionalString,
 }).superRefine(validateDateOrder);
 
 const invoiceUpdateSchema = z.object({
   invoiceNumber: invoiceNumberSchema.optional(),
+  orderId: optionalString,
+  transactionId: optionalString,
   invoiceDate: dateString.optional(),
   dueDate: dateString.optional(),
   paymentStatus: z.enum(["paid", "pending", "partial"]).optional(),
@@ -100,7 +106,23 @@ const invoiceUpdateSchema = z.object({
   theme: themeSchema.partial().optional(),
   notes: z.string().trim().optional(),
   signatureLabel: z.string().trim().optional(),
+  signatureUrl: z.string().trim().optional(),
 }).superRefine(validateDateOrder);
+
+const invoiceSettingsSchema = z.object({
+  business: z.object({
+    name: z.string().trim().min(2).max(100),
+    logoUrl: z.string().trim().max(500),
+    address: z.string().trim().min(4).max(500),
+    contactNumber: z.string().trim().min(6).max(40),
+    email: optionalEmail,
+    websiteUrl: z.string().trim().url().max(300),
+    gstNumber: z.string().trim().max(30),
+  }),
+  notes: z.string().trim().max(500),
+  signatureLabel: z.string().trim().max(100),
+  signatureUrl: z.union([z.literal(""), z.string().trim().url().startsWith("https://")]),
+});
 
 const invoiceQuerySchema = z.object({
   page: z.coerce.number().min(1).optional().default(1),
@@ -113,4 +135,4 @@ const invoiceQuerySchema = z.object({
   sort: z.enum(["newest", "oldest", "amountHigh", "amountLow", "dueDate"]).optional().default("newest"),
 });
 
-module.exports = { invoiceSchema, invoiceUpdateSchema, invoiceQuerySchema };
+module.exports = { invoiceSchema, invoiceUpdateSchema, invoiceQuerySchema, invoiceSettingsSchema };

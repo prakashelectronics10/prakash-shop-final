@@ -74,6 +74,10 @@ services:
         sync: false
       - key: META_GRAPH_API_VERSION
         value: v26.0
+      - key: WHATSAPP_TEMPLATE_ORDER_INVOICE
+        value: purchase_receipt_3
+      - key: WHATSAPP_TEMPLATE_ORDER_INVOICE_LANG
+        value: en_US
       - key: META_CATALOG_ID
         sync: false
       - key: META_ACCESS_TOKEN

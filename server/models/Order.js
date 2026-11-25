@@ -98,6 +98,10 @@ const orderSchema = new mongoose.Schema(
     razorpayOrderId: { type: String, default: "", index: true },
     razorpayPaymentId: { type: String, trim: true, default: "", index: true },
     paidAt: Date,
+    invoiceWhatsAppNextAttemptAt: { type: Date, index: { sparse: true } },
+    invoiceWhatsAppClaimUntil: Date,
+    invoiceWhatsAppSentAt: Date,
+    invoiceWhatsAppMessageId: String,
     notifiedAt: { type: Date, default: null },
     statusUpdatedAt: { type: Date, default: Date.now },
     refund: {

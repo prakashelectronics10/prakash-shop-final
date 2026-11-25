@@ -27,6 +27,8 @@ const {
   sendCustomerReviewWhatsApp,
 } = require("../services/whatsappTransactionalService");
 const { logger } = require("../utils/logger");
+const Invoice = require("../models/Invoice");
+const { createOrderInvoice, getOrderInvoicePdf, orderInvoicePath } = require("../services/orderInvoiceService");
 
 const ORDER_STATUSES = ["confirmed", "shipped", "out_for_delivery", "delivered"];
 
@@ -172,6 +174,7 @@ function publicOrder(order) {
   const customer = order.customer || {};
   return {
     orderId: order.orderId,
+    invoiceDownloadUrl: ["paid", "refunded"].includes(order.paymentStatus) ? orderInvoicePath(order.orderId) : "",
     customerName: customer.name || "Customer",
     customer: {
       name: customer.name || "Customer",
@@ -320,7 +323,14 @@ exports.verifyPayment = asyncHandler(async (req, res) => {
   const signature = String(req.body.razorpaySignature || "").trim();
   const order = await Order.findOne({ orderId });
   if (!order || order.source === "whatsapp" || order.razorpayOrderId !== razorpayOrderId) throw new AppError("Order verification failed", 400);
-  if (["paid", "refunded"].includes(order.paymentStatus)) return res.json({ success: true, data: publicOrder(order) });
+  if (["paid", "refunded"].includes(order.paymentStatus)) {
+    if (order.paymentStatus === "paid") {
+      try { await createOrderInvoice(order); } catch (error) {
+        logger.error("order.invoice_create_failed", { orderId: order.orderId, message: error.message });
+      }
+    }
+    return res.json({ success: true, data: publicOrder(order) });
+  }
   if (!verifyPaymentSignature({ razorpayOrderId, razorpayPaymentId, signature })) {
     order.paymentStatus = "failed";
     await order.save();
@@ -344,8 +354,14 @@ exports.verifyPayment = asyncHandler(async (req, res) => {
   order.orderStatus = "confirmed";
   order.razorpayPaymentId = razorpayPaymentId;
   order.paidAt = new Date();
+  order.invoiceWhatsAppNextAttemptAt = new Date();
   order.statusUpdatedAt = new Date();
   await order.save();
+  try {
+    await createOrderInvoice(order);
+  } catch (error) {
+    logger.error("order.invoice_create_failed", { orderId: order.orderId, message: error.message });
+  }
   enqueueOrderPaidNotification(order);
   res.json({ success: true, data: publicOrder(order) });
 });
@@ -372,8 +388,14 @@ exports.handleRazorpayWebhook = asyncHandler(async (req, res) => {
         order.orderStatus = "confirmed";
         order.razorpayPaymentId = payment.id;
         order.paidAt = payment.created_at ? new Date(payment.created_at * 1000) : new Date();
+        order.invoiceWhatsAppNextAttemptAt = new Date();
         order.statusUpdatedAt = new Date();
         await order.save();
+        try {
+          await createOrderInvoice(order);
+        } catch (error) {
+          logger.error("order.invoice_create_failed", { orderId: order.orderId, message: error.message });
+        }
         enqueueOrderPaidNotification(order);
       }
     }
@@ -412,6 +434,20 @@ exports.getPublicOrder = asyncHandler(async (req, res) => {
   if (!order) throw new AppError("No confirmed order was found with this Order ID", 404);
   res.set("Cache-Control", "no-store");
   res.json({ success: true, data: publicOrder(order) });
+});
+
+exports.downloadPublicOrderInvoice = asyncHandler(async (req, res) => {
+  const orderId = String(req.params.orderId || "").trim().toUpperCase();
+  const order = await Order.findOne({ orderId, paymentStatus: { $in: ["paid", "refunded"] } });
+  if (!order) throw new AppError("No paid order was found with this Order ID", 404);
+  const invoice = await Invoice.findOne({ orderId }) || await createOrderInvoice(order);
+  if (!invoice) throw new AppError("Invoice is not available for this order", 404);
+
+  const pdf = await getOrderInvoicePdf(invoice, String(req.query.theme || "blue"));
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `attachment; filename="${invoice.invoiceNumber}.pdf"`);
+  res.setHeader("Cache-Control", "no-store");
+  res.send(pdf);
 });
 
 exports.listOrders = asyncHandler(async (req, res) => {

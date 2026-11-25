@@ -379,6 +379,11 @@
 .tracking-summary-card .tracking-total { margin-top: .35rem; padding-top: .95rem; border-top: 1px solid #dbe7f5; color: #0f172a; font-weight: 900; }
 .tracking-summary-card .tracking-total strong { color: #1d4ed8; font-size: 1.2rem; }
 .tracking-summary-card > small { display: inline-flex; align-items: center; gap: .35rem; margin-top: .75rem; color: #047857; font-weight: 800; }
+.tracking-invoice-actions { display: grid; gap: .5rem; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #dbe7f5; }
+.tracking-invoice-actions label { color: #475569; font-size: .76rem; font-weight: 850; }
+.tracking-invoice-actions select { min-height: 42px; padding: 0 .75rem; border: 1px solid #dbe7f5; border-radius: 11px; color: #0f172a; background: #fff; font: inherit; }
+.tracking-invoice-actions a { display: inline-flex; min-height: 46px; align-items: center; justify-content: center; gap: .5rem; border-radius: 12px; color: #fff; background: linear-gradient(110deg,#2563eb,#0284c7); font-size: .86rem; font-weight: 850; text-decoration: none; }
+.tracking-invoice-actions a:hover { filter: brightness(1.05); box-shadow: 0 9px 20px rgba(37,99,235,.18); }
 
 .razorpay-container .razorpay-backdrop {
   background: rgba(15,23,42,.58) !important;

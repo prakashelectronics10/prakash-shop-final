@@ -29,7 +29,8 @@ function verifyWebhookChallenge({ mode, token, challenge }) {
   return String(challenge || "");
 }
 
-async function graphRequest({ phoneNumberId, accessToken, path = "messages", method = "POST", body, query }) {
+async function graphRequest({ phoneNumberId, businessAccountId, accessToken, path = "messages", method = "POST", body, query }) {
+  const formBody = body instanceof FormData;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), env.whatsapp.requestTimeoutMs || 15000);
   try {
@@ -42,13 +43,13 @@ async function graphRequest({ phoneNumberId, accessToken, path = "messages", met
         }, {}),
       ).toString()}`
       : "";
-    const response = await fetch(`${graphBase()}/${phoneNumberId}/${path}${qs}`, {
+    const response = await fetch(`${graphBase()}/${businessAccountId || phoneNumberId}/${path}${qs}`, {
       method,
       headers: {
         Authorization: `Bearer ${accessToken}`,
-        ...(body ? { "Content-Type": "application/json" } : {}),
+        ...(body && !formBody ? { "Content-Type": "application/json" } : {}),
       },
-      body: body ? JSON.stringify(body) : undefined,
+      body: formBody ? body : body ? JSON.stringify(body) : undefined,
       signal: controller.signal,
     });
     const payload = await response.json().catch(() => ({}));
@@ -98,6 +99,24 @@ async function sendImageMessage({ phoneNumberId, accessToken, to, imageUrl, capt
       ...(caption ? { caption: String(caption).slice(0, 1024) } : {}),
     },
   });
+}
+
+async function uploadPdfMedia({ phoneNumberId, accessToken, pdf, filename }) {
+  const body = new FormData();
+  body.set("messaging_product", "whatsapp");
+  body.set("type", "application/pdf");
+  body.set("file", new Blob([pdf], { type: "application/pdf" }), filename);
+  const response = await graphRequest({ phoneNumberId, accessToken, path: "media", body });
+  if (!response.id) throw new Error("WhatsApp did not return an invoice media ID");
+  return response.id;
+}
+
+async function getMessageTemplateStatus({ businessAccountId, accessToken, templateName, languageCode }) {
+  const result = await graphRequest({
+    businessAccountId, accessToken, method: "GET", path: "message_templates",
+    query: { name: templateName, fields: "name,language,status" },
+  });
+  return result.data?.find((template) => template.name === templateName && template.language === languageCode)?.status || "NOT_FOUND";
 }
 
 async function sendDocumentMessage({ phoneNumberId, accessToken, to, documentUrl, filename = "file", caption = "" }) {
@@ -253,9 +272,11 @@ module.exports = {
   verifyWebhookChallenge,
   sendTextMessage,
   sendImageMessage,
+  uploadPdfMedia,
   sendDocumentMessage,
   sendInteractiveMessage,
   sendTemplateMessage,
+  getMessageTemplateStatus,
   configureConversationalAutomation,
   parseInboundWebhook,
   graphRequest,

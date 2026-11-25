@@ -4,7 +4,10 @@ const {
   sendTextMessage,
   sendInteractiveMessage,
   sendTemplateMessage,
+  getMessageTemplateStatus,
+  uploadPdfMedia,
 } = require("./whatsappCloudApiService");
+const { getOrderInvoicePdf } = require("./orderInvoiceService");
 const { recordMessage, upsertConversation } = require("./whatsappConversationService");
 const { formatCopyCodeMessage } = require("./whatsappFormatService");
 const {
@@ -358,6 +361,68 @@ async function sendOrderConfirmationWhatsApp({ order }) {
   });
 
   return { ok: true };
+}
+
+async function sendOrderInvoiceWhatsApp({ order, invoice }) {
+  if (!invoice?._id) return { ok: false, reason: "invoice_not_available" };
+  const whatsappNumber = toWhatsAppE164(order.customer?.whatsappNumber);
+  if (!/^\d{8,15}$/.test(whatsappNumber)) return { ok: false, reason: "whatsapp_number_missing" };
+  const account = await withAccount(order);
+  if (!account) return { ok: false, reason: "whatsapp_disabled" };
+
+  const { orderInvoice: templateName, orderInvoiceLanguage: languageCode } = env.whatsapp.templates;
+  const status = await getMessageTemplateStatus({
+    businessAccountId: account.businessAccountId, accessToken: account.accessToken, templateName, languageCode,
+  }).catch((error) => {
+    // Some sender tokens can send approved templates but cannot read the management endpoint.
+    if (error.status === 403 || [10, 200].includes(error.payload?.error?.code)) return null;
+    throw error;
+  });
+  if (status && status !== "APPROVED") return { ok: false, reason: "template_unavailable", templateStatus: status };
+
+  const { conversation, customerWaId } = await prepareConversation(
+    account,
+    whatsappNumber,
+    order.customer?.name || "",
+  );
+  const filename = `${invoice.invoiceNumber}.pdf`;
+  const pdf = await getOrderInvoicePdf(invoice);
+  const credentials = { phoneNumberId: account.phoneNumberId, accessToken: account.accessToken };
+  const mediaId = await uploadPdfMedia({ ...credentials, pdf, filename });
+  const caption = `Namaste${order.customer?.name ? ` ${order.customer.name}` : ""}, aapke order ${order.orderId} ka paid invoice attached hai. Dhanyavaad, Prakash Electronics.`;
+  const result = await sendTemplateMessage({
+    ...credentials,
+    to: customerWaId,
+    templateName,
+    languageCode,
+    components: [
+      { type: "header", parameters: [{ type: "document", document: { id: mediaId, filename } }] },
+      {
+        type: "body",
+        parameters: [
+          { type: "text", text: String(order.customer?.name || "Customer").trim().replace(/\s+/g, " ") || "Customer" },
+          { type: "text", text: order.orderId },
+        ],
+      },
+      { type: "button", sub_type: "url", index: "0", parameters: [{ type: "text", text: encodeURIComponent(order.orderId) }] },
+    ],
+  });
+  const messageId = result?.messages?.[0]?.id;
+  if (!messageId) throw new Error("WhatsApp did not accept the invoice message");
+  try {
+    await recordOutbound({
+      account,
+      conversation,
+      customerWaId,
+      type: "document",
+      text: caption,
+      waMessageId: messageId,
+      meta: { kind: "order_invoice", orderId: order.orderId, invoiceNumber: invoice.invoiceNumber, mediaId },
+    });
+  } catch (error) {
+    logger.warn("order.whatsapp_invoice_history_failed", { orderId: order.orderId, messageId, detail: error.message });
+  }
+  return { ok: true, messageId };
 }
 
 async function sendPaymentUnsuccessfulWhatsApp({ order }) {
@@ -878,6 +943,7 @@ module.exports = {
   sendOtpWhatsApp,
   sendBookingConfirmationWhatsApp,
   sendOrderConfirmationWhatsApp,
+  sendOrderInvoiceWhatsApp,
   sendPaymentUnsuccessfulWhatsApp,
   sendPaymentReceivedWhatsApp,
   sendOrderShipmentWhatsApp,

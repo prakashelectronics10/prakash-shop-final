@@ -29,6 +29,10 @@ async function connectDB() {
   logger.info("mongodb.admin_session_indexes_ready");
   await require("../services/whatsappCheckoutIndexes").ensureWhatsAppCheckoutIndexes();
   logger.info("mongodb.whatsapp_checkout_indexes_ready");
+  await require("../services/orderInvoiceService").ensureOrderInvoiceIndexes();
+  logger.info("mongodb.order_invoice_indexes_ready");
+  await require("../models/Order").collection.createIndex({ invoiceWhatsAppNextAttemptAt: 1 }, { sparse: true });
+  await require("../models/InvoiceSetting").collection.createIndex({ key: 1 }, { unique: true });
   const cleanup = await revokeAllAdminSessionsOnce();
   if (!cleanup.skipped) {
     logger.info("mongodb.admin_sessions_revoked_once", { modifiedCount: cleanup.modifiedCount });

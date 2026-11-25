@@ -15,6 +15,8 @@ const invoiceItemSchema = new mongoose.Schema(
 
 const invoiceSchema = new mongoose.Schema(
   {
+    orderId: { type: String, trim: true, unique: true, sparse: true, index: true },
+    transactionId: { type: String, trim: true, default: "" },
     invoiceNumber: {
       type: String,
       required: true,
@@ -32,7 +34,7 @@ const invoiceSchema = new mongoose.Schema(
     },
     business: {
       name: { type: String, trim: true, default: "Prakash Electronics" },
-      logoUrl: { type: String, trim: true, default: "" },
+      logoUrl: { type: String, trim: true, default: "/logo192.png" },
       logoPublicId: { type: String, trim: true, default: "" },
       address: { type: String, trim: true, default: "" },
       gstNumber: { type: String, trim: true, default: "" },
@@ -43,6 +45,7 @@ const invoiceSchema = new mongoose.Schema(
     customer: {
       name: { type: String, trim: true, index: true, default: "Walk-in Customer" },
       phone: { type: String, trim: true, default: "" },
+      whatsappNumber: { type: String, trim: true, default: "" },
       email: { type: String, trim: true, lowercase: true, default: "" },
       address: { type: String, trim: true, default: "" },
       customerId: { type: String, trim: true, default: "" },
@@ -70,9 +73,11 @@ const invoiceSchema = new mongoose.Schema(
       textColor: { type: String, trim: true, default: "#0f172a" },
       backgroundColor: { type: String, trim: true, default: "#ffffff" },
     },
-    notes: { type: String, trim: true, default: "" },
+    notes: { type: String, trim: true, default: "Thanks for choosing Us" },
     signatureLabel: { type: String, trim: true, default: "Authorised Signature" },
+    signatureUrl: { type: String, trim: true, default: "" },
     pdfUrl: { type: String, trim: true, default: "" },
+    checkoutPdf: { type: Buffer, select: false },
     pdfFileAsset: { type: mongoose.Schema.Types.ObjectId, ref: "FileAsset", default: null },
     pdfFile: {
       fileName: { type: String, trim: true, default: "" },

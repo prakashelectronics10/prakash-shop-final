@@ -3,6 +3,37 @@
   gap: 16px;
 }
 
+.invoice-settings-toolbar { display: flex; justify-content: flex-end; }
+.invoice-settings-button { min-height: 40px; }
+.invoice-settings-backdrop { position: fixed; inset: 0; z-index: 10000; display: grid; place-items: center; padding: 18px; background: rgba(2, 6, 23, .7); backdrop-filter: blur(6px); }
+.invoice-settings-dialog { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; width: min(720px, 100%); max-height: min(90vh, 900px); overflow: hidden; border: 1px solid rgba(148, 163, 184, .32); border-radius: 22px; color: var(--text); background: var(--surface, #fff); box-shadow: 0 32px 90px rgba(0, 0, 0, .32); }
+.invoice-settings-head, .invoice-settings-foot { flex-shrink: 0; padding: 18px 24px; background: var(--surface, #fff); }
+.invoice-settings-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; border-bottom: 1px solid var(--border); }
+.invoice-settings-head h2 { margin: 2px 0 4px; font-size: 1.3rem; }
+.invoice-settings-head p, .invoice-settings-section > p, .invoice-settings-foot > span { margin: 0; color: var(--muted); font-size: .82rem; }
+.invoice-settings-eyebrow { color: #3b82f6; font-size: .68rem; font-weight: 900; letter-spacing: .12em; text-transform: uppercase; }
+.invoice-settings-body { min-height: 0; overflow-y: auto; padding: 22px 24px 28px; scrollbar-gutter: stable; }
+.invoice-settings-section + .invoice-settings-section { margin-top: 25px; padding-top: 22px; border-top: 1px solid var(--border); }
+.invoice-settings-section h3 { margin: 0 0 4px; font-size: 1rem; }
+.invoice-settings-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 17px; }
+.invoice-settings-fields label { display: grid; min-width: 0; gap: 6px; color: var(--text); font-size: .78rem; font-weight: 800; }
+.invoice-settings-fields label.wide { grid-column: 1 / -1; }
+.invoice-settings-fields input, .invoice-settings-fields textarea { width: 100%; min-width: 0; padding: 11px 12px; border: 1px solid var(--border); border-radius: 10px; color: var(--text); background: var(--surface, #fff); font: inherit; font-weight: 500; }
+.invoice-settings-fields input:focus, .invoice-settings-fields textarea:focus { outline: 2px solid #60a5fa; outline-offset: 1px; }
+.invoice-settings-fields input[type="file"] { padding: 8px; }
+.invoice-settings-logo { display: block; width: 52px; height: 52px; margin-top: 12px; object-fit: contain; border-radius: 10px; background: #fff; }
+.invoice-settings-signature-area { margin-top: 18px; }
+.invoice-settings-signature-area > span { display: block; margin-bottom: 8px; font-size: .78rem; font-weight: 800; }
+.invoice-signature-pad canvas { display: block; width: 100%; height: 120px; border: 1px dashed #94a3b8; border-radius: 12px; background: #fff; cursor: crosshair; touch-action: none; }
+.invoice-signature-pad > div { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; margin-top: 9px; }
+.invoice-settings-signature-preview { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; padding: 10px; border: 1px solid var(--border); border-radius: 12px; background: #fff; }
+.invoice-settings-signature-preview img { max-width: 200px; max-height: 58px; object-fit: contain; }
+.invoice-settings-signature-preview button { border: 0; color: #b91c1c; background: transparent; cursor: pointer; font-weight: 800; }
+.invoice-settings-foot { display: flex; align-items: center; justify-content: space-between; gap: 16px; border-top: 1px solid var(--border); }
+.invoice-settings-foot > div { display: flex; gap: 9px; }
+.invoice-preview-signature { display: block; width: 150px; height: 48px; margin: 0 auto 7px; object-fit: contain; background: #fff; }
+@media (max-width: 600px) { .invoice-settings-backdrop { padding: 0; } .invoice-settings-dialog { width: 100%; max-height: 100dvh; height: 100dvh; border-radius: 0; } .invoice-settings-head, .invoice-settings-foot { padding: 15px; } .invoice-settings-body { padding: 18px 15px; } .invoice-settings-fields { grid-template-columns: 1fr; } .invoice-settings-foot { align-items: stretch; flex-direction: column; } .invoice-settings-foot > div { justify-content: flex-end; } }
+
 .invoice-alert {
   padding: 13px 16px;
   color: var(--text);

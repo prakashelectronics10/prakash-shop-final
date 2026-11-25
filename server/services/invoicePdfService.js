@@ -1,8 +1,12 @@
 const sharp = require("sharp");
+const fs = require("fs/promises");
+const path = require("path");
+const env = require("../config/env");
 const { toMoneyNumber } = require("../utils/invoiceTotals");
 
-const PAGE_WIDTH = 595.28;
-const PAGE_HEIGHT = 841.89;
+// A4 page size in PDF points (210 x 297 mm at 72 points per inch).
+const PAGE_WIDTH = 595.2756;
+const PAGE_HEIGHT = 841.8898;
 const MARGIN = 40;
 const CONTENT_WIDTH = PAGE_WIDTH - MARGIN * 2;
 const LOGO_SIZE = 44;
@@ -311,8 +315,8 @@ function pageContent(invoice, pageItems, pageIndex, pageCount, assets = {}) {
   }
 
   const brandY = template === "glass" ? PAGE_HEIGHT - 76 : PAGE_HEIGHT - 68;
-  const brandTextX = assets.logoName ? MARGIN + LOGO_SIZE + 16 : MARGIN + (template === "glass" ? 14 : 0);
-  const brandMax = template === "glass" ? 250 : 280;
+  const brandTextX = MARGIN + LOGO_SIZE + (template === "glass" ? 28 : 16);
+  const brandMax = template === "glass" ? 250 : 300;
 
   if (assets.logoName) {
     const logoX = template === "glass" ? MARGIN + 12 : MARGIN;
@@ -333,25 +337,26 @@ function pageContent(invoice, pageItems, pageIndex, pageCount, assets = {}) {
   }
 
   const brandColor = template === "minimal" ? text : headerText;
-  const brandMuted = template === "minimal" ? muted : headerMuted;
+  const brandMuted = template === "minimal" ? mixRgb(text, white, 0.42) : headerMuted;
   const brandName = clipTextToWidth(invoice.business?.name || "Business", brandMax, 15, true);
   commands.push(textCommand(brandTextX, brandY + 8, brandName, { size: 15, bold: true, color: brandColor }));
-  const addressLines = wrapTextToLines(invoice.business?.address || "", brandMax + 20, 8.2, false, 2);
+  const addressLines = wrapTextToLines(invoice.business?.address || "", brandMax, 8.8, false, 2);
   addressLines.forEach((value, index) => {
-    commands.push(textCommand(brandTextX, brandY - 9 - index * 11, value, { size: 8.2, color: brandMuted }));
+    commands.push(textCommand(brandTextX, brandY - 9 - index * 11, value, { size: 8.8, color: brandMuted }));
   });
   const contactLine = [invoice.business?.contactNumber, invoice.business?.email].filter(Boolean).join("  |  ");
   if (contactLine) {
     commands.push(textCommand(
       brandTextX,
       brandY - 34,
-      clipTextToWidth(contactLine, brandMax + 20, 8.2),
-      { size: 8.2, color: brandMuted },
+      clipTextToWidth(contactLine, brandMax, 8.8),
+      { size: 8.8, color: brandMuted },
     ));
   }
-  if (invoice.business?.websiteUrl) {
-    commands.push(textCommand(brandTextX, brandY - 46, clipTextToWidth(invoice.business.websiteUrl, brandMax + 20, 7.8), {
-      size: 7.8,
+  const websiteUrl = invoice.business?.websiteUrl || env.frontendUrl || "https://www.prakashshop.in";
+  if (websiteUrl) {
+    commands.push(textCommand(brandTextX, brandY - 46, clipTextToWidth(websiteUrl, brandMax, 8.8), {
+      size: 8.8,
       color: brandMuted,
     }));
   }
@@ -377,9 +382,25 @@ function pageContent(invoice, pageItems, pageIndex, pageCount, assets = {}) {
 
   /* Bill To + Invoice meta cards */
   let y = PAGE_HEIGHT - 150;
-  const cardHeight = 104;
   const cardGap = 12;
   const cardWidth = (CONTENT_WIDTH - cardGap) / 2;
+  const customerAddressLines = wrapTextToLines(invoice.customer?.address || "", cardWidth - 24, 8.2, false, 2);
+  const customerContactRows = [
+    invoice.customer?.phone ? `Phone: ${invoice.customer.phone}` : "",
+    invoice.customer?.whatsappNumber ? `WhatsApp: ${invoice.customer.whatsappNumber}` : "",
+    invoice.customer?.email ? `Email: ${invoice.customer.email}` : "",
+  ].filter(Boolean);
+  const orderId = invoice.orderId || invoice.customer?.customerId || "";
+  const metaRows = [
+    ["Invoice Date", formatDate(invoice.invoiceDate)],
+    ["Due Date", formatDate(invoice.dueDate)],
+  ];
+  if (orderId) metaRows.push(["Order ID", orderId]);
+  if (invoice.transactionId) metaRows.push(["Transaction ID", invoice.transactionId]);
+  if (invoice.business?.gstNumber) metaRows.push(["GSTIN", invoice.business.gstNumber]);
+  const billToHeight = 68 + customerAddressLines.length * 12 + Math.max(0, customerContactRows.length - 1) * 14;
+  const detailsHeight = 28 + metaRows.length * 17;
+  const cardHeight = Math.max(96, billToHeight, detailsHeight);
 
   commands.push(rectCommand(MARGIN, y - cardHeight, cardWidth, cardHeight, panel));
   commands.push(strokeRectCommand(MARGIN, y - cardHeight, cardWidth, cardHeight, border, 0.7));
@@ -392,27 +413,23 @@ function pageContent(invoice, pageItems, pageIndex, pageCount, assets = {}) {
     bold: true,
     color: text,
   }));
-  const customerAddressLines = wrapTextToLines(invoice.customer?.address || "", cardWidth - 24, 8.2, false, 2);
+  let customerLineY = y - 50;
   customerAddressLines.forEach((value, index) => {
-    commands.push(textCommand(MARGIN + 12, y - 50 - index * 12, value, { size: 8.2, color: muted }));
+    commands.push(textCommand(MARGIN + 12, customerLineY, value, { size: 8.2, color: muted }));
+    customerLineY -= 12;
   });
-  const customerContact = [invoice.customer?.phone, invoice.customer?.email].filter(Boolean).join("  |  ");
-  if (customerContact) {
-    commands.push(textCommand(MARGIN + 12, y - 78, clipTextToWidth(customerContact, cardWidth - 24, 8.2), {
+  customerLineY -= 6;
+  customerContactRows.forEach((value) => {
+    commands.push(textCommand(MARGIN + 12, customerLineY, clipTextToWidth(value, cardWidth - 24, 8.2), {
       size: 8.2,
       color: muted,
     }));
-  }
+    customerLineY -= 14;
+  });
 
   const metaX = MARGIN + cardWidth + cardGap + 12;
   commands.push(textCommand(metaX, y - 16, "INVOICE DETAILS", { size: 8, bold: true, color: primary }));
-  const metaRows = [
-    ["Invoice Date", formatDate(invoice.invoiceDate)],
-    ["Due Date", formatDate(invoice.dueDate)],
-  ];
-  if (invoice.business?.gstNumber) metaRows.push(["GSTIN", invoice.business.gstNumber]);
-  if (invoice.customer?.customerId) metaRows.push(["Customer ID", invoice.customer.customerId]);
-  metaRows.slice(0, 4).forEach((row, index) => {
+  metaRows.forEach((row, index) => {
     const rowY = y - 34 - index * 17;
     commands.push(textCommand(metaX, rowY, row[0], { size: 8.2, color: muted }));
     commands.push(textCommand(MARGIN + CONTENT_WIDTH - 12, rowY, clipText(row[1], 28), {
@@ -424,7 +441,7 @@ function pageContent(invoice, pageItems, pageIndex, pageCount, assets = {}) {
   });
 
   /* Items table */
-  y -= cardHeight + 22;
+  y -= cardHeight + 16;
   const tableTop = y;
   const headerH = 26;
   const rowH = 32;
@@ -487,7 +504,7 @@ function pageContent(invoice, pageItems, pageIndex, pageCount, assets = {}) {
   if (pageIndex === pageCount - 1) {
     const totalsWidth = 220;
     const totalsX = PAGE_WIDTH - MARGIN - totalsWidth;
-    const totalsTop = Math.min(y - 18, 300);
+    const totalsTop = Math.min(y - 18, 282);
     const rowGap = 20;
     let ty = totalsTop;
 
@@ -525,13 +542,16 @@ function pageContent(invoice, pageItems, pageIndex, pageCount, assets = {}) {
     }));
 
     /* Notes + signature */
-    const notesY = 130;
+    const notesY = 110;
     commands.push(textCommand(MARGIN, notesY + 28, "Notes", { size: 8, bold: true, color: primary }));
-    const noteLines = wrapTextToLines(invoice.notes || "Thank you for your business.", 300, 8.5, false, 3);
+    const noteLines = wrapTextToLines(invoice.notes || "Thanks for choosing Us", 300, 8.5, false, 5);
     noteLines.forEach((value, index) => {
       commands.push(textCommand(MARGIN, notesY + 12 - index * 12, value, { size: 8.5, color: muted }));
     });
 
+    if (assets.signatureName) {
+      commands.push(imageCommand(assets.signatureName, PAGE_WIDTH - MARGIN - 155, notesY + 22, 140, 40));
+    }
     commands.push(lineCommand(PAGE_WIDTH - MARGIN - 170, notesY + 18, PAGE_WIDTH - MARGIN, notesY + 18, muted, 0.9));
     commands.push(textCommand(PAGE_WIDTH - MARGIN - 85, notesY, clipTextToWidth(invoice.signatureLabel || "Authorised Signature", 160, 8), {
       size: 8,
@@ -547,7 +567,7 @@ function pageContent(invoice, pageItems, pageIndex, pageCount, assets = {}) {
   }
 
   commands.push(lineCommand(MARGIN, 52, PAGE_WIDTH - MARGIN, 52, line, 0.6));
-  commands.push(textCommand(MARGIN, 36, "Generated by Prakash Electronics Admin", { size: 7.5, color: muted }));
+  commands.push(textCommand(MARGIN, 36, "Generated by Prakash Electronics", { size: 7.5, color: muted }));
   commands.push(textCommand(PAGE_WIDTH - MARGIN, 36, `Page ${pageIndex + 1} of ${pageCount}`, {
     size: 7.5,
     color: muted,
@@ -564,10 +584,53 @@ function pageContent(invoice, pageItems, pageIndex, pageCount, assets = {}) {
   return commands.join("\n");
 }
 
+async function convertLogo(input) {
+  if (!input?.length || input.length > 5 * 1024 * 1024) return null;
+  const converted = await sharp(input)
+    .rotate()
+    .resize(160, 160, { fit: "contain", background: "#ffffff" })
+    .flatten({ background: "#ffffff" })
+    .jpeg({ quality: 88, mozjpeg: true })
+    .toBuffer({ resolveWithObject: true });
+  return { data: converted.data, width: converted.info.width, height: converted.info.height };
+}
+
+async function loadProjectLogoImage() {
+  const logoPaths = [
+    // Keep a copy beside the PDF service so server-only deployments can embed it.
+    path.resolve(__dirname, "../assets/invoice-logo.png"),
+    path.resolve(__dirname, "../../public/logo192.png"),
+    path.resolve(process.cwd(), "public/logo192.png"),
+  ];
+  for (const logoPath of logoPaths) {
+    try {
+      const logo = await convertLogo(await fs.readFile(logoPath));
+      if (logo) return logo;
+    } catch (_error) {
+      // A monorepo or server-only deployment may not include the same asset path.
+    }
+  }
+
+  const siteUrl = String(env.frontendUrl || env.productionUrl || "").replace(/\/$/, "");
+  if (!siteUrl) return null;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+  try {
+    const response = await fetch(`${siteUrl}/logo192.png`, { signal: controller.signal });
+    if (!response.ok || !String(response.headers.get("content-type") || "").startsWith("image/")) return null;
+    const input = Buffer.from(await response.arrayBuffer());
+    return await convertLogo(input);
+  } catch (_error) {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function loadLogoImage(url) {
   const logoUrl = String(url || "").trim();
   const dataImage = logoUrl.match(/^data:image\/(?:png|jpe?g|webp);base64,([A-Za-z0-9+/=]+)$/i);
-  if (!dataImage && !/^https?:\/\//i.test(logoUrl)) return null;
+  if (!dataImage && !/^https?:\/\//i.test(logoUrl)) return loadProjectLogoImage();
   const controller = dataImage ? null : new AbortController();
   const timeout = controller ? setTimeout(() => controller.abort(), 8000) : null;
 
@@ -578,22 +641,38 @@ async function loadLogoImage(url) {
       if (!input.length || input.length > 5 * 1024 * 1024) return null;
     } else {
       const response = await fetch(logoUrl, { signal: controller.signal });
-      if (!response.ok) return null;
+      if (!response.ok) return loadProjectLogoImage();
       input = Buffer.from(await response.arrayBuffer());
       if (!input.length || input.length > 5 * 1024 * 1024) return null;
     }
-    const converted = await sharp(input)
-      .rotate()
-      .resize(160, 160, { fit: "contain", background: "#ffffff" })
-      .flatten({ background: "#ffffff" })
-      .jpeg({ quality: 88, mozjpeg: true })
-      .toBuffer({ resolveWithObject: true });
+    return await convertLogo(input) || await loadProjectLogoImage();
+  } catch (_error) {
+    return loadProjectLogoImage();
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
 
-    return {
-      data: converted.data,
-      width: converted.info.width,
-      height: converted.info.height,
-    };
+async function loadSignatureImage(url) {
+  const source = String(url || "").trim();
+  if (!source) return null;
+  const dataImage = source.match(/^data:image\/(?:png|jpe?g|webp);base64,([A-Za-z0-9+/=]+)$/i);
+  if (!dataImage && !/^https:\/\//i.test(source)) return null;
+  const controller = dataImage ? null : new AbortController();
+  const timeout = controller ? setTimeout(() => controller.abort(), 8000) : null;
+  try {
+    let input;
+    if (dataImage) {
+      input = Buffer.from(dataImage[1], "base64");
+    } else {
+      const response = await fetch(source, { signal: controller.signal });
+      if (!response.ok) return null;
+      input = Buffer.from(await response.arrayBuffer());
+    }
+    if (!input.length || input.length > 5 * 1024 * 1024) return null;
+    const converted = await sharp(input).rotate().resize(560, 160, { fit: "contain", background: "#ffffff" })
+      .flatten({ background: "#ffffff" }).jpeg({ quality: 90 }).toBuffer({ resolveWithObject: true });
+    return { data: converted.data, width: converted.info.width, height: converted.info.height };
   } catch (_error) {
     return null;
   } finally {
@@ -620,12 +699,18 @@ function buildPdf(objects) {
   return Buffer.concat(chunks);
 }
 
-async function generateInvoicePdf(invoiceDoc) {
+async function generateInvoicePdf(invoiceDoc, { requireBranding = false } = {}) {
   const invoice = invoiceDoc.toObject ? invoiceDoc.toObject() : invoiceDoc;
   const pages = chunkItems(invoice.items, ITEMS_PER_PAGE);
   const objects = [];
   const pageObjectIds = [];
-  const logo = await loadLogoImage(invoice.business?.logoUrl);
+  const [logo, signature] = await Promise.all([
+    loadLogoImage(invoice.business?.logoUrl),
+    loadSignatureImage(invoice.signatureUrl),
+  ]);
+  if (requireBranding && (!logo || (invoice.signatureUrl?.trim() && !signature))) {
+    throw new Error("Invoice logo or configured signature could not be embedded");
+  }
 
   objects.push("<< /Type /Catalog /Pages 2 0 R >>");
   objects.push("");
@@ -642,12 +727,23 @@ async function generateInvoicePdf(invoiceDoc) {
     ]));
   }
 
+  let signatureObjectId = null;
+  if (signature?.data?.length) {
+    signatureObjectId = objects.length + 1;
+    objects.push(Buffer.concat([
+      Buffer.from(`<< /Type /XObject /Subtype /Image /Width ${signature.width} /Height ${signature.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${signature.data.length} >>\nstream\n`, "utf8"),
+      signature.data,
+      Buffer.from("\nendstream", "utf8"),
+    ]));
+  }
+
   pages.forEach((items, pageIndex) => {
-    const assets = logoObjectId ? { logoName: "ImLogo" } : {};
+    const assets = { ...(logoObjectId ? { logoName: "ImLogo" } : {}), ...(signatureObjectId ? { signatureName: "ImSignature" } : {}) };
     const content = pageContent(invoice, items, pageIndex, pages.length, assets);
     const streamId = objects.length + 2;
     const pageId = objects.length + 1;
-    const xObjects = logoObjectId ? `/XObject << /ImLogo ${logoObjectId} 0 R >>` : "";
+    const images = [logoObjectId ? `/ImLogo ${logoObjectId} 0 R` : "", signatureObjectId ? `/ImSignature ${signatureObjectId} 0 R` : ""].filter(Boolean);
+    const xObjects = images.length ? `/XObject << ${images.join(" ")} >>` : "";
     pageObjectIds.push(pageId);
     objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PAGE_WIDTH} ${PAGE_HEIGHT}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> ${xObjects} >> /Contents ${streamId} 0 R >>`);
     objects.push(`<< /Length ${Buffer.byteLength(content, "utf8")} >>\nstream\n${content}\nendstream`);

@@ -134,6 +134,8 @@ const env = {
       bookingConfirmLanguage: process.env.WHATSAPP_TEMPLATE_BOOKING_CONFIRM_LANG || "en",
       orderConfirm: process.env.WHATSAPP_TEMPLATE_ORDER_CONFIRM || "order_confirmation",
       orderConfirmLanguage: process.env.WHATSAPP_TEMPLATE_ORDER_CONFIRM_LANG || "en",
+      orderInvoice: process.env.WHATSAPP_TEMPLATE_ORDER_INVOICE || "purchase_receipt_3",
+      orderInvoiceLanguage: process.env.WHATSAPP_TEMPLATE_ORDER_INVOICE_LANG || "en_US",
       paymentFailed: process.env.WHATSAPP_TEMPLATE_PAYMENT_FAILED || "payment_unsuccessful",
       paymentFailedLanguage: process.env.WHATSAPP_TEMPLATE_PAYMENT_FAILED_LANG || "en",
       paymentReceived: process.env.WHATSAPP_TEMPLATE_PAYMENT_RECEIVED || "payment_recieved",

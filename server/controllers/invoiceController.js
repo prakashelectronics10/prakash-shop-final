@@ -4,10 +4,12 @@ const AppError = require("../utils/AppError");
 const asyncHandler = require("../utils/asyncHandler");
 const { calculateInvoiceTotals } = require("../utils/invoiceTotals");
 const { generateInvoicePdf } = require("../services/invoicePdfService");
+const { getOrderInvoicePdf } = require("../services/orderInvoiceService");
+const { getInvoiceSettings, saveInvoiceSettings } = require("../services/invoiceSettingService");
 
 const DEFAULT_BUSINESS = {
   name: "Prakash Electronics",
-  logoUrl: "",
+  logoUrl: "/logo192.png",
   logoPublicId: "",
   address: "Chitarpur, Ramgarh, Jharkhand",
   gstNumber: "",
@@ -19,6 +21,7 @@ const DEFAULT_BUSINESS = {
 const DEFAULT_CUSTOMER = {
   name: "Walk-in Customer",
   phone: "",
+  whatsappNumber: "",
   email: "",
   address: "",
   customerId: "",
@@ -95,6 +98,8 @@ function buildInvoicePayload(body, adminId, existing = null) {
   const publicAccessToken = existing?.publicAccessToken;
   return {
     invoiceNumber: body.invoiceNumber || existing?.invoiceNumber,
+    orderId: String(body.orderId ?? existing?.orderId ?? "").trim() || undefined,
+    transactionId: body.transactionId ?? existing?.transactionId ?? "",
     invoiceDate,
     dueDate,
     paymentStatus: ["paid", "pending", "partial"].includes(body.paymentStatus) ? body.paymentStatus : existing?.paymentStatus || "pending",
@@ -104,8 +109,9 @@ function buildInvoicePayload(body, adminId, existing = null) {
     totals: calculated.totals,
     template: ALLOWED_TEMPLATES.has(body.template) ? body.template : existing?.template || "minimal",
     theme,
-    notes: body.notes ?? existing?.notes ?? "",
+    notes: body.notes ?? existing?.notes ?? "Thanks for choosing Us",
     signatureLabel: body.signatureLabel ?? existing?.signatureLabel ?? "Authorised Signature",
+    signatureUrl: body.signatureUrl ?? existing?.signatureUrl ?? "",
     publicAccessToken,
     pdfUrl: existing?.pdfUrl || publicPdfUrl(publicAccessToken),
     updatedBy: adminId,
@@ -147,6 +153,8 @@ function buildListFilter(query) {
     const regex = { $regex: search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), $options: "i" };
     filter.$or = [
       { invoiceNumber: regex },
+      { orderId: regex },
+      { transactionId: regex },
       { "customer.name": regex },
       { "customer.phone": regex },
       { "customer.email": regex },
@@ -279,11 +287,19 @@ const downloadInvoicePdf = asyncHandler(async (req, res) => {
 const publicInvoicePdf = asyncHandler(async (req, res) => {
   const invoice = await Invoice.findOne({ publicAccessToken: req.params.token });
   if (!invoice) throw new AppError("Invoice PDF not found", 404);
-  const pdf = await generateInvoicePdf(invoice);
+  const pdf = invoice.orderId ? await getOrderInvoicePdf(invoice) : await generateInvoicePdf(invoice);
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader("Content-Disposition", `attachment; filename="${invoice.invoiceNumber}.pdf"`);
   res.setHeader("Cache-Control", "no-store");
   res.send(pdf);
+});
+
+const readInvoiceSettings = asyncHandler(async (_req, res) => {
+  res.json({ success: true, data: await getInvoiceSettings() });
+});
+
+const updateInvoiceSettings = asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await saveInvoiceSettings(req.body) });
 });
 
 module.exports = {
@@ -294,5 +310,7 @@ module.exports = {
   getNextInvoiceNumber,
   listInvoices,
   publicInvoicePdf,
+  readInvoiceSettings,
+  updateInvoiceSettings,
   updateInvoice,
 };

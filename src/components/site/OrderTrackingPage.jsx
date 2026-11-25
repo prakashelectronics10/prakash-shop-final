@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { Check, Clock3, MapPin, PackageCheck, Phone, Search, Truck, UserRound, WalletCards } from "lucide-react";
-import { apiRequest } from "../../api/client";
+import { Check, Clock3, Download, MapPin, PackageCheck, Phone, Search, Truck, UserRound, WalletCards } from "lucide-react";
+import { apiRequest, apiUrl } from "../../api/client";
+import { invoiceThemePresets } from "../../admin/invoiceUtils";
 import { formatINR } from "../../utils/productPricing";
 import trackOrderHero from "../../assets/track-order-hero.webp";
 import { Navbar } from "./Navbar";
@@ -72,7 +73,7 @@ function CustomerDetails({ customer }) {
   );
 }
 
-function OrderResult({ order }) {
+function OrderResult({ order, invoiceTheme, onInvoiceThemeChange }) {
   const activeIndex = order.orderStatus === "cancelled" ? -1 : STEPS.findIndex((step) => step.key === order.orderStatus);
   const chargeRows = Array.isArray(order.additionalCharges) && order.additionalCharges.length
     ? order.additionalCharges
@@ -159,6 +160,17 @@ function OrderResult({ order }) {
           ))}
           <p className="tracking-total"><span>{order.paymentMethod === "cod" ? "Due on delivery" : "Paid total"}</span><strong>{formatINR(order.total)}</strong></p>
           <small><Check size={15} /> {order.paymentMethod === "cod" ? "Cash on delivery — payment due" : "Payment verified"}</small>
+          {order.invoiceDownloadUrl && (
+            <div className="tracking-invoice-actions">
+              <label htmlFor="tracking-invoice-template">Invoice theme</label>
+              <select id="tracking-invoice-template" value={invoiceTheme} onChange={(event) => onInvoiceThemeChange(event.target.value)}>
+                {invoiceThemePresets.map((preset) => <option key={preset.name} value={preset.name.toLowerCase().replace("neon ", "")}>{preset.name}{preset.name === "Neon Blue" ? " (Default)" : ""}</option>)}
+              </select>
+              <a href={`${apiUrl(order.invoiceDownloadUrl)}?theme=${encodeURIComponent(invoiceTheme)}`} download={`Invoice-${order.orderId}.pdf`}>
+                <Download size={16} /> Download invoice
+              </a>
+            </div>
+          )}
         </aside>
       </div>
     </section>
@@ -171,6 +183,7 @@ export function OrderTrackingPage() {
   const [order, setOrder] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [invoiceTheme, setInvoiceTheme] = useState("blue");
 
   const findOrder = async (event) => {
     event?.preventDefault();
@@ -226,7 +239,7 @@ export function OrderTrackingPage() {
             {error && <small role="alert">{error}</small>}
           </form>
         </header>
-        {order && <OrderResult order={order} />}
+        {order && <OrderResult order={order} invoiceTheme={invoiceTheme} onInvoiceThemeChange={setInvoiceTheme} />}
       </main>
       <Footer />
     </div>

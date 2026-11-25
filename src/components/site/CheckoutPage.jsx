@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, BadgePercent, Check, Copy, CreditCard, LockKeyhole, MapPin, PackageCheck, ShieldCheck } from "lucide-react";
 import toast from "react-hot-toast";
-import { apiRequest } from "../../api/client";
+import { apiRequest, apiUrl } from "../../api/client";
 import { useCart } from "../../context/CartContext";
 import { Navbar } from "./Navbar";
 import { Footer } from "./Footer";
@@ -45,6 +45,17 @@ function QuoteValue({ value, loading, label }) {
 }
 
 function OrderSuccess({ order }) {
+  useEffect(() => {
+    if (!order.invoiceDownloadUrl) return;
+    const link = document.createElement("a");
+    link.href = `${apiUrl(order.invoiceDownloadUrl)}?theme=blue`;
+    link.download = `Invoice-${order.orderId}.pdf`;
+    link.rel = "noopener";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  }, [order.invoiceDownloadUrl, order.orderId]);
+
   return (
     <main className="order-success-page">
       <section className="order-success-card">
@@ -62,6 +73,7 @@ function OrderSuccess({ order }) {
           <span><CreditCard size={18} /> {formatINR(order.total)} paid</span>
         </div>
         <div className="order-success-actions">
+          {order.invoiceDownloadUrl && <a href={`${apiUrl(order.invoiceDownloadUrl)}?theme=blue`} download={`Invoice-${order.orderId}.pdf`}>Download invoice</a>}
           <a href={`/orders?id=${encodeURIComponent(order.orderId)}`}>Track this order</a>
           <a href="/products" className="secondary">Continue shopping</a>
         </div>

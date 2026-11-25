@@ -82,7 +82,7 @@ export function defaultInvoiceForm(invoiceNumber = "Auto generated") {
     paymentStatus: "pending",
     business: {
       name: "Prakash Electronics",
-      logoUrl: "",
+      logoUrl: "/logo192.png",
       logoPublicId: "",
       address: "Chitarpur, Ramgarh, Jharkhand",
       gstNumber: "",
@@ -93,15 +93,19 @@ export function defaultInvoiceForm(invoiceNumber = "Auto generated") {
     customer: {
       name: "",
       phone: "",
+      whatsappNumber: "",
       email: "",
       address: "",
       customerId: "",
     },
     items: [emptyInvoiceItem()],
+    orderId: "",
+    transactionId: "",
     template: "minimal",
     theme: { ...preset },
-    notes: "Thank you for your business.",
+    notes: "Thanks for choosing Us",
     signatureLabel: "Authorised Signature",
+    signatureUrl: "",
   };
 }
 
@@ -196,6 +200,8 @@ export function formToInvoicePayload(form) {
   const totals = calculateInvoiceTotals(form.items);
   return {
     invoiceNumber: form.invoiceNumber && !String(form.invoiceNumber).toLowerCase().includes("auto") ? form.invoiceNumber : "",
+    orderId: form.orderId || "",
+    transactionId: form.transactionId || "",
     invoiceDate: form.invoiceDate,
     dueDate: form.dueDate,
     paymentStatus: form.paymentStatus,
@@ -212,6 +218,7 @@ export function formToInvoicePayload(form) {
     theme: form.theme,
     notes: form.notes,
     signatureLabel: form.signatureLabel,
+    signatureUrl: form.signatureUrl || "",
     totals,
   };
 }
@@ -292,7 +299,8 @@ export function invoicePrintHtml(invoice) {
           border-bottom: 4px solid var(--accent);
         }
         .page.corporate .topbar { border-left: 8px solid var(--primary); }
-        .brand { display: flex; gap: 14px; align-items: flex-start; min-width: 0; }
+        .page.minimal { border-top: 8px solid var(--primary); }
+        .brand { display: flex; gap: 14px; align-items: center; min-width: 0; }
         .logo { width: 56px; height: 56px; border-radius: 10px; object-fit: contain; background: #fff; flex: 0 0 auto; border: 1px solid #e2e8f0; }
         .logo-fallback {
           width: 56px; height: 56px; border-radius: 12px; background: #fff; color: var(--primary);
@@ -361,6 +369,9 @@ export function invoicePrintHtml(invoice) {
         .footer { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 36px; margin-top: 48px; align-items: end; break-inside: avoid; }
         .footer .note-label { color: var(--primary); font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 6px; }
         .signature { width: 220px; text-align: center; border-top: 1px solid #94a3b8; padding-top: 10px; font-size: 12px; color: #64748b; }
+        .signature-wrap { width: 220px; text-align: center; }
+        .signature-image { display: block; width: 180px; height: 54px; margin: 0 auto 7px; object-fit: contain; }
+        .signature-wrap .signature { margin: 0; }
         .page-foot {
           margin-top: 28px;
           padding-top: 12px;
@@ -400,7 +411,7 @@ export function invoicePrintHtml(invoice) {
               <h2>${escapeHtml(invoice.business?.name || "")}</h2>
               <p class="muted">${escapeHtml(invoice.business?.address || "")}</p>
               <p class="muted">${escapeHtml([invoice.business?.contactNumber, invoice.business?.email].filter(Boolean).join("  |  "))}</p>
-              ${invoice.business?.websiteUrl ? `<p class="muted">${escapeHtml(invoice.business.websiteUrl)}</p>` : ""}
+              <p class="muted">${escapeHtml(invoice.business?.websiteUrl || "https://www.prakashshop.in")}</p>
             </div>
           </div>
           <div class="title-block">
@@ -415,15 +426,17 @@ export function invoicePrintHtml(invoice) {
               <h3>Bill To</h3>
               <p><strong>${escapeHtml(invoice.customer?.name || "")}</strong></p>
               <p>${escapeHtml(invoice.customer?.address || "")}</p>
-              <p>${escapeHtml([invoice.customer?.phone, invoice.customer?.email].filter(Boolean).join("  |  "))}</p>
-              ${invoice.customer?.customerId ? `<p>Customer ID: ${escapeHtml(invoice.customer.customerId)}</p>` : ""}
+              ${invoice.customer?.phone ? `<p>Phone: ${escapeHtml(invoice.customer.phone)}</p>` : ""}
+              ${invoice.customer?.whatsappNumber ? `<p>WhatsApp: ${escapeHtml(invoice.customer.whatsappNumber)}</p>` : ""}
+              ${invoice.customer?.email ? `<p>Email: ${escapeHtml(invoice.customer.email)}</p>` : ""}
             </div>
             <div class="panel">
               <h3>Invoice Details</h3>
               <div class="meta-row"><span>Invoice Date</span><strong>${formatDate(invoice.invoiceDate)}</strong></div>
               <div class="meta-row"><span>Due Date</span><strong>${formatDate(invoice.dueDate)}</strong></div>
-              <div class="meta-row"><span>GSTIN</span><strong>${escapeHtml(invoice.business?.gstNumber || "N/A")}</strong></div>
-              <div class="meta-row"><span>Customer ID</span><strong>${escapeHtml(invoice.customer?.customerId || "N/A")}</strong></div>
+              ${(invoice.orderId || invoice.customer?.customerId) ? `<div class="meta-row"><span>Order ID</span><strong>${escapeHtml(invoice.orderId || invoice.customer.customerId)}</strong></div>` : ""}
+              ${invoice.transactionId ? `<div class="meta-row"><span>Transaction ID</span><strong>${escapeHtml(invoice.transactionId)}</strong></div>` : ""}
+              ${invoice.business?.gstNumber ? `<div class="meta-row"><span>GSTIN</span><strong>${escapeHtml(invoice.business.gstNumber)}</strong></div>` : ""}
             </div>
           </section>
           <table>
@@ -449,12 +462,15 @@ export function invoicePrintHtml(invoice) {
           <section class="footer">
             <div>
               <div class="note-label">Notes</div>
-              <p class="muted note-copy" style="color:#64748b">${escapeHtml(invoice.notes || "Thank you for your business.")}</p>
+              <p class="muted note-copy" style="color:#64748b">${escapeHtml(invoice.notes || "Thanks for choosing Us")}</p>
             </div>
-            <p class="signature">${escapeHtml(invoice.signatureLabel || "Authorised Signature")}</p>
+            <div class="signature-wrap">
+              ${invoice.signatureUrl ? `<img class="signature-image" src="${escapeHtml(invoice.signatureUrl)}" alt="Authorised signature" />` : ""}
+              <p class="signature">${escapeHtml(invoice.signatureLabel || "Authorised Signature")}</p>
+            </div>
           </section>
           <div class="page-foot">
-            <span>Generated by Prakash Electronics Admin</span>
+            <span>Generated by Prakash Electronics</span>
             <span>${escapeHtml(invoice.invoiceNumber || "")}</span>
           </div>
         </div>

@@ -7,6 +7,7 @@ const {
   getPublicOrder,
   listOrders,
   updateOrderStatus,
+  downloadPublicOrderInvoice,
 } = require("../controllers/orderController");
 const { requireAdmin, requirePermission } = require("../middleware/auth");
 const {
@@ -23,6 +24,7 @@ router.post("/payment", createPaymentOrder);
 router.post("/quote", getOrderQuote);
 router.post("/payment/verify", verifyPayment);
 router.post("/payment/failed", markPaymentFailed);
+router.get("/track/:orderId/invoice.pdf", downloadPublicOrderInvoice);
 router.get("/charges", getPublicCharges);
 router.get("/track/:orderId", getPublicOrder);
 router.get("/admin/charges", requireAdmin, requirePermission("orders"), listAdminCharges);
