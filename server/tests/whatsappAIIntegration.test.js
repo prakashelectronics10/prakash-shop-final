@@ -18,12 +18,18 @@ test("captionless images reach vision, voice transcripts reach chat/history, and
   const Messages = require("../models/WhatsAppMessage");
   t.mock.method(Messages, "find", () => query([]));
   let storedTranscript;
-  t.mock.method(Messages, "findOneAndUpdate", async (_filter, update) => { storedTranscript = update.$set.text; return null; });
+  let transcriptStorageAvailable = true;
+  t.mock.method(Messages, "findOneAndUpdate", async (_filter, update) => {
+    if (!transcriptStorageAvailable) throw new Error("Temporary write failure");
+    storedTranscript = update.$set.text;
+    return null;
+  });
   const sends = [];
   t.mock.method(require("../services/whatsappCloudApiService"), "sendTextMessage", async (args) => { sends.push(args.text); return { messages: [{ id: "outbound" }] }; });
   t.mock.method(require("../services/whatsappConversationService"), "recordMessage", async (args) => args);
   t.mock.method(require("../services/whatsappRealtimeService"), "publishConversationUpsert", () => {});
   let mode = "image";
+  let audioResponseUnavailable = false;
   const modelRequests = [];
   const fetchMock = t.mock.method(global, "fetch", async (url, opts) => {
     if (String(url).startsWith("https://graph.facebook.com")) return Response.json({ mime_type: `${mode}/${mode === "audio" ? "ogg" : "jpeg"}`, url: "https://lookaside.fbsbx.com/file", file_size: 5 });
@@ -31,6 +37,7 @@ test("captionless images reach vision, voice transcripts reach chat/history, and
     const body = JSON.parse(opts.body);
     modelRequests.push(body);
     const transcriptRequest = body.systemInstruction.parts[0].text.startsWith("Transcribe");
+    if (transcriptRequest && audioResponseUnavailable) return Response.json({}, { status: 503 });
     return Response.json({ candidates: [{ content: { parts: [{ text: transcriptRequest ? "Is bulb ka price kya hai?" : "Product details batayein, main help karunga." }] } }] });
   });
   const { maybeReplyWithAI, generateWhatsAppAIReply } = require("../services/whatsappAIService");
@@ -44,6 +51,12 @@ test("captionless images reach vision, voice transcripts reach chat/history, and
   assert.equal(storedTranscript, "Is bulb ka price kya hai?");
   assert.equal(modelRequests.at(-1).contents.at(-1).parts[0].text, storedTranscript);
   assert.equal(modelRequests.at(-1).contents.at(-1).parts.length, 1);
+  transcriptStorageAvailable = false;
+  await maybeReplyWithAI({ account, conversation, media: { id: "5678", type: "audio", messageId: "audio-2" } });
+  assert.match(sends.at(-1), /Product details/);
+  audioResponseUnavailable = true;
+  await maybeReplyWithAI({ account, conversation, media: { id: "5678", type: "audio", messageId: "audio-3" } });
+  assert.match(sends.at(-1), /Abhi voice note process nahi ho paya/);
   const count = fetchMock.mock.callCount();
   conversation.humanTakeover = true;
   assert.equal((await maybeReplyWithAI({ account, conversation, media: { id: "1234", type: "image" } })).reason, "human_takeover");

@@ -514,11 +514,35 @@ async function replyWithAI({ account, conversation, customerMessage, media, butt
   }
   let mediaPart;
   if (media && ["image", "audio"].includes(media.type)) {
+    let transcript;
     try {
-      const part = await downloadInboundMedia({ account, mediaId: media.id, type: media.type });
+      const part = await downloadInboundMedia({ account, mediaId: media.id, type: media.type, mimeType: media.mimeType });
       if (media.type === "audio") {
-        const transcript = await transcribeAudio(part);
-        customerMessage = transcript;
+        transcript = await transcribeAudio(part);
+      } else {
+        mediaPart = part;
+        customerMessage = customerMessage || "Please analyse this image and help me based on what you see. Ask if the product/model is unclear.";
+      }
+    } catch (error) {
+      logger.warn("whatsapp.ai.media_failed", {
+        type: media.type, code: error.code, detail: error.message,
+        model: error.model, status: error.status, finishReason: error.finishReason,
+      });
+      const voiceFailureText = {
+        media_too_large: "Voice note 12 MB se bada hai. Please chhota voice note ya text bhejein.",
+        voice_unclear: "Voice note mein awaaz samajh nahi aayi. Please dobara record karein ya text bhejein.",
+        empty_media: "Voice note khaali tha. Please dobara record karein ya text bhejein.",
+        unsupported_media: "Yeh audio format read nahi ho paya. Please WhatsApp mein record karke voice note ya text bhejein.",
+      };
+      const failed = { text: media.type === "audio"
+        ? voiceFailureText[error.code] || "Abhi voice note process nahi ho paya. Please thodi der mein dobara try karein ya text bhejein."
+        : "Image read nahi ho payi. Please JPG/PNG image (12 MB se kam) dobara bhejein ya details text mein batayein.", images: [], buttons: [] };
+      await sendAIOutbound({ account, conversation, reply: failed });
+      return { skipped: false, reply: failed };
+    }
+    if (transcript) {
+      customerMessage = transcript;
+      try {
         const message = await WhatsAppMessage.findOneAndUpdate(
           { account: account._id, conversation: conversation._id, waMessageId: media.messageId },
           { $set: { text: transcript, "meta.transcript": transcript, "meta.transcribedAt": new Date() } }, { new: true });
@@ -526,17 +550,9 @@ async function replyWithAI({ account, conversation, customerMessage, media, butt
         conversation.lastMessagePreview = transcript.slice(0, 240);
         await conversation.save();
         publishConversationUpsert(serializeConversation(conversation));
-      } else {
-        mediaPart = part;
-        customerMessage = customerMessage || "Please analyse this image and help me based on what you see. Ask if the product/model is unclear.";
+      } catch (error) {
+        logger.warn("whatsapp.ai.transcript_save_failed", { code: error.code });
       }
-    } catch (error) {
-      logger.warn("whatsapp.ai.media_failed", { type: media.type, message: error.message });
-      const failed = { text: media.type === "audio"
-        ? "Voice message transcribe nahi ho paya. Please chhota, clear voice note (12 MB se kam) ya text bhejein."
-        : "Image read nahi ho payi. Please JPG/PNG image (12 MB se kam) dobara bhejein ya details text mein batayein.", images: [], buttons: [] };
-      await sendAIOutbound({ account, conversation, reply: failed });
-      return { skipped: false, reply: failed };
     }
   }
   let reply = await generateWhatsAppAIReply({ account, conversation, customerMessage, settings, mediaPart });

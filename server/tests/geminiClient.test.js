@@ -60,3 +60,26 @@ test("does not retry authentication or malformed-request failures", async () => 
   assert.equal(calls, 1);
   assert.equal(result.error.status, 403);
 });
+
+test("a stalled Gemini response body still leaves time for the backup model", async () => {
+  const result = await requestGeminiWithRetry({
+    apiKey: "test-key",
+    models: ["primary", "backup"],
+    requestBody: "{}",
+    attemptsPerModel: 1,
+    attemptTimeoutMs: 10,
+    totalTimeoutMs: 1000,
+    readResponseBody: true,
+    fetchImpl: async (url, { signal }) => {
+      if (url.includes("/models/backup:")) return response(200, { reply: "ready" });
+      return {
+        ok: true,
+        json: () => new Promise((_resolve, reject) => {
+          signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+        }),
+      };
+    },
+  });
+  assert.equal(result.usedModel, "backup");
+  assert.deepEqual(result.data, { reply: "ready" });
+});

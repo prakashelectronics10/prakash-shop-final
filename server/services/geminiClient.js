@@ -15,6 +15,7 @@ function isRetryableGeminiError(error) {
     message.includes("fetch failed")
     || message.includes("network")
     || message.includes("timeout")
+    || message.includes("timed out")
     || message.includes("aborted")
     || message.includes("econnreset")
     || message.includes("etimedout")
@@ -41,6 +42,7 @@ async function requestGeminiWithRetry({
   attemptTimeoutMs = DEFAULT_ATTEMPT_TIMEOUT_MS,
   totalTimeoutMs = DEFAULT_TOTAL_TIMEOUT_MS,
   onRateLimit,
+  readResponseBody = false,
 }) {
   const startedAt = Date.now();
   let lastResponse = null;
@@ -67,36 +69,36 @@ async function requestGeminiWithRetry({
             signal: controller.signal,
           },
         );
+        if (lastResponse.ok) {
+          if (!readResponseBody) return { response: lastResponse, error: null, usedModel, attempts };
+          const data = await lastResponse.json();
+          return { response: lastResponse, data, error: null, usedModel, attempts };
+        }
+
+        const errorData = await lastResponse.json().catch(() => ({}));
+        lastError = {
+          status: lastResponse.status,
+          headers: lastResponse.headers,
+          code: errorData?.error?.status || errorData?.error?.code || "",
+          message: errorData?.error?.message || `Gemini model ${model} request failed.`,
+        };
       } catch (error) {
         lastResponse = null;
+        const timedOut = controller.signal.aborted;
         lastError = {
-          status: 0,
-          message: error?.name === "AbortError" ? "Gemini request timed out." : (error?.message || "Gemini network request failed."),
+          status: timedOut ? 408 : error?.name === "SyntaxError" ? 502 : 0,
+          message: timedOut ? "Gemini request timed out." : (error?.message || "Gemini network request failed."),
         };
       } finally {
         clearTimeout(timer);
       }
 
-      if (lastResponse?.ok) {
-        return { response: lastResponse, error: null, usedModel, attempts };
-      }
-
-      if (lastResponse) {
-        const errorData = await lastResponse.json().catch(() => ({}));
-        lastError = {
-          status: lastResponse.status,
-          headers: lastResponse.headers,
-          code: errorData.error?.status || errorData.error?.code || "",
-          message: errorData.error?.message || `Gemini model ${model} request failed.`,
-        };
-      }
-
-      if (Number(lastError?.status) === 429) onRateLimit?.(lastError);
+      if (Number(lastError?.status) === 429) onRateLimit?.(lastError, model);
       if (Number(lastError?.status) === 404) break;
       if (!isRetryableGeminiError(lastError)) break outer;
 
       if (attempt < attemptsPerModel - 1) {
-        const delay = Math.min(retryDelayMs(lastError, attempt), Math.max(0, remainingMs - 750));
+        const delay = Math.min(retryDelayMs(lastError, attempt), Math.max(0, totalTimeoutMs - (Date.now() - startedAt) - 750));
         if (delay > 0) await waitImpl(delay);
       }
     }

@@ -241,7 +241,7 @@ exports.handleWhatsAppWebhook = catchAsync(async (req, res) => {
         conversation,
         customerMessage: aiInput,
         buttonReplyId: event.buttonReplyId,
-        media: event.mediaId ? { id: event.mediaId, type: event.type, messageId: event.messageId } : null,
+        media: event.mediaId ? { id: event.mediaId, type: event.type, mimeType: event.mediaMimeType, messageId: event.messageId } : null,
       });
     } catch (error) {
       logger.error("whatsapp.webhook.event_failed", {
