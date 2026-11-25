@@ -96,8 +96,7 @@ export function CartPage() {
                     src={item.productImageUrl}
                     alt={item.productName}
                     width={360}
-                    height={360}
-                    sizes="(min-width: 900px) 150px, 34vw"
+                    sizes="(max-width: 760px) 96px, (max-width: 980px) 118px, 150px"
                     loading="lazy"
                     decoding="async"
                   />
@@ -108,14 +107,14 @@ export function CartPage() {
                 <article className={`cart-item-card ${hasDiscount ? "has-coupon-discount" : ""}`} key={item.cartId}>
                   {hasDetailLink ? (
                     <a
-                      className="cart-item-image"
+                      className="cart-item-image product-order-thumbnail"
                       href={detailHref}
                       aria-label={`View details for ${item.productName}`}
                     >
                       {imageContent}
                     </a>
                   ) : (
-                    <div className="cart-item-image">{imageContent}</div>
+                    <div className="cart-item-image product-order-thumbnail">{imageContent}</div>
                   )}
                   <div className="cart-item-content">
                     <span>{item.productCategory}</span>

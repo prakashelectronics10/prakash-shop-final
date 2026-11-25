@@ -310,7 +310,11 @@ export function CheckoutPage() {
                 const hasDiscount = Number(quoteItem?.discountAmount || 0) > 0;
                 return (
                 <article className={hasDiscount ? "has-coupon-discount" : ""} key={item.cartId}>
-                  <div>{item.productImageUrl ? <OptimizedImage src={item.productImageUrl} alt={item.productName} width={64} height={64} /> : <PackageCheck size={24} />}</div>
+                  <div className="checkout-summary-thumbnail product-order-thumbnail">
+                    {item.productImageUrl ? (
+                      <OptimizedImage src={item.productImageUrl} alt={item.productName} width={160} />
+                    ) : <PackageCheck size={24} aria-hidden="true" />}
+                  </div>
                   <span>
                     <strong>{item.productName}</strong>
                     {item.variantSummary ? <small>{item.variantSummary}</small> : null}

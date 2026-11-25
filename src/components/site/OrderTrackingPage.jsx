@@ -99,19 +99,17 @@ function OrderResult({ order }) {
             href={`/product/${encodeURIComponent(item.productSlug || item.productId)}${item.variantCombinationId ? `?v=${encodeURIComponent(item.variantCombinationId)}` : ""}`}
             key={`${item.productId}-${item.variantCombinationId || "base"}-${item.productName}`}
           >
-            <div>
+            <div className="tracking-product-thumbnail product-order-thumbnail">
               {item.productImageUrl ? (
                 <OptimizedImage
                   src={item.productImageUrl}
                   alt={item.productName}
-                  width={240}
-                  height={240}
-                  sizes="84px"
+                  width={160}
                   loading="lazy"
                   decoding="async"
                 />
               ) : (
-                <PackageCheck size={30} />
+                <PackageCheck size={30} aria-hidden="true" />
               )}
             </div>
             <span>
