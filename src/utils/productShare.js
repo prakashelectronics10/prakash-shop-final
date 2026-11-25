@@ -1,3 +1,5 @@
+import { buildVariantSharePath, formatVariantSummary, productHasVariants } from "./productVariants";
+
 const PRODUCT_DETAIL_BASE = "/product";
 const SITE_NAME = "Prakash Electronics";
 
@@ -5,9 +7,17 @@ function productIdentifier(product = {}) {
   return String(product.slug || product._id || product.sourceId || product.id || "").trim();
 }
 
+function selectedVariantSummary(product = {}) {
+  if (product.variantSummary) return String(product.variantSummary).trim();
+  if (!productHasVariants(product)) return "";
+  const optionIds = Array.isArray(product.variantOptionIds) ? product.variantOptionIds : [];
+  return formatVariantSummary(product, optionIds);
+}
+
 export function getProductSharePath(product = {}) {
   const identifier = productIdentifier(product);
-  return identifier ? `${PRODUCT_DETAIL_BASE}/${encodeURIComponent(identifier)}` : PRODUCT_DETAIL_BASE;
+  const base = identifier ? `${PRODUCT_DETAIL_BASE}/${encodeURIComponent(identifier)}` : PRODUCT_DETAIL_BASE;
+  return buildVariantSharePath(base, product.variantCombinationId || product.selectedVariantCombinationId || "");
 }
 
 export function getProductShareUrl(product = {}) {
@@ -17,6 +27,10 @@ export function getProductShareUrl(product = {}) {
 }
 
 export function getProductShareText(product = {}) {
+  const summary = selectedVariantSummary(product);
+  if (summary) {
+    return `Check out this ${product.name || "product"} — ${summary} — ${SITE_NAME}`;
+  }
   return String(
     product.shortDescription ||
       product.description ||

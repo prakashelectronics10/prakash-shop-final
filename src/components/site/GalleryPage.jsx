@@ -55,15 +55,15 @@ export function GalleryPage() {
                     key={`${it.label}-${i}`}
                     onClick={() => setActive(i)}
                     aria-label={`Open ${it.label} in lightbox`}
-                    className={`gallery-tile group relative cursor-zoom-in overflow-hidden rounded-2xl border-glow shadow-card text-left md:glass ${it.span || sizeClass}`}
+                    className={`gallery-tile group relative cursor-zoom-in overflow-hidden rounded-3xl border-glow shadow-card text-left md:glass ${it.span || sizeClass}`}
                   >
                     <OptimizedImage
                       src={it.src}
                       alt={it.label}
                       loading={i < 4 ? "eager" : "lazy"}
                       decoding="async"
-                      width={960}
-                      height={960}
+                      width={720}
+                      height={720}
                       sizes="(min-width: 768px) 25vw, 50vw"
                       className="gallery-tile-image h-full w-full object-cover"
                     />

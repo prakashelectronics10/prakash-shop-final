@@ -3,7 +3,7 @@ const ShopProduct = require("../models/ShopProduct");
 const ProjectPart = require("../models/ProjectPart");
 const MetaCatalogSyncJob = require("../models/MetaCatalogSyncJob");
 const { logger } = require("../utils/logger");
-const { mapProductToMeta } = require("./metaCatalogMapper");
+const { listVariantRetailerIds, mapProductToMeta } = require("./metaCatalogMapper");
 const metaClient = require("./metaCatalogClient");
 
 const MODEL_BY_SOURCE = {
@@ -93,6 +93,33 @@ async function enqueueProductDelete(sourceType, product) {
     jobKey: `UPSERT:${sourceType}:${product._id}`,
     status: { $in: ["pending", "failed", "synced"] },
   });
+  const variantIds = [
+    ...new Set([
+      ...(Array.isArray(product.metaCatalog?.variantRetailerIds) ? product.metaCatalog.variantRetailerIds : []),
+      ...listVariantRetailerIds(product),
+    ]),
+  ].filter((id) => id && id !== retailerId);
+
+  await Promise.all(variantIds.map((variantRetailerId) => MetaCatalogSyncJob.findOneAndUpdate(
+    { jobKey: `DELETE:${sourceType}:${variantRetailerId}` },
+    {
+      $set: {
+        sourceType,
+        productId: product._id,
+        retailerId: variantRetailerId,
+        metaItemId: "",
+        operation: "DELETE",
+        status: "pending",
+        attempts: 0,
+        nextRetryAt: now,
+        lastError: "",
+        completedAt: null,
+      },
+      $inc: { revision: 1 },
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true },
+  )));
+
   return MetaCatalogSyncJob.findOneAndUpdate(
     { jobKey: `DELETE:${sourceType}:${retailerId}` },
     {
@@ -194,9 +221,22 @@ async function processJob(job, { client = metaClient } = {}) {
         await completeJob(job, { skipped: true });
         return { skipped: true };
       }
-      const payload = mapProductToMeta(product, { sourceType: job.sourceType, origin: env.productionUrl });
-      const result = await client.upsertProduct(payload);
-      await completeJob(job, result);
+      const mapped = mapProductToMeta(product, { sourceType: job.sourceType, origin: env.productionUrl });
+      const payloads = Array.isArray(mapped) ? mapped : [mapped];
+      let result = null;
+      for (const payload of payloads) {
+        result = await client.upsertProduct(payload);
+      }
+      const nextVariantIds = payloads
+        .map((payload) => String(payload.retailer_id || "").trim().toUpperCase())
+        .filter(Boolean);
+      const previousVariantIds = Array.isArray(product.metaCatalog?.variantRetailerIds)
+        ? product.metaCatalog.variantRetailerIds
+        : [];
+      const staleIds = previousVariantIds.filter((id) => !nextVariantIds.includes(String(id).toUpperCase()));
+      await Promise.all(staleIds.map((retailerId) => client.deleteProduct({ retailerId }).catch(() => null)));
+      await setProductMeta(job.sourceType, job.productId, { variantRetailerIds: nextVariantIds });
+      await completeJob(job, result || { id: "" });
     }
     logger.info("meta_catalog.sync_completed", { retailerId: job.retailerId, operation: job.operation });
     return { success: true };

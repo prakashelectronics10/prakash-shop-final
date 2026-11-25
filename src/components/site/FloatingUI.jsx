@@ -4,7 +4,7 @@ import { useCart } from "../../context/CartContext";
 import { useSiteData } from "../../context/SiteDataContext";
 import { getWhatsappHref } from "../../utils/contactDefaults";
 import { usePageScroll } from "../../hooks/usePageScroll";
-import whatsappImage from "../../assets/whatsapp.png";
+import whatsappImage from "../../assets/whatsapp.webp";
 
 export function FloatingUI() {
   const { contact } = useSiteData();

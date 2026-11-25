@@ -359,7 +359,7 @@ const dashboard = asyncHandler(async (_req, res) => {
     SiteContent.find({ key: { $in: ["about", "aboutShowcase", "gallery", "shopHighlights", "testimonials"] } }).lean(),
     Invoice.countDocuments(),
     Invoice.countDocuments({ paymentStatus: { $ne: "paid" } }),
-    Order.countDocuments({ paymentStatus: "paid" }),
+    Order.countDocuments({ paymentStatus: { $in: ["paid", "cod"] } }),
   ]);
 
   const content = contentDocs.reduce((acc, doc) => {

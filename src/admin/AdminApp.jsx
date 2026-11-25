@@ -21,6 +21,7 @@ import {
   ShieldCheck,
   Trash2,
   UploadCloud,
+  X,
 } from "lucide-react";
 import { applyDynamicWebSettings } from "../context/SiteDataContext";
 import { getIcon } from "../components/site/iconMap";
@@ -28,6 +29,8 @@ import { buildPricingPayload, formatINR, resolveProductPricing } from "../utils/
 import InvoiceModule from "./InvoiceModule";
 import ManageWhatsAppModule from "./ManageWhatsAppModule";
 import OrdersModule from "./OrdersModule";
+import AdminToggle from "./AdminToggle";
+import ProductVariantsManager from "./ProductVariantsManager";
 import "./AdminApp.css";
 
 const API_BASE = process.env.REACT_APP_API_URL || process.env.VITE_API_URL || "/api";
@@ -88,6 +91,37 @@ function formatAdminPriceDetail(product = {}) {
     return `MRP ${formatINR(pricing.mrp)} → ${formatINR(pricing.price)}${pricing.showDiscount ? ` (−${pricing.discountPercent}%)` : ""}`;
   }
   return formatINR(pricing.price ?? pricing.mrp);
+}
+
+function AdminFormModal({ open, title, subtitle, onClose, children, footer, wide }) {
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (event) => { if (event.key === "Escape") onClose?.(); };
+    document.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [open, onClose]);
+  if (!open) return null;
+  return (
+    <div className="admin-form-modal-layer" role="dialog" aria-modal="true" aria-label={title}>
+      <button type="button" className="admin-form-modal-backdrop" aria-label="Close dialog" onClick={onClose} />
+      <div className={`admin-form-modal ${wide ? "wide" : ""}`}>
+        <header className="admin-form-modal-header">
+          <div>
+            <h2>{title}</h2>
+            {subtitle ? <p>{subtitle}</p> : null}
+          </div>
+          <button type="button" className="admin-form-modal-close" aria-label="Close" onClick={onClose}><X size={18} /></button>
+        </header>
+        <div className="admin-form-modal-body">{children}</div>
+        {footer ? <footer className="admin-form-modal-footer">{footer}</footer> : null}
+      </div>
+    </div>
+  );
 }
 
 const sectionCards = [
@@ -723,15 +757,13 @@ function App() {
             </div>
           </div>
           <div className="top-actions">
-            <label className="theme-toggle">
-              <input
-                type="checkbox"
-                checked={theme === "light"}
-                onChange={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}
-              />
-              <span />
-              Theme
-            </label>
+            <AdminToggle
+              className="theme-toggle"
+              label="Theme"
+              accessibleLabel="Light theme"
+              checked={theme === "light"}
+              onChange={(light) => setTheme(light ? "light" : "dark")}
+            />
             <button className="ghost-button icon-text topbar-logout" type="button" onClick={logout}>
               <LogOut size={17} />
               <span>Logout</span>
@@ -910,6 +942,7 @@ function detectedPulseAILinkType(linkAction = {}) {
 function PulseAIInstructionsManager({ instructions = [], runAction, busy }) {
   const [form, setForm] = useState(emptyPulseAIInstruction);
   const [editingId, setEditingId] = useState("");
+  const [formOpen, setFormOpen] = useState(false);
   const linkActionError = pulseAILinkActionError(form.linkAction);
 
   const setLinkAction = (patch) => setForm((current) => ({
@@ -920,6 +953,7 @@ function PulseAIInstructionsManager({ instructions = [], runAction, busy }) {
   const reset = () => {
     setEditingId("");
     setForm(emptyPulseAIInstruction);
+    setFormOpen(false);
   };
 
   const edit = (item) => {
@@ -942,7 +976,7 @@ function PulseAIInstructionsManager({ instructions = [], runAction, busy }) {
         openInNewTab: item.linkAction?.openInNewTab !== false,
       },
     });
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    setFormOpen(true);
   };
 
   const payloadFor = (item) => ({
@@ -992,14 +1026,101 @@ function PulseAIInstructionsManager({ instructions = [], runAction, busy }) {
   };
 
   return (
-    <div className="manager-grid pulse-ai-admin-manager">
-      <form className="editor glass-panel pulse-ai-rule-editor" onSubmit={save}>
+    <div className="manager-grid list-only pulse-ai-admin-manager">
+      <section className="list-panel glass-panel pulse-ai-rules-list">
+        <div className="list-panel-toolbar">
+          <div className="list-heading">
+            <div>
+              <p className="eyebrow">Instruction library</p>
+              <h2>Manage live rules</h2>
+            </div>
+            <span className="pulse-ai-rule-count">{instructions.length} total</span>
+          </div>
+          <button
+            type="button"
+            className="primary-button icon-text"
+            onClick={() => {
+              setEditingId("");
+              setForm(emptyPulseAIInstruction);
+              setFormOpen(true);
+            }}
+            disabled={busy}
+          >
+            <Plus size={16} /> Add instruction
+          </button>
+        </div>
+        {!instructions.length ? (
+          <div className="pulse-ai-rules-empty">
+            <BrainCircuit size={28} />
+            <strong>No custom instructions yet</strong>
+            <p>Add the first rule to customize Pulse AI's answers.</p>
+          </div>
+        ) : (
+          <div className="pulse-ai-rule-stack">
+            {instructions.map((item) => (
+              <article className={`pulse-ai-rule-card ${item.isActive === false ? "paused" : "active"}`} key={recordId(item)}>
+                <div className="pulse-ai-rule-card-head">
+                  <div>
+                    <span className="pulse-ai-rule-status">{item.isActive === false ? "Paused" : "Live now"}</span>
+                    <h3>{item.title}</h3>
+                  </div>
+                  <b>Priority {item.priority ?? 100}</b>
+                </div>
+                <p className="pulse-ai-rule-instruction" title={item.instruction}>
+                  {item.instruction}
+                </p>
+                <div className="pulse-ai-rule-meta">
+                  <span>{item.scope || "general"}</span>
+                  {item.target ? <span>Target: {item.target}</span> : null}
+                  <span>Updated {item.updatedAt ? new Date(item.updatedAt).toLocaleString() : "just now"}</span>
+                </div>
+                {item.linkAction?.enabled ? (
+                  <div className="pulse-ai-rule-link-summary">
+                    <span className="pulse-ai-smart-link-badge"><Link2 size={13} /> Smart link active</span>
+                    <div>
+                      <strong>{item.linkAction.title || "Linked action"}</strong>
+                      <small>{detectedPulseAILinkType(item.linkAction) === "internal" ? "Internal" : "External"} · {item.linkAction.trigger || "No trigger provided"}</small>
+                      <code title={item.linkAction.url}>{item.linkAction.url}</code>
+                    </div>
+                  </div>
+                ) : null}
+                <div className="button-row pulse-ai-rule-actions">
+                  <button type="button" className="admin-action-btn icon-text" onClick={() => edit(item)} disabled={busy}>
+                    <Pencil size={15} /> Edit
+                  </button>
+                  <button type="button" className="admin-action-btn" onClick={() => toggle(item)} disabled={busy}>
+                    {item.isActive === false ? "Activate" : "Pause"}
+                  </button>
+                  <button type="button" className="admin-action-btn danger" onClick={() => remove(item)} disabled={busy}>
+                    <Trash2 size={15} /> Delete
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <AdminFormModal
+        open={formOpen}
+        title={editingId ? "Edit AI instruction" : "Add AI instruction"}
+        subtitle="Saved active rules are read from the database for every new Pulse AI reply—no deployment or model retraining is required."
+        onClose={reset}
+        wide
+        footer={(
+          <>
+            <button className="primary-button" type="button" disabled={busy || !form.title.trim() || !form.instruction.trim() || Boolean(linkActionError)} onClick={save}>
+              {busy ? "Saving..." : editingId ? "Update instruction" : "Save & activate"}
+            </button>
+            <button className="ghost-button" type="button" onClick={reset} disabled={busy}>Cancel</button>
+          </>
+        )}
+      >
         <div className="pulse-ai-admin-intro">
           <span><BrainCircuit size={22} /></span>
           <div>
             <p className="eyebrow">Live behavior controls</p>
-            <h2>{editingId ? "Edit AI instruction" : "Add AI instruction"}</h2>
-            <small>Saved active rules are read from the database for every new Pulse AI reply—no deployment or model retraining is required.</small>
+            <small>Be specific about when the rule applies. Customer requirements, stock, and compatibility remain the source of truth.</small>
           </div>
         </div>
         <Input
@@ -1042,14 +1163,12 @@ function PulseAIInstructionsManager({ instructions = [], runAction, busy }) {
             value={form.priority}
             onChange={(priority) => setForm((current) => ({ ...current, priority }))}
           />
-          <label className="toggle-line pulse-ai-active-toggle">
-            <input
-              type="checkbox"
-              checked={form.isActive}
-              onChange={(event) => setForm((current) => ({ ...current, isActive: event.target.checked }))}
-            />
-            <span>Activate immediately after save</span>
-          </label>
+          <Toggle
+            className="pulse-ai-active-toggle"
+            label="Activate immediately after save"
+            checked={form.isActive}
+            onChange={(isActive) => setForm((current) => ({ ...current, isActive }))}
+          />
         </div>
         <section className={`pulse-ai-link-editor ${form.linkAction.enabled ? "enabled" : ""}`}>
           <div className="pulse-ai-link-editor-head">
@@ -1058,14 +1177,13 @@ function PulseAIInstructionsManager({ instructions = [], runAction, busy }) {
               <strong>Smart Link / Action Card</strong>
               <small>Optionally show one trusted destination only when its intent matches the customer.</small>
             </div>
-            <label className="toggle-line pulse-ai-link-toggle">
-              <input
-                type="checkbox"
-                checked={form.linkAction.enabled}
-                onChange={(event) => setLinkAction({ enabled: event.target.checked })}
-              />
-              <span>{form.linkAction.enabled ? "Enabled" : "Disabled"}</span>
-            </label>
+            <Toggle
+              className="pulse-ai-link-toggle"
+              accessibleLabel="Enable Smart Link / Action Card"
+              label={form.linkAction.enabled ? "Enabled" : "Disabled"}
+              checked={form.linkAction.enabled}
+              onChange={(enabled) => setLinkAction({ enabled })}
+            />
           </div>
           {form.linkAction.enabled ? (
             <div className="pulse-ai-link-fields">
@@ -1120,88 +1238,19 @@ function PulseAIInstructionsManager({ instructions = [], runAction, busy }) {
                   {detectedPulseAILinkType(form.linkAction) === "internal" ? <Link2 size={14} /> : <ExternalLink size={14} />}
                   {detectedPulseAILinkType(form.linkAction) === "internal" ? "Internal destination" : "External destination"}
                 </span>
-                <label className="toggle-line">
-                  <input
-                    type="checkbox"
-                    checked={detectedPulseAILinkType(form.linkAction) === "external" && form.linkAction.openInNewTab}
-                    disabled={detectedPulseAILinkType(form.linkAction) === "internal"}
-                    onChange={(event) => setLinkAction({ openInNewTab: event.target.checked })}
-                  />
-                  <span>Open external link in a new tab</span>
-                </label>
+                <Toggle
+                  label="Open external link in a new tab"
+                  checked={detectedPulseAILinkType(form.linkAction) === "external" && form.linkAction.openInNewTab}
+                  disabled={detectedPulseAILinkType(form.linkAction) === "internal"}
+                  onChange={(openInNewTab) => setLinkAction({ openInNewTab })}
+                />
               </div>
               {linkActionError ? <p className="form-error pulse-ai-link-error">{linkActionError}</p> : null}
               <small className="field-hint">Pulse AI receives only this action's ID and intent. The server validates and supplies the saved URL, so the model cannot replace it.</small>
             </div>
           ) : null}
         </section>
-        <div className="button-row">
-          <button className="primary-button" type="submit" disabled={busy || !form.title.trim() || !form.instruction.trim() || Boolean(linkActionError)}>
-            {busy ? "Saving..." : editingId ? "Update instruction" : "Save & activate"}
-          </button>
-          {editingId ? <button className="ghost-button" type="button" onClick={reset} disabled={busy}>Cancel edit</button> : null}
-        </div>
-      </form>
-
-      <section className="list-panel glass-panel pulse-ai-rules-list">
-        <div className="list-heading">
-          <div>
-            <p className="eyebrow">Instruction library</p>
-            <h2>Manage live rules</h2>
-          </div>
-          <span className="pulse-ai-rule-count">{instructions.length} total</span>
-        </div>
-        {!instructions.length ? (
-          <div className="pulse-ai-rules-empty">
-            <BrainCircuit size={28} />
-            <strong>No custom instructions yet</strong>
-            <p>Add the first rule to customize Pulse AI's answers.</p>
-          </div>
-        ) : (
-          <div className="pulse-ai-rule-stack">
-            {instructions.map((item) => (
-              <article className={`pulse-ai-rule-card ${item.isActive === false ? "paused" : "active"}`} key={recordId(item)}>
-                <div className="pulse-ai-rule-card-head">
-                  <div>
-                    <span className="pulse-ai-rule-status">{item.isActive === false ? "Paused" : "Live now"}</span>
-                    <h3>{item.title}</h3>
-                  </div>
-                  <b>Priority {item.priority ?? 100}</b>
-                </div>
-                <p className="pulse-ai-rule-instruction" title={item.instruction}>
-                  {item.instruction}
-                </p>
-                <div className="pulse-ai-rule-meta">
-                  <span>{item.scope || "general"}</span>
-                  {item.target ? <span>Target: {item.target}</span> : null}
-                  <span>Updated {item.updatedAt ? new Date(item.updatedAt).toLocaleString() : "just now"}</span>
-                </div>
-                {item.linkAction?.enabled ? (
-                  <div className="pulse-ai-rule-link-summary">
-                    <span className="pulse-ai-smart-link-badge"><Link2 size={13} /> Smart link active</span>
-                    <div>
-                      <strong>{item.linkAction.title || "Linked action"}</strong>
-                      <small>{detectedPulseAILinkType(item.linkAction) === "internal" ? "Internal" : "External"} · {item.linkAction.trigger || "No trigger provided"}</small>
-                      <code title={item.linkAction.url}>{item.linkAction.url}</code>
-                    </div>
-                  </div>
-                ) : null}
-                <div className="button-row pulse-ai-rule-actions">
-                  <button type="button" className="ghost-button icon-text" onClick={() => edit(item)} disabled={busy}>
-                    <Pencil size={15} /> Edit
-                  </button>
-                  <button type="button" className="ghost-button" onClick={() => toggle(item)} disabled={busy}>
-                    {item.isActive === false ? "Activate" : "Pause"}
-                  </button>
-                  <button type="button" className="danger subtle-button" onClick={() => remove(item)} disabled={busy}>
-                    <Trash2 size={15} /> Delete
-                  </button>
-                </div>
-              </article>
-            ))}
-          </div>
-        )}
-      </section>
+      </AdminFormModal>
     </div>
   );
 }
@@ -1444,6 +1493,7 @@ function AdminManager({ admins, currentAdmin, runAction, busy }) {
   const empty = { name: "", email: "", role: "admin", password: "", tag: "employee", permissions: [], adminAndroidAppAccess: false, receivePulseAIUnavailableAlerts: true, isActive: true };
   const [form, setForm] = useState(empty);
   const [editingId, setEditingId] = useState("");
+  const [formOpen, setFormOpen] = useState(false);
   const [pendingCreate, setPendingCreate] = useState(null);
   const [ownerOtp, setOwnerOtp] = useState("");
   const [newAdminOtp, setNewAdminOtp] = useState("");
@@ -1485,6 +1535,11 @@ function AdminManager({ admins, currentAdmin, runAction, busy }) {
       receivePulseAIUnavailableAlerts: item.receivePulseAIUnavailableAlerts !== false,
       isActive: item.isActive !== false,
     });
+    setPendingCreate(null);
+    setOwnerOtp("");
+    setNewAdminOtp("");
+    setCreateError("");
+    setFormOpen(true);
   };
 
   const reset = () => {
@@ -1494,6 +1549,7 @@ function AdminManager({ admins, currentAdmin, runAction, busy }) {
     setOwnerOtp("");
     setNewAdminOtp("");
     setCreateError("");
+    setFormOpen(false);
   };
 
   const save = () => {
@@ -1591,10 +1647,76 @@ function AdminManager({ admins, currentAdmin, runAction, busy }) {
     : "Pulse AI unavailable-demand emails disabled for this admin");
 
   return (
-    <div className="manager-grid">
-      <section className="editor glass-panel">
-        <h2>{editingId ? "Edit Admin" : "Add Admin"}</h2>
-        <p className="muted">Only main owner can manage admins. New admin creation now requires OTP verification on both the main admin email and the new admin email.</p>
+    <div className="manager-grid list-only">
+      <section className="list-panel glass-panel">
+        <div className="list-panel-toolbar">
+          <h2>Admin Accounts</h2>
+          <button
+            type="button"
+            className="primary-button icon-text"
+            onClick={() => {
+              setEditingId("");
+              setForm(empty);
+              setPendingCreate(null);
+              setOwnerOtp("");
+              setNewAdminOtp("");
+              setCreateError("");
+              setFormOpen(true);
+            }}
+            disabled={busy}
+          >
+            <Plus size={16} /> Add Admin
+          </button>
+        </div>
+        {!admins.length && <p className="muted">No admin accounts found.</p>}
+        {admins.map((item) => (
+          <div className="list-item compact admin-account-row" key={item._id || item.id}>
+            <AdminAccountAvatar admin={item} />
+            <div className="admin-account-details">
+              <strong>{item.name || item.email}</strong>
+              <span>
+                {item.email === currentAdmin?.email ? "Current login" : item.tag || item.role || "admin"}
+                {item.lastLoginAt ? ` - Last login ${formatDateTime(item.lastLoginAt)}` : ""}
+              </span>
+              <small>{item.email}</small>
+              <small>{item.isSuperAdmin || item.adminAndroidAppAccess ? "Android app access enabled" : "Android app access disabled"}</small>
+              <small>{item.receivePulseAIUnavailableAlerts !== false ? "Pulse AI demand alerts enabled" : "Pulse AI demand alerts disabled"}</small>
+              <small>{adminPermissionSummary(item.permissions || [])}</small>
+            </div>
+            <span className={`status-badge ${item.isActive ? "repaired" : ""}`}>
+              {item.isSuperAdmin ? "Owner" : item.isActive ? "Active" : "Inactive"}
+            </span>
+            <div className="admin-account-actions">
+              <button
+                type="button"
+                className="admin-demand-alert-toggle"
+                onClick={() => toggleUnavailableDemandAlerts(item)}
+                disabled={busy || item.isActive === false}
+              >
+                <Mail size={14} /> Demand email {item.receivePulseAIUnavailableAlerts !== false ? "On" : "Off"}
+              </button>
+              {!item.isSuperAdmin && <button type="button" onClick={() => edit(item)}>Edit</button>}
+              {!item.isSuperAdmin && <button className="danger" type="button" onClick={() => remove(item)}>Delete</button>}
+            </div>
+          </div>
+        ))}
+      </section>
+
+      <AdminFormModal
+        open={formOpen}
+        title={editingId ? "Edit Admin" : "Add Admin"}
+        subtitle="Only main owner can manage admins. New admin creation requires OTP verification on both the main admin email and the new admin email."
+        onClose={reset}
+        wide
+        footer={!pendingCreate ? (
+          <>
+            <button className="primary-button" type="button" disabled={busy || createBusy || !form.name || (!editingId && (!form.email || form.password.length < 8))} onClick={save}>
+              {busy || createBusy ? "Saving..." : editingId ? "Update Admin" : "Send OTP to Create"}
+            </button>
+            <button className="ghost-button" type="button" onClick={reset}>Cancel</button>
+          </>
+        ) : null}
+      >
         <Input label="Admin Name" value={form.name} onChange={(name) => setForm({ ...form, name })} />
         {!editingId && (
           <Input label="Admin Email" type="email" value={form.email} onChange={(email) => setForm({ ...form, email })} />
@@ -1641,18 +1763,13 @@ function AdminManager({ admins, currentAdmin, runAction, busy }) {
             {editablePermissions.map((permission) => (
               <Toggle
                 key={permission.key}
+                selection
                 label={permission.label}
                 checked={(form.permissions || []).includes(permission.key)}
                 onChange={() => togglePermission(permission.key)}
               />
             ))}
           </div>
-        </div>
-        <div className="button-row">
-          <button className="primary-button" disabled={busy || createBusy || !form.name || (!editingId && (!form.email || form.password.length < 8))} onClick={save}>
-            {busy || createBusy ? "Saving..." : editingId ? "Update Admin" : "Send OTP to Create"}
-          </button>
-          {editingId && <button className="ghost-button" type="button" onClick={reset}>Cancel</button>}
         </div>
         {pendingCreate && (
           <div className="otp-confirm-panel">
@@ -1681,43 +1798,7 @@ function AdminManager({ admins, currentAdmin, runAction, busy }) {
           </div>
         )}
         {!pendingCreate && createError && <p className="form-error">{createError}</p>}
-      </section>
-
-      <section className="list-panel glass-panel">
-        <h2>Admin Accounts</h2>
-        {!admins.length && <p className="muted">No admin accounts found.</p>}
-        {admins.map((item) => (
-          <div className="list-item compact admin-account-row" key={item._id || item.id}>
-            <AdminAccountAvatar admin={item} />
-            <div className="admin-account-details">
-              <strong>{item.name || item.email}</strong>
-              <span>
-                {item.email === currentAdmin?.email ? "Current login" : item.tag || item.role || "admin"}
-                {item.lastLoginAt ? ` - Last login ${formatDateTime(item.lastLoginAt)}` : ""}
-              </span>
-              <small>{item.email}</small>
-              <small>{item.isSuperAdmin || item.adminAndroidAppAccess ? "Android app access enabled" : "Android app access disabled"}</small>
-              <small>{item.receivePulseAIUnavailableAlerts !== false ? "Pulse AI demand alerts enabled" : "Pulse AI demand alerts disabled"}</small>
-              <small>{adminPermissionSummary(item.permissions || [])}</small>
-            </div>
-            <span className={`status-badge ${item.isActive ? "repaired" : ""}`}>
-              {item.isSuperAdmin ? "Owner" : item.isActive ? "Active" : "Inactive"}
-            </span>
-            <div className="admin-account-actions">
-              <button
-                type="button"
-                className="admin-demand-alert-toggle"
-                onClick={() => toggleUnavailableDemandAlerts(item)}
-                disabled={busy || item.isActive === false}
-              >
-                <Mail size={14} /> Demand email {item.receivePulseAIUnavailableAlerts !== false ? "On" : "Off"}
-              </button>
-              {!item.isSuperAdmin && <button type="button" onClick={() => edit(item)}>Edit</button>}
-              {!item.isSuperAdmin && <button className="danger" type="button" onClick={() => remove(item)}>Delete</button>}
-            </div>
-          </div>
-        ))}
-      </section>
+      </AdminFormModal>
     </div>
   );
 }
@@ -1726,6 +1807,7 @@ function NotificationEmailManager({ emails, demandSettings = {}, runAction, busy
   const empty = { email: "", label: "", isEnabled: true, receivePulseAIUnavailableAlerts: true, source: "manual" };
   const [form, setForm] = useState(empty);
   const [editingId, setEditingId] = useState("");
+  const [formOpen, setFormOpen] = useState(false);
   const [demandSettingsForm, setDemandSettingsForm] = useState({
     minimumUniqueCustomers: Number(demandSettings.minimumUniqueCustomers || 7),
     trackingPeriodHours: Number(demandSettings.trackingPeriodHours || 168),
@@ -1758,6 +1840,7 @@ function NotificationEmailManager({ emails, demandSettings = {}, runAction, busy
   const reset = () => {
     setForm(empty);
     setEditingId("");
+    setFormOpen(false);
   };
 
   const edit = (item) => {
@@ -1769,6 +1852,7 @@ function NotificationEmailManager({ emails, demandSettings = {}, runAction, busy
       receivePulseAIUnavailableAlerts: item.receivePulseAIUnavailableAlerts === true,
       source: item.source || "manual",
     });
+    setFormOpen(true);
   };
 
   const save = () => runAction(async () => {
@@ -1811,10 +1895,10 @@ function NotificationEmailManager({ emails, demandSettings = {}, runAction, busy
     : "Pulse AI demand alerts enabled for this email");
 
   return (
-    <div className="manager-grid">
-      <section className="editor glass-panel notification-email-editor">
+    <div className="manager-grid list-only notification-email-page">
+      <section className="glass-panel notification-email-editor">
         <p className="eyebrow">Notification delivery</p>
-        <h2>{editingId ? "Edit Notification Email" : "Email Notifications"}</h2>
+        <h2>Email Notifications</h2>
         <p className="muted">Manage booking recipients and additional addresses for Pulse AI unavailable product/service demand alerts. Admin-account demand alerts are controlled from Admin Accounts.</p>
         <div className="pulse-ai-demand-settings-panel">
           <div>
@@ -1859,6 +1943,82 @@ function NotificationEmailManager({ emails, demandSettings = {}, runAction, busy
           <Detail label="Pulse AI Demand Alerts" value={unavailableAlertCount} />
           <Detail label="Last Sent" value={formatDateTime(lastSent) || "No delivery yet"} />
         </div>
+      </section>
+
+      <section className="list-panel glass-panel notification-recipients-panel">
+        <div className="list-panel-toolbar">
+          <h2>Notification Recipients</h2>
+          <button
+            type="button"
+            className="primary-button icon-text"
+            onClick={() => {
+              setEditingId("");
+              setForm(empty);
+              setFormOpen(true);
+            }}
+            disabled={busy}
+          >
+            <Plus size={16} /> Add Email
+          </button>
+        </div>
+        {!emails.length && <p className="muted">No custom notification emails yet. Active admin account emails will still receive booking alerts.</p>}
+        <div className="notification-recipient-grid">
+          {emails.map((item) => (
+            <article className="notification-recipient-card" key={item._id || item.id}>
+              <div className="notification-recipient-card-main">
+                <div className="notification-recipient-avatar" aria-hidden="true">
+                  <Mail size={18} />
+                </div>
+                <div className="notification-recipient-copy">
+                  <strong>{item.label || item.email}</strong>
+                  <span>{item.email}</span>
+                  <small>{item.source === "adminAccount" ? "Admin account recipient" : "Additional email recipient"}</small>
+                  <small>{item.lastDeliveryAt ? `Last delivered ${formatDateTime(item.lastDeliveryAt)}` : "No delivery recorded yet"}</small>
+                </div>
+              </div>
+              <div className="notification-recipient-card-meta">
+                <span className={`status-badge ${item.isEnabled !== false ? "repaired" : ""}`}>
+                  {item.isEnabled !== false ? "Booking On" : "Booking Off"}
+                </span>
+                {item.source === "manual" ? (
+                  <span className={`status-badge ${item.receivePulseAIUnavailableAlerts === true ? "warning" : ""}`}>
+                    Demand alerts {item.receivePulseAIUnavailableAlerts === true ? "On" : "Off"}
+                  </span>
+                ) : (
+                  <small className="notification-managed-note">Demand alerts managed in Admin Accounts</small>
+                )}
+              </div>
+              <div className={`notification-recipient-card-actions${item.source === "manual" ? " has-four" : ""}`}>
+                <button type="button" className="admin-action-btn" onClick={() => toggle(item)}>
+                  {item.isEnabled !== false ? "Booking Off" : "Booking On"}
+                </button>
+                {item.source === "manual" ? (
+                  <button type="button" className="admin-action-btn" onClick={() => toggleUnavailableAlerts(item)}>
+                    Toggle alerts
+                  </button>
+                ) : null}
+                <button type="button" className="admin-action-btn" onClick={() => edit(item)}>Edit</button>
+                <button className="admin-action-btn danger" type="button" onClick={() => remove(item)}>Delete</button>
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <AdminFormModal
+        open={formOpen}
+        title={editingId ? "Edit Notification Email" : "Add Notification Email"}
+        subtitle="Booking recipients and Pulse AI unavailable demand alert addresses."
+        onClose={reset}
+        footer={(
+          <>
+            <button className="primary-button" type="button" disabled={busy || !form.email} onClick={save}>
+              {editingId ? "Update Email" : "Add Email"}
+            </button>
+            <button className="ghost-button" type="button" onClick={reset}>Cancel</button>
+          </>
+        )}
+      >
         <div className="two-col">
           <Input label="Recipient Email" type="email" value={form.email} onChange={(email) => setForm({ ...form, email })} />
           <Input label="Label / Team Member" value={form.label} onChange={(label) => setForm({ ...form, label })} />
@@ -1872,39 +2032,7 @@ function NotificationEmailManager({ emails, demandSettings = {}, runAction, busy
           disabled={form.source === "adminAccount"}
           onChange={(receivePulseAIUnavailableAlerts) => setForm({ ...form, receivePulseAIUnavailableAlerts })}
         />
-        <div className="button-row">
-          <button className="primary-button" type="button" disabled={busy || !form.email} onClick={save}>
-            {editingId ? "Update Email" : "Add Email"}
-          </button>
-          {editingId && <button className="ghost-button" type="button" onClick={reset}>Cancel</button>}
-        </div>
-      </section>
-
-      <section className="list-panel glass-panel">
-        <h2>Notification Recipients</h2>
-        {!emails.length && <p className="muted">No custom notification emails yet. Active admin account emails will still receive booking alerts.</p>}
-        {emails.map((item) => (
-          <div className="list-item compact notification-email-row" key={item._id || item.id}>
-            <div>
-              <strong><Mail size={15} /> {item.label || item.email}</strong>
-              <span>{item.email}</span>
-              <small>{item.source === "adminAccount" ? "Admin account recipient" : "Additional email recipient"}</small>
-              <small>{item.lastDeliveryAt ? `Last delivered ${formatDateTime(item.lastDeliveryAt)}` : "No delivery recorded yet"}</small>
-            </div>
-            <span className={`status-badge ${item.isEnabled !== false ? "repaired" : ""}`}>
-              {item.isEnabled !== false ? "Booking On" : "Booking Off"}
-            </span>
-            <button type="button" onClick={() => toggle(item)}>{item.isEnabled !== false ? "Booking Off" : "Booking On"}</button>
-            {item.source === "manual" ? (
-              <button type="button" onClick={() => toggleUnavailableAlerts(item)}>
-                Demand alerts {item.receivePulseAIUnavailableAlerts === true ? "On" : "Off"}
-              </button>
-            ) : <small className="notification-managed-note">Demand alerts managed in Admin Accounts</small>}
-            <button type="button" onClick={() => edit(item)}>Edit</button>
-            <button className="danger" type="button" onClick={() => remove(item)}>Delete</button>
-          </div>
-        ))}
-      </section>
+      </AdminFormModal>
     </div>
   );
 }
@@ -1933,8 +2061,15 @@ function ProductManager({ title = "Our Services", products, categories, runActio
   };
   const [form, setForm] = useState(empty);
   const [editingId, setEditingId] = useState("");
+  const [formOpen, setFormOpen] = useState(false);
   const [openProductId, setOpenProductId] = useState("");
   const batch = useBatchSelection(products);
+
+  const reset = () => {
+    setEditingId("");
+    setForm(empty);
+    setFormOpen(false);
+  };
 
   const edit = (product) => {
     setEditingId(product._id);
@@ -1960,6 +2095,7 @@ function ProductManager({ title = "Our Services", products, categories, runActio
       isFeatured: Boolean(product.isFeatured),
       displayOrder: product.displayOrder || 0,
     });
+    setFormOpen(true);
   };
 
   const save = () => runAction(async () => {
@@ -1991,65 +2127,36 @@ function ProductManager({ title = "Our Services", products, categories, runActio
       method: editingId ? "PUT" : "POST",
       body: JSON.stringify(payload),
     });
-    setForm(empty);
-    setEditingId("");
+    reset();
   }, "Product saved");
 
   const deleteSelected = () => runAction(async () => {
     if (!batch.selectedIds.length) return false;
     if (!window.confirm(`Delete ${batch.selectedIds.length} ${title.toLowerCase()} item${batch.selectedIds.length > 1 ? "s" : ""}?`)) return false;
     await Promise.all(batch.selectedIds.map((id) => apiFetch(`/admin/products/${id}`, { method: "DELETE" })));
-    if (batch.selectedSet.has(editingId)) {
-      setEditingId("");
-      setForm(empty);
-    }
+    if (batch.selectedSet.has(editingId)) reset();
     if (batch.selectedSet.has(openProductId)) setOpenProductId("");
     batch.clearSelection();
   }, `${title} deleted`);
 
   return (
-    <div className="manager-grid">
-      <section className="editor glass-panel">
-        <h2>{editingId ? `Edit ${title}` : `Add ${title}`}</h2>
-        <div className="two-col">
-          <Input label="Title" value={form.title} onChange={(title) => setForm({ ...form, title })} />
-          <Input label="Slug" value={form.slug} onChange={(slug) => setForm({ ...form, slug })} />
-          <Select
-            label="Category"
-            value={form.category}
-            onChange={(category) => setForm({ ...form, category })}
-            options={categories.map((item) => ({ value: item._id, label: item.name }))}
-          />
-          <IconPickerInput label="Icon" value={form.iconName} onChange={(iconName) => setForm({ ...form, iconName })} />
-          <Input label="Badge" value={form.badge} onChange={(badge) => setForm({ ...form, badge })} />
-          <Input label="Display order" type="number" value={form.displayOrder} onChange={(displayOrder) => setForm({ ...form, displayOrder })} />
-        </div>
-        <ImageField label="Icon image URL" value={form.iconImageUrl} onChange={(iconImageUrl) => setForm({ ...form, iconImageUrl })} />
-        <Textarea label="Short description" value={form.shortDescription} onChange={(shortDescription) => setForm({ ...form, shortDescription })} />
-        <Textarea label="Full description" value={form.description} onChange={(description) => setForm({ ...form, description })} />
-        <ImageField value={form.imageUrl} onChange={(imageUrl) => setForm({ ...form, imageUrl })} />
-        <Textarea label="Highlights, one per line" value={form.highlights} onChange={(highlights) => setForm({ ...form, highlights })} />
-        <div className="two-col">
-          <Input label="Detail eyebrow" value={form.detailEyebrow} onChange={(detailEyebrow) => setForm({ ...form, detailEyebrow })} />
-          <Textarea label="Detail overview" value={form.detailOverview} onChange={(detailOverview) => setForm({ ...form, detailOverview })} />
-        </div>
-        <div className="three-col">
-          <Textarea label="Ideal for" value={form.detailIdealFor} onChange={(detailIdealFor) => setForm({ ...form, detailIdealFor })} />
-          <Textarea label="Steps" value={form.detailSteps} onChange={(detailSteps) => setForm({ ...form, detailSteps })} />
-          <Textarea label="Features" value={form.detailFeatures} onChange={(detailFeatures) => setForm({ ...form, detailFeatures })} />
-        </div>
-        <div className="toggle-row">
-          <Toggle label="Active" checked={form.isActive} onChange={(isActive) => setForm({ ...form, isActive })} />
-          {!featuredDefault && <Toggle label="Featured" checked={form.isFeatured} onChange={(isFeatured) => setForm({ ...form, isFeatured })} />}
-        </div>
-        <div className="button-row">
-          <button className="primary-button" disabled={busy} onClick={save}>Save {title}</button>
-          {editingId && <button className="ghost-button" onClick={() => { setEditingId(""); setForm(empty); }}>Cancel</button>}
-        </div>
-      </section>
-
+    <div className="manager-grid list-only">
       <section className="list-panel glass-panel">
-        <h2>{title}</h2>
+        <div className="list-panel-toolbar">
+          <h2>{title}</h2>
+          <button
+            type="button"
+            className="primary-button icon-text"
+            onClick={() => {
+              setEditingId("");
+              setForm(empty);
+              setFormOpen(true);
+            }}
+            disabled={busy}
+          >
+            <Plus size={16} /> Add {title}
+          </button>
+        </div>
         {!products.length && <p className="muted">No {title.toLowerCase()} yet.</p>}
         <BatchToolbar
           total={products.length}
@@ -2095,6 +2202,51 @@ function ProductManager({ title = "Our Services", products, categories, runActio
           </AccordionCard>
         ))}
       </section>
+
+      <AdminFormModal
+        open={formOpen}
+        title={editingId ? `Edit ${title}` : `Add ${title}`}
+        onClose={reset}
+        wide
+        footer={(
+          <>
+            <button className="primary-button" type="button" disabled={busy} onClick={save}>Save {title}</button>
+            <button className="ghost-button" type="button" onClick={reset}>Cancel</button>
+          </>
+        )}
+      >
+        <div className="two-col">
+          <Input label="Title" value={form.title} onChange={(nextTitle) => setForm({ ...form, title: nextTitle })} />
+          <Input label="Slug" value={form.slug} onChange={(slug) => setForm({ ...form, slug })} />
+          <Select
+            label="Category"
+            value={form.category}
+            onChange={(category) => setForm({ ...form, category })}
+            options={categories.map((item) => ({ value: item._id, label: item.name }))}
+          />
+          <IconPickerInput label="Icon" value={form.iconName} onChange={(iconName) => setForm({ ...form, iconName })} />
+          <Input label="Badge" value={form.badge} onChange={(badge) => setForm({ ...form, badge })} />
+          <Input label="Display order" type="number" value={form.displayOrder} onChange={(displayOrder) => setForm({ ...form, displayOrder })} />
+        </div>
+        <ImageField label="Icon image URL" value={form.iconImageUrl} onChange={(iconImageUrl) => setForm({ ...form, iconImageUrl })} />
+        <Textarea label="Short description" value={form.shortDescription} onChange={(shortDescription) => setForm({ ...form, shortDescription })} />
+        <Textarea label="Full description" value={form.description} onChange={(description) => setForm({ ...form, description })} />
+        <ImageField value={form.imageUrl} onChange={(imageUrl) => setForm({ ...form, imageUrl })} />
+        <Textarea label="Highlights, one per line" value={form.highlights} onChange={(highlights) => setForm({ ...form, highlights })} />
+        <div className="two-col">
+          <Input label="Detail eyebrow" value={form.detailEyebrow} onChange={(detailEyebrow) => setForm({ ...form, detailEyebrow })} />
+          <Textarea label="Detail overview" value={form.detailOverview} onChange={(detailOverview) => setForm({ ...form, detailOverview })} />
+        </div>
+        <div className="three-col">
+          <Textarea label="Ideal for" value={form.detailIdealFor} onChange={(detailIdealFor) => setForm({ ...form, detailIdealFor })} />
+          <Textarea label="Steps" value={form.detailSteps} onChange={(detailSteps) => setForm({ ...form, detailSteps })} />
+          <Textarea label="Features" value={form.detailFeatures} onChange={(detailFeatures) => setForm({ ...form, detailFeatures })} />
+        </div>
+        <div className="toggle-row">
+          <Toggle label="Active" checked={form.isActive} onChange={(isActive) => setForm({ ...form, isActive })} />
+          {!featuredDefault && <Toggle label="Featured" checked={form.isFeatured} onChange={(isFeatured) => setForm({ ...form, isFeatured })} />}
+        </div>
+      </AdminFormModal>
     </div>
   );
 }
@@ -2490,48 +2642,51 @@ function OfferManager({ offers, runAction, busy }) {
   const empty = { title: "", description: "", code: "", imageUrl: "", ctaLabel: "Book now", ctaHref: "#contact", isActive: true, displayOrder: 0 };
   const [form, setForm] = useState(empty);
   const [editingId, setEditingId] = useState("");
+  const [formOpen, setFormOpen] = useState(false);
   const [openOfferId, setOpenOfferId] = useState("");
   const batch = useBatchSelection(offers);
+
+  const reset = () => {
+    setEditingId("");
+    setForm(empty);
+    setFormOpen(false);
+  };
 
   const save = () => runAction(async () => {
     await apiFetch(editingId ? `/admin/offers/${editingId}` : "/admin/offers", {
       method: editingId ? "PUT" : "POST",
       body: JSON.stringify(form),
     });
-    setForm(empty);
-    setEditingId("");
+    reset();
   }, "Offer saved");
 
   const deleteSelected = () => runAction(async () => {
     if (!batch.selectedIds.length) return false;
     if (!window.confirm(`Delete ${batch.selectedIds.length} offer${batch.selectedIds.length > 1 ? "s" : ""}?`)) return false;
     await Promise.all(batch.selectedIds.map((id) => apiFetch(`/admin/offers/${id}`, { method: "DELETE" })));
-    if (batch.selectedSet.has(editingId)) {
-      setEditingId("");
-      setForm(empty);
-    }
+    if (batch.selectedSet.has(editingId)) reset();
     if (batch.selectedSet.has(openOfferId)) setOpenOfferId("");
     batch.clearSelection();
   }, "Offers deleted");
 
   return (
-    <div className="manager-grid">
-      <section className="editor glass-panel">
-        <h2>{editingId ? "Edit Offer" : "Add Offer"}</h2>
-        <div className="two-col">
-          <Input label="Title" value={form.title} onChange={(title) => setForm({ ...form, title })} />
-          <Input label="Code" value={form.code} onChange={(code) => setForm({ ...form, code })} />
-          <Input label="CTA label" value={form.ctaLabel} onChange={(ctaLabel) => setForm({ ...form, ctaLabel })} />
-          <Input label="CTA href" value={form.ctaHref} onChange={(ctaHref) => setForm({ ...form, ctaHref })} />
-          <Input label="Display order" type="number" value={form.displayOrder} onChange={(displayOrder) => setForm({ ...form, displayOrder })} />
-        </div>
-        <Textarea label="Description" value={form.description} onChange={(description) => setForm({ ...form, description })} />
-        <ImageField value={form.imageUrl} onChange={(imageUrl) => setForm({ ...form, imageUrl })} />
-        <Toggle label="Active" checked={form.isActive} onChange={(isActive) => setForm({ ...form, isActive })} />
-        <button className="primary-button" disabled={busy} onClick={save}>Save Offer</button>
-      </section>
+    <div className="manager-grid list-only">
       <section className="list-panel glass-panel">
-        <h2>Offers</h2>
+        <div className="list-panel-toolbar">
+          <h2>Offers</h2>
+          <button
+            type="button"
+            className="primary-button icon-text"
+            onClick={() => {
+              setEditingId("");
+              setForm(empty);
+              setFormOpen(true);
+            }}
+            disabled={busy}
+          >
+            <Plus size={16} /> Add Offer
+          </button>
+        </div>
         {!offers.length && <p className="muted">No offers yet.</p>}
         <BatchToolbar
           total={offers.length}
@@ -2574,6 +2729,7 @@ function OfferManager({ offers, runAction, busy }) {
                   setOpenOfferId(offer._id);
                   setEditingId(offer._id);
                   setForm({ ...empty, ...offer });
+                  setFormOpen(true);
                 }}
               >
                 Edit
@@ -2585,6 +2741,29 @@ function OfferManager({ offers, runAction, busy }) {
           </AccordionCard>
         ))}
       </section>
+
+      <AdminFormModal
+        open={formOpen}
+        title={editingId ? "Edit Offer" : "Add Offer"}
+        onClose={reset}
+        footer={(
+          <>
+            <button className="primary-button" type="button" disabled={busy} onClick={save}>Save Offer</button>
+            <button className="ghost-button" type="button" onClick={reset}>Cancel</button>
+          </>
+        )}
+      >
+        <div className="two-col">
+          <Input label="Title" value={form.title} onChange={(nextTitle) => setForm({ ...form, title: nextTitle })} />
+          <Input label="Code" value={form.code} onChange={(code) => setForm({ ...form, code })} />
+          <Input label="CTA label" value={form.ctaLabel} onChange={(ctaLabel) => setForm({ ...form, ctaLabel })} />
+          <Input label="CTA href" value={form.ctaHref} onChange={(ctaHref) => setForm({ ...form, ctaHref })} />
+          <Input label="Display order" type="number" value={form.displayOrder} onChange={(displayOrder) => setForm({ ...form, displayOrder })} />
+        </div>
+        <Textarea label="Description" value={form.description} onChange={(description) => setForm({ ...form, description })} />
+        <ImageField value={form.imageUrl} onChange={(imageUrl) => setForm({ ...form, imageUrl })} />
+        <Toggle label="Active" checked={form.isActive} onChange={(isActive) => setForm({ ...form, isActive })} />
+      </AdminFormModal>
     </div>
   );
 }
@@ -3037,9 +3216,13 @@ function ProjectPartsManager({ parts, metaCatalog, runAction, busy }) {
     isFeatured: false,
     isTopProduct: false,
     displayOrder: 0,
+    hasVariants: false,
+    variantGroups: [],
+    variantCombinations: [],
   };
   const [form, setForm] = useState(empty);
   const [editingId, setEditingId] = useState("");
+  const [formOpen, setFormOpen] = useState(false);
   const [openId, setOpenId] = useState("");
   const [imageUploading, setImageUploading] = useState(false);
   const batch = useBatchSelection(parts);
@@ -3088,6 +3271,7 @@ function ProjectPartsManager({ parts, metaCatalog, runAction, busy }) {
   const reset = () => {
     setEditingId("");
     setForm(empty);
+    setFormOpen(false);
   };
 
   const edit = (part) => {
@@ -3128,7 +3312,11 @@ function ProjectPartsManager({ parts, metaCatalog, runAction, busy }) {
       isFeatured: Boolean(part.isFeatured),
       isTopProduct: part.isTopProduct === true,
       displayOrder: part.displayOrder || 0,
+      hasVariants: part.hasVariants === true,
+      variantGroups: Array.isArray(part.variantGroups) ? part.variantGroups : [],
+      variantCombinations: Array.isArray(part.variantCombinations) ? part.variantCombinations : [],
     });
+    setFormOpen(true);
   };
 
   const save = () => runAction(async () => {
@@ -3152,6 +3340,9 @@ function ProjectPartsManager({ parts, metaCatalog, runAction, busy }) {
       weight: { value: form.weightValue === "" ? null : Number(form.weightValue), unit: form.weightUnit },
       shipping: { deliveryEstimate: form.shippingDeliveryEstimate, chargeNote: form.shippingChargeNote },
       isTopProduct: form.isTopProduct === true,
+      hasVariants: form.hasVariants === true,
+      variantGroups: form.hasVariants ? form.variantGroups : [],
+      variantCombinations: form.hasVariants ? form.variantCombinations : [],
     };
     await apiFetch(editingId ? `/project-parts/admin/project-parts/${editingId}` : "/project-parts/admin/project-parts", {
       method: editingId ? "PUT" : "POST",
@@ -3175,10 +3366,100 @@ function ProjectPartsManager({ parts, metaCatalog, runAction, busy }) {
   }, "Wiring accessories deleted");
 
   return (
-    <div className="manager-grid">
-      <section className="editor glass-panel">
-        <h2>{editingId ? "Edit Wiring Product" : "Add Wiring Product"}</h2>
-        <p className="muted">Manage wiring accessories shown on the public Wiring Accessories page. Type a new category/brand or pick an existing one.</p>
+    <div className="manager-grid list-only">
+      <section className="list-panel glass-panel wiring-admin-list">
+        <div className="list-panel-toolbar">
+          <h2>Wiring Accessories</h2>
+          <button
+            type="button"
+            className="primary-button icon-text"
+            onClick={() => {
+              setEditingId("");
+              setForm(empty);
+              setFormOpen(true);
+            }}
+            disabled={busy}
+          >
+            <Plus size={16} /> Add Product
+          </button>
+        </div>
+        <MetaCatalogControls metaCatalog={metaCatalog} runAction={runAction} busy={busy} />
+        {!parts.length && <p className="muted">No wiring products added yet.</p>}
+        <BatchToolbar
+          total={parts.length}
+          selectedCount={batch.selectedCount}
+          allSelected={batch.allSelected}
+          isIndeterminate={batch.isIndeterminate}
+          onSelectAll={batch.selectAll}
+          onClear={batch.clearSelection}
+          onDelete={deleteSelected}
+          disabled={busy}
+          noun="wiring accessories"
+        />
+        {groupedParts.map(({ categoryName, brands, count }) => (
+          <div className="wiring-admin-group" key={categoryName}>
+            <div className="wiring-admin-group-head">
+              <h3>{categoryName}</h3>
+              <span>{count} item{count > 1 ? "s" : ""}</span>
+            </div>
+            {brands.map(({ brandName, parts: brandParts }) => (
+              <div className="wiring-admin-brand" key={`${categoryName}-${brandName}`}>
+                <div className="wiring-admin-brand-head">
+                  <h4>{brandName}</h4>
+                  <span>{brandParts.length}</span>
+                </div>
+                {brandParts.map((part) => (
+                  <AccordionCard
+                    key={part._id || part.id}
+                    id={part._id || part.id}
+                    openId={openId}
+                    onToggle={setOpenId}
+                    imageUrl={part.imageUrl}
+                    title={part.name}
+                    meta={`${part.availability || "Available"}${part.isTopProduct ? " · Top" : ""}`}
+                    status={part.isActive ? "Active" : "Hidden"}
+                    selectable
+                    checked={batch.selectedSet.has(part._id || part.id)}
+                    selected={batch.selectedSet.has(part._id || part.id)}
+                    selectLabel={`Select ${part.name || "product"}`}
+                    onSelect={(checked) => batch.toggleOne(part._id || part.id, checked)}
+                    disabled={busy}
+                  >
+                    <Detail label="Category" value={part.category || "Wiring Products"} />
+                    <Detail label="Brand" value={part.subCategory || "Not set"} />
+                    <Detail label="Price" value={formatAdminPriceDetail(part)} />
+                    <Detail label="Quantity" value={part.stock ?? 1} />
+                    <Detail label="Variants" value={part.hasVariants ? `${part.variantGroups?.length || 0} groups · ${part.variantCombinations?.length || 0} combos` : "No"} />
+                    <Detail label="Top Products" value={part.isTopProduct ? "Yes" : "No"} />
+                    <MetaSyncStatus product={part} sourceType="project-part" runAction={runAction} busy={busy} canManage={Boolean(metaCatalog)} />
+                    <p className="muted">{part.shortDescription || part.description || "No description."}</p>
+                    <div className="button-row">
+                      <button type="button" onClick={() => edit(part)}>Edit</button>
+                      <button className="danger" type="button" onClick={() => remove(part)}>Delete</button>
+                    </div>
+                  </AccordionCard>
+                ))}
+              </div>
+            ))}
+          </div>
+        ))}
+      </section>
+
+      <AdminFormModal
+        open={formOpen}
+        title={editingId ? "Edit Wiring Product" : "Add Wiring Product"}
+        subtitle="Manage wiring accessories shown on the public Wiring Accessories page. Type a new category/brand or pick an existing one."
+        onClose={reset}
+        wide
+        footer={(
+          <>
+            <button className="primary-button" type="button" disabled={busy || imageUploading || !form.name} onClick={save}>
+              {imageUploading ? "Uploading image..." : busy ? "Saving..." : editingId ? "Update Product" : "Add Product"}
+            </button>
+            <button className="ghost-button" type="button" onClick={reset}>Cancel</button>
+          </>
+        )}
+      >
         <div className="two-col">
           <Input label="Product Name" value={form.name} onChange={(name) => setForm({ ...form, name })} />
           <Input label="Slug (optional)" value={form.slug} onChange={(slug) => setForm({ ...form, slug })} />
@@ -3281,6 +3562,17 @@ function ProjectPartsManager({ parts, metaCatalog, runAction, busy }) {
           <Input label="SEO title (optional)" value={form.seoTitle} onChange={(seoTitle) => setForm({ ...form, seoTitle })} />
           <Textarea label="SEO description (optional)" rows={3} value={form.seoDescription} onChange={(seoDescription) => setForm({ ...form, seoDescription })} />
         </div>
+        <ProductVariantsManager
+          apiFetch={apiFetch}
+          productName={form.name}
+          value={{ hasVariants: form.hasVariants, variantGroups: form.variantGroups, variantCombinations: form.variantCombinations }}
+          onChange={(next) => setForm((current) => ({
+            ...current,
+            hasVariants: next.hasVariants === true,
+            variantGroups: next.variantGroups || [],
+            variantCombinations: next.variantCombinations || [],
+          }))}
+        />
         <div className="two-col">
           <Toggle label="Active on public page" checked={form.isActive} onChange={(isActive) => setForm({ ...form, isActive })} />
           <Toggle label="Featured item" checked={form.isFeatured} onChange={(isFeatured) => setForm({ ...form, isFeatured })} />
@@ -3290,76 +3582,7 @@ function ProjectPartsManager({ parts, metaCatalog, runAction, busy }) {
           checked={form.isTopProduct}
           onChange={(isTopProduct) => setForm({ ...form, isTopProduct })}
         />
-        <div className="button-row">
-          <button className="primary-button" disabled={busy || imageUploading || !form.name} onClick={save}>
-            {imageUploading ? "Uploading image..." : busy ? "Saving..." : editingId ? "Update Product" : "Add Product"}
-          </button>
-          {editingId && <button className="ghost-button" type="button" onClick={reset}>Cancel</button>}
-        </div>
-      </section>
-
-      <section className="list-panel glass-panel wiring-admin-list">
-        <h2>Wiring Accessories</h2>
-        <MetaCatalogControls metaCatalog={metaCatalog} runAction={runAction} busy={busy} />
-        {!parts.length && <p className="muted">No wiring products added yet.</p>}
-        <BatchToolbar
-          total={parts.length}
-          selectedCount={batch.selectedCount}
-          allSelected={batch.allSelected}
-          isIndeterminate={batch.isIndeterminate}
-          onSelectAll={batch.selectAll}
-          onClear={batch.clearSelection}
-          onDelete={deleteSelected}
-          disabled={busy}
-          noun="wiring accessories"
-        />
-        {groupedParts.map(({ categoryName, brands, count }) => (
-          <div className="wiring-admin-group" key={categoryName}>
-            <div className="wiring-admin-group-head">
-              <h3>{categoryName}</h3>
-              <span>{count} item{count > 1 ? "s" : ""}</span>
-            </div>
-            {brands.map(({ brandName, parts: brandParts }) => (
-              <div className="wiring-admin-brand" key={`${categoryName}-${brandName}`}>
-                <div className="wiring-admin-brand-head">
-                  <h4>{brandName}</h4>
-                  <span>{brandParts.length}</span>
-                </div>
-                {brandParts.map((part) => (
-                  <AccordionCard
-                    key={part._id || part.id}
-                    id={part._id || part.id}
-                    openId={openId}
-                    onToggle={setOpenId}
-                    imageUrl={part.imageUrl}
-                    title={part.name}
-                    meta={`${part.availability || "Available"}${part.isTopProduct ? " · Top" : ""}`}
-                    status={part.isActive ? "Active" : "Hidden"}
-                    selectable
-                    checked={batch.selectedSet.has(part._id || part.id)}
-                    selected={batch.selectedSet.has(part._id || part.id)}
-                    selectLabel={`Select ${part.name || "product"}`}
-                    onSelect={(checked) => batch.toggleOne(part._id || part.id, checked)}
-                    disabled={busy}
-                  >
-                    <Detail label="Category" value={part.category || "Wiring Products"} />
-                    <Detail label="Brand" value={part.subCategory || "Not set"} />
-                    <Detail label="Price" value={formatAdminPriceDetail(part)} />
-                    <Detail label="Quantity" value={part.stock ?? 1} />
-                    <Detail label="Top Products" value={part.isTopProduct ? "Yes" : "No"} />
-                    <MetaSyncStatus product={part} sourceType="project-part" runAction={runAction} busy={busy} canManage={Boolean(metaCatalog)} />
-                    <p className="muted">{part.shortDescription || part.description || "No description."}</p>
-                    <div className="button-row">
-                      <button type="button" onClick={() => edit(part)}>Edit</button>
-                      <button className="danger" type="button" onClick={() => remove(part)}>Delete</button>
-                    </div>
-                  </AccordionCard>
-                ))}
-              </div>
-            ))}
-          </div>
-        ))}
-      </section>
+      </AdminFormModal>
     </div>
   );
 }
@@ -3387,6 +3610,7 @@ function CouponManager({ coupons = [], products = [], runAction, busy }) {
   };
   const [form, setForm] = useState(emptyCoupon);
   const [editingId, setEditingId] = useState("");
+  const [formOpen, setFormOpen] = useState(false);
   const [openId, setOpenId] = useState("");
   const [imageUploading, setImageUploading] = useState(false);
   const batch = useBatchSelection(coupons);
@@ -3403,7 +3627,7 @@ function CouponManager({ coupons = [], products = [], runAction, busy }) {
     return adjusted.toISOString().slice(0, 16);
   };
   const toIsoDate = (value) => value ? new Date(value).toISOString() : null;
-  const reset = () => { setEditingId(""); setForm(emptyCoupon); };
+  const reset = () => { setEditingId(""); setForm(emptyCoupon); setFormOpen(false); };
   const edit = (coupon) => {
     const id = coupon._id || coupon.id;
     setEditingId(id);
@@ -3428,6 +3652,7 @@ function CouponManager({ coupons = [], products = [], runAction, busy }) {
       displayOrder: coupon.displayOrder || 0,
       isActive: coupon.isActive !== false,
     });
+    setFormOpen(true);
   };
   const toggleProduct = (id) => setForm((current) => ({
     ...current,
@@ -3469,14 +3694,55 @@ function CouponManager({ coupons = [], products = [], runAction, busy }) {
   }, "Selected coupons deleted");
 
   return (
-    <div className="manager-grid coupon-admin-manager">
-      <section className="editor glass-panel">
+    <div className="manager-grid list-only coupon-admin-manager">
+      <section className="list-panel glass-panel">
+        <div className="list-panel-toolbar">
+          <h2>Coupons &amp; public offers</h2>
+          <button
+            type="button"
+            className="primary-button icon-text"
+            onClick={() => {
+              setEditingId("");
+              setForm(emptyCoupon);
+              setFormOpen(true);
+            }}
+            disabled={busy}
+          >
+            <Plus size={16} /> Add coupon
+          </button>
+        </div>
+        <p className="muted">{coupons.length} coupon{coupons.length === 1 ? "" : "s"} configured.</p>
+        <BatchToolbar total={coupons.length} selectedCount={batch.selectedCount} allSelected={batch.allSelected} isIndeterminate={batch.isIndeterminate} onSelectAll={batch.selectAll} onClear={batch.clearSelection} onDelete={deleteSelected} disabled={busy} noun="coupons" />
+        {coupons.map((coupon) => {
+          const id = coupon._id || coupon.id;
+          return <AccordionCard key={id} id={id} openId={openId} onToggle={setOpenId} imageUrl={coupon.visibility === "public" ? coupon.bannerImageUrl : ""} title={coupon.title} meta={`${coupon.code} · ${coupon.discountType === "percent" ? `${coupon.discountValue}%` : formatINR(coupon.discountValue)} off`} status={`${coupon.visibility === "public" ? "Public" : "Private"} · ${coupon.isActive ? "Active" : "Inactive"}`} selectable checked={batch.selectedSet.has(id)} selected={batch.selectedSet.has(id)} onSelect={(checked) => batch.toggleOne(id, checked)} disabled={busy}>
+            <Detail label="Scope" value={coupon.appliesToAll ? "All shop products" : `${coupon.productIds?.length || 0} product(s), ${coupon.categories?.length || 0} category(s)`} />
+            <Detail label="Schedule" value={`${coupon.startsAt ? new Date(coupon.startsAt).toLocaleString("en-IN") : "Now"} — ${coupon.endsAt ? new Date(coupon.endsAt).toLocaleString("en-IN") : "No expiry"}`} />
+            <p className="muted">{coupon.description || "No public description."}</p>
+            <div className="button-row"><button type="button" onClick={() => edit(coupon)}>Edit</button><button className="danger" type="button" onClick={() => remove(coupon)}>Delete</button></div>
+          </AccordionCard>;
+        })}
+      </section>
+
+      <AdminFormModal
+        open={formOpen}
+        title={editingId ? "Edit coupon or offer" : "Create coupon or offer"}
+        subtitle="Public coupons appear as offers. Private codes remain hidden until a customer applies one."
+        onClose={reset}
+        wide
+        footer={(
+          <>
+            <button className="primary-button" type="button" disabled={busy || imageUploading || !form.title || !form.code || Number(form.discountValue) <= 0} onClick={save}>{imageUploading ? "Uploading…" : busy ? "Saving…" : editingId ? "Update coupon" : "Create coupon"}</button>
+            <button className="ghost-button" type="button" onClick={reset}>Cancel</button>
+          </>
+        )}
+      >
         <div className="coupon-admin-heading">
           <span><BadgePercent size={25} /></span>
-          <div><h2>{editingId ? "Edit coupon or offer" : "Create coupon or offer"}</h2><p className="muted">Public coupons appear as offers. Private codes remain hidden until a customer applies one.</p></div>
+          <div><p className="muted">Configure discount rules, eligibility, and optional public offer banners.</p></div>
         </div>
         <div className="two-col">
-          <Input label="Offer title" value={form.title} onChange={(title) => setForm({ ...form, title })} placeholder="Festive electronics offer" />
+          <Input label="Offer title" value={form.title} onChange={(nextTitle) => setForm({ ...form, title: nextTitle })} placeholder="Festive electronics offer" />
           <Input label="Coupon code" value={form.code} onChange={(code) => setForm({ ...form, code: code.toUpperCase().replace(/\s+/g, "") })} placeholder="SAVE10" />
         </div>
         <Textarea label="Customer-facing description" value={form.description} onChange={(description) => setForm({ ...form, description })} rows={3} />
@@ -3511,7 +3777,22 @@ function CouponManager({ coupons = [], products = [], runAction, busy }) {
             <div className="coupon-product-picker">
               {products.map((product) => {
                 const id = String(product._id || product.id);
-                return <label key={id}><input type="checkbox" checked={form.productIds.includes(id)} onChange={() => toggleProduct(id)} /><span>{product.imageUrl ? <img src={product.imageUrl} alt="" /> : <BadgePercent size={18} />}<b>{product.name}</b><small>{product.category || "Electronics"}</small></span></label>;
+                return (
+                  <AdminToggle
+                    key={id}
+                    selection
+                    accessibleLabel={product.name}
+                    checked={form.productIds.includes(id)}
+                    onChange={() => toggleProduct(id)}
+                    label={(
+                      <span className="coupon-product-option">
+                        {product.imageUrl ? <img src={product.imageUrl} alt="" /> : <BadgePercent size={18} aria-hidden="true" />}
+                        <b>{product.name}</b>
+                        <small>{product.category || "Electronics"}</small>
+                      </span>
+                    )}
+                  />
+                );
               })}
             </div>
           </div>
@@ -3530,25 +3811,7 @@ function CouponManager({ coupons = [], products = [], runAction, busy }) {
             />
           </div>
         )}
-        <div className="button-row">
-          <button className="primary-button" type="button" disabled={busy || imageUploading || !form.title || !form.code || Number(form.discountValue) <= 0} onClick={save}>{imageUploading ? "Uploading…" : busy ? "Saving…" : editingId ? "Update coupon" : "Create coupon"}</button>
-          {editingId && <button className="ghost-button" type="button" onClick={reset}>Cancel</button>}
-        </div>
-      </section>
-      <section className="list-panel glass-panel">
-        <h2>Coupons &amp; public offers</h2>
-        <p className="muted">{coupons.length} coupon{coupons.length === 1 ? "" : "s"} configured.</p>
-        <BatchToolbar total={coupons.length} selectedCount={batch.selectedCount} allSelected={batch.allSelected} isIndeterminate={batch.isIndeterminate} onSelectAll={batch.selectAll} onClear={batch.clearSelection} onDelete={deleteSelected} disabled={busy} noun="coupons" />
-        {coupons.map((coupon) => {
-          const id = coupon._id || coupon.id;
-          return <AccordionCard key={id} id={id} openId={openId} onToggle={setOpenId} imageUrl={coupon.visibility === "public" ? coupon.bannerImageUrl : ""} title={coupon.title} meta={`${coupon.code} · ${coupon.discountType === "percent" ? `${coupon.discountValue}%` : formatINR(coupon.discountValue)} off`} status={`${coupon.visibility === "public" ? "Public" : "Private"} · ${coupon.isActive ? "Active" : "Inactive"}`} selectable checked={batch.selectedSet.has(id)} selected={batch.selectedSet.has(id)} onSelect={(checked) => batch.toggleOne(id, checked)} disabled={busy}>
-            <Detail label="Scope" value={coupon.appliesToAll ? "All shop products" : `${coupon.productIds?.length || 0} product(s), ${coupon.categories?.length || 0} category(s)`} />
-            <Detail label="Schedule" value={`${coupon.startsAt ? new Date(coupon.startsAt).toLocaleString("en-IN") : "Now"} — ${coupon.endsAt ? new Date(coupon.endsAt).toLocaleString("en-IN") : "No expiry"}`} />
-            <p className="muted">{coupon.description || "No public description."}</p>
-            <div className="button-row"><button type="button" onClick={() => edit(coupon)}>Edit</button><button className="danger" type="button" onClick={() => remove(coupon)}>Delete</button></div>
-          </AccordionCard>;
-        })}
-      </section>
+      </AdminFormModal>
     </div>
   );
 }
@@ -3595,9 +3858,13 @@ function ShopProductsManager({ products, metaCatalog, runAction, busy }) {
     showInHeroSlider: false,
     isTopProduct: false,
     displayOrder: 0,
+    hasVariants: false,
+    variantGroups: [],
+    variantCombinations: [],
   };
   const [form, setForm] = useState(empty);
   const [editingId, setEditingId] = useState("");
+  const [formOpen, setFormOpen] = useState(false);
   const [openId, setOpenId] = useState("");
   const [imageUploading, setImageUploading] = useState(false);
   const batch = useBatchSelection(products);
@@ -3605,6 +3872,7 @@ function ShopProductsManager({ products, metaCatalog, runAction, busy }) {
   const reset = () => {
     setEditingId("");
     setForm(empty);
+    setFormOpen(false);
   };
 
   const edit = (product) => {
@@ -3653,7 +3921,11 @@ function ShopProductsManager({ products, metaCatalog, runAction, busy }) {
       showInHeroSlider: product.showInHeroSlider === true,
       isTopProduct: product.isTopProduct === true,
       displayOrder: product.displayOrder || 0,
+      hasVariants: product.hasVariants === true,
+      variantGroups: Array.isArray(product.variantGroups) ? product.variantGroups : [],
+      variantCombinations: Array.isArray(product.variantCombinations) ? product.variantCombinations : [],
     });
+    setFormOpen(true);
   };
 
   const save = () => runAction(async () => {
@@ -3687,6 +3959,9 @@ function ShopProductsManager({ products, metaCatalog, runAction, busy }) {
         chargeNote: form.shippingChargeNote,
       },
       isTopProduct: form.isTopProduct === true,
+      hasVariants: form.hasVariants === true,
+      variantGroups: form.hasVariants ? form.variantGroups : [],
+      variantCombinations: form.hasVariants ? form.variantCombinations : [],
     };
     await apiFetch(editingId ? `/shop-products/admin/products/${editingId}` : "/shop-products/admin/products", {
       method: editingId ? "PUT" : "POST",
@@ -3710,10 +3985,82 @@ function ShopProductsManager({ products, metaCatalog, runAction, busy }) {
   }, "Shop products deleted");
 
   return (
-    <div className="manager-grid">
-      <section className="editor glass-panel">
-        <h2>{editingId ? "Edit Shop Product" : "Add Shop Product"}</h2>
-        <p className="muted">Manage products shown on the public /products page. Categories are dynamic from this field.</p>
+    <div className="manager-grid list-only">
+      <section className="list-panel glass-panel">
+        <div className="list-panel-toolbar">
+          <h2>Shop Products</h2>
+          <button
+            type="button"
+            className="primary-button icon-text"
+            onClick={() => {
+              setEditingId("");
+              setForm(empty);
+              setFormOpen(true);
+            }}
+            disabled={busy}
+          >
+            <Plus size={16} /> Add Product
+          </button>
+        </div>
+        <MetaCatalogControls metaCatalog={metaCatalog} runAction={runAction} busy={busy} />
+        {!products.length && <p className="muted">No shop products added yet.</p>}
+        <BatchToolbar
+          total={products.length}
+          selectedCount={batch.selectedCount}
+          allSelected={batch.allSelected}
+          isIndeterminate={batch.isIndeterminate}
+          onSelectAll={batch.selectAll}
+          onClear={batch.clearSelection}
+          onDelete={deleteSelected}
+          disabled={busy}
+          noun="shop products"
+        />
+        {products.map((product) => (
+          <AccordionCard
+            key={product._id || product.id}
+            id={product._id || product.id}
+            openId={openId}
+            onToggle={setOpenId}
+            imageUrl={product.imageUrl}
+            title={product.name}
+            meta={`${product.category || "Electronics"} - ${product.availability || "Available"}${product.isTopProduct ? " · Top" : ""}`}
+            status={product.isActive ? "Active" : "Hidden"}
+            selectable
+            checked={batch.selectedSet.has(product._id || product.id)}
+            selected={batch.selectedSet.has(product._id || product.id)}
+            selectLabel={`Select ${product.name || "shop product"}`}
+            onSelect={(checked) => batch.toggleOne(product._id || product.id, checked)}
+            disabled={busy}
+          >
+            <Detail label="Price" value={formatAdminPriceDetail(product)} />
+            <Detail label="Quantity" value={product.quantity ?? 1} />
+            <Detail label="Variants" value={product.hasVariants ? `${product.variantGroups?.length || 0} groups · ${product.variantCombinations?.length || 0} combos` : "No"} />
+            <Detail label="Top Products" value={product.isTopProduct ? "Yes" : "No"} />
+            <MetaSyncStatus product={product} sourceType="shop-product" runAction={runAction} busy={busy} canManage={Boolean(metaCatalog)} />
+            <p className="muted">{product.shortDescription || product.description || "No description."}</p>
+            <div className="button-row">
+              <button type="button" onClick={() => edit(product)}>Edit</button>
+              <button className="danger" type="button" onClick={() => remove(product)}>Delete</button>
+            </div>
+          </AccordionCard>
+        ))}
+      </section>
+
+      <AdminFormModal
+        open={formOpen}
+        title={editingId ? "Edit Shop Product" : "Add Shop Product"}
+        subtitle="Manage products shown on the public /products page. Categories are dynamic from this field."
+        onClose={reset}
+        wide
+        footer={(
+          <>
+            <button className="primary-button" type="button" disabled={busy || imageUploading || !form.name} onClick={save}>
+              {imageUploading ? "Uploading image..." : busy ? "Saving..." : editingId ? "Update Product" : "Add Product"}
+            </button>
+            <button className="ghost-button" type="button" onClick={reset}>Cancel</button>
+          </>
+        )}
+      >
         <div className="two-col">
           <Input label="Product Name" value={form.name} onChange={(name) => setForm({ ...form, name })} />
           <Input label="Slug (optional)" value={form.slug} onChange={(slug) => setForm({ ...form, slug })} />
@@ -3834,6 +4181,21 @@ function ShopProductsManager({ products, metaCatalog, runAction, busy }) {
           <Input label="SEO title (optional)" value={form.seoTitle} onChange={(seoTitle) => setForm({ ...form, seoTitle })} />
           <Textarea label="SEO description (optional)" rows={3} value={form.seoDescription} onChange={(seoDescription) => setForm({ ...form, seoDescription })} />
         </div>
+        <ProductVariantsManager
+          apiFetch={apiFetch}
+          productName={form.name}
+          value={{
+            hasVariants: form.hasVariants,
+            variantGroups: form.variantGroups,
+            variantCombinations: form.variantCombinations,
+          }}
+          onChange={(next) => setForm((current) => ({
+            ...current,
+            hasVariants: next.hasVariants === true,
+            variantGroups: next.variantGroups || [],
+            variantCombinations: next.variantCombinations || [],
+          }))}
+        />
         <div className="two-col">
           <Toggle label="Active on public page" checked={form.isActive} onChange={(isActive) => setForm({ ...form, isActive })} />
           <Toggle label="Show in Hero Slider" checked={form.showInHeroSlider} onChange={(showInHeroSlider) => setForm({ ...form, showInHeroSlider })} />
@@ -3843,58 +4205,7 @@ function ShopProductsManager({ products, metaCatalog, runAction, busy }) {
           checked={form.isTopProduct}
           onChange={(isTopProduct) => setForm({ ...form, isTopProduct })}
         />
-        <div className="button-row">
-          <button className="primary-button" disabled={busy || imageUploading || !form.name} onClick={save}>
-            {imageUploading ? "Uploading image..." : busy ? "Saving..." : editingId ? "Update Product" : "Add Product"}
-          </button>
-          {editingId && <button className="ghost-button" type="button" onClick={reset}>Cancel</button>}
-        </div>
-      </section>
-
-      <section className="list-panel glass-panel">
-        <h2>Shop Products</h2>
-        <MetaCatalogControls metaCatalog={metaCatalog} runAction={runAction} busy={busy} />
-        {!products.length && <p className="muted">No shop products added yet.</p>}
-        <BatchToolbar
-          total={products.length}
-          selectedCount={batch.selectedCount}
-          allSelected={batch.allSelected}
-          isIndeterminate={batch.isIndeterminate}
-          onSelectAll={batch.selectAll}
-          onClear={batch.clearSelection}
-          onDelete={deleteSelected}
-          disabled={busy}
-          noun="shop products"
-        />
-        {products.map((product) => (
-          <AccordionCard
-            key={product._id || product.id}
-            id={product._id || product.id}
-            openId={openId}
-            onToggle={setOpenId}
-            imageUrl={product.imageUrl}
-            title={product.name}
-            meta={`${product.category || "Electronics"} - ${product.availability || "Available"}${product.isTopProduct ? " · Top" : ""}`}
-            status={product.isActive ? "Active" : "Hidden"}
-            selectable
-            checked={batch.selectedSet.has(product._id || product.id)}
-            selected={batch.selectedSet.has(product._id || product.id)}
-            selectLabel={`Select ${product.name || "shop product"}`}
-            onSelect={(checked) => batch.toggleOne(product._id || product.id, checked)}
-            disabled={busy}
-          >
-            <Detail label="Price" value={formatAdminPriceDetail(product)} />
-            <Detail label="Quantity" value={product.quantity ?? 1} />
-            <Detail label="Top Products" value={product.isTopProduct ? "Yes" : "No"} />
-            <MetaSyncStatus product={product} sourceType="shop-product" runAction={runAction} busy={busy} canManage={Boolean(metaCatalog)} />
-            <p className="muted">{product.shortDescription || product.description || "No description."}</p>
-            <div className="button-row">
-              <button type="button" onClick={() => edit(product)}>Edit</button>
-              <button className="danger" type="button" onClick={() => remove(product)}>Delete</button>
-            </div>
-          </AccordionCard>
-        ))}
-      </section>
+      </AdminFormModal>
     </div>
   );
 }
@@ -3974,7 +4285,8 @@ function AutoSliderBannerManager({ banners, products, runAction, busy }) {
   const empty = { imageUrl: "", title: "", alt: "", link: "", displayOrder: 0, isActive: true };
   const [form, setForm] = useState(empty);
   const [editingId, setEditingId] = useState("");
-  const reset = () => { setEditingId(""); setForm(empty); };
+  const [formOpen, setFormOpen] = useState(false);
+  const reset = () => { setEditingId(""); setForm(empty); setFormOpen(false); };
   const save = () => runAction(async () => {
     await apiFetch(editingId ? `/admin/auto-slider-banners/${editingId}` : "/admin/auto-slider-banners", {
       method: editingId ? "PUT" : "POST",
@@ -3996,66 +4308,100 @@ function AutoSliderBannerManager({ banners, products, runAction, busy }) {
       displayOrder: banner.displayOrder || 0,
       isActive: banner.isActive !== false,
     });
+    setFormOpen(true);
   };
   const remove = (banner) => runAction(async () => {
     if (!window.confirm(`Delete ${banner.title || "this banner"}?`)) return false;
     await apiFetch(`/admin/auto-slider-banners/${banner._id || banner.id}`, { method: "DELETE" });
   }, "Hero banner deleted");
 
-  return <div className="manager-grid">
-    <section className="editor glass-panel">
-      <h2>{editingId ? "Edit Hero Banner" : "Add Hero Banner"}</h2>
-      <p className="muted">Custom banners and products marked “Show in Hero Slider” rotate automatically on the home page. Add an optional click link for each custom banner.</p>
-      <ImageField value={form.imageUrl} onChange={(imageUrl) => setForm({ ...form, imageUrl })} />
-      <div className="two-col"><Input label="Banner Title" value={form.title} onChange={(title) => setForm({ ...form, title })} /><Input label="Image alt text" value={form.alt} onChange={(alt) => setForm({ ...form, alt })} /></div>
-      <Input
-        label="Click Link (optional)"
-        value={form.link}
-        onChange={(link) => setForm({ ...form, link })}
-        placeholder="/product/speaker or https://..."
-      />
-      <p className="muted" style={{ marginTop: "-0.35rem" }}>
-        When a visitor taps this banner on the homepage, they go to this link. Product slides from Shop Products auto-use that product’s detail page.
-      </p>
-      <div className="two-col"><Input label="Display Order" type="number" value={form.displayOrder} onChange={(displayOrder) => setForm({ ...form, displayOrder })} /><Toggle label="Enabled in Hero Slider" checked={form.isActive} onChange={(isActive) => setForm({ ...form, isActive })} /></div>
-      <div className="button-row"><button className="primary-button" disabled={busy || !form.imageUrl} onClick={save}>{busy ? "Saving..." : editingId ? "Update Banner" : "Add Banner"}</button>{editingId && <button className="ghost-button" type="button" onClick={reset}>Cancel</button>}</div>
-    </section>
-    <section className="list-panel glass-panel">
-      <h2>AutoSlider Banner</h2>
-      {!banners.length && <p className="muted">No custom banners yet. Product slides can still appear when enabled in Shop Products.</p>}
-      {banners.map((banner) => (
-        <div className="list-item" key={banner._id || banner.id}>
-          <img className="thumb" src={banner.imageUrl} alt={banner.alt || banner.title || "Hero banner"} />
-          <div>
-            <strong>{banner.title || "Untitled banner"}</strong>
-            <span>Order {banner.displayOrder || 0} · {banner.isActive ? "Enabled" : "Disabled"}{banner.link ? ` · Link: ${banner.link}` : ""}</span>
-          </div>
-          <div className="button-row">
-            <button type="button" onClick={() => edit(banner)}>Edit</button>
-            <button className="danger" type="button" onClick={() => remove(banner)}>Delete</button>
-          </div>
+  return (
+    <div className="manager-grid list-only">
+      <section className="list-panel glass-panel">
+        <div className="list-panel-toolbar">
+          <h2>AutoSlider Banner</h2>
+          <button
+            type="button"
+            className="primary-button icon-text"
+            onClick={() => {
+              setEditingId("");
+              setForm(empty);
+              setFormOpen(true);
+            }}
+            disabled={busy}
+          >
+            <Plus size={16} /> Add Banner
+          </button>
         </div>
-      ))}
-      <h3 className="mt-6">Enabled Shop Product Slides</h3>
-      {!products.length && <p className="muted">No products are enabled for the Hero Slider.</p>}
-      {products.map((product) => {
-        const productId = String(product.slug || product._id || product.id || "").trim();
-        const detailLink = productId ? `/product/${encodeURIComponent(productId)}` : "";
-        return (
-          <div className="list-item" key={product._id || product.id}>
-            <img className="thumb" src={product.imageUrl} alt={product.name} />
+        {!banners.length && <p className="muted">No custom banners yet. Product slides can still appear when enabled in Shop Products.</p>}
+        {banners.map((banner) => (
+          <div className="list-item" key={banner._id || banner.id}>
+            <img className="thumb" src={banner.imageUrl} alt={banner.alt || banner.title || "Hero banner"} />
             <div>
-              <strong>{product.name}</strong>
-              <span>
-                {product.isActive ? "Active" : "Hidden on public site"}
-                {detailLink ? ` · Auto link: ${detailLink}` : ""}
-              </span>
+              <strong>{banner.title || "Untitled banner"}</strong>
+              <span>Order {banner.displayOrder || 0} · {banner.isActive ? "Enabled" : "Disabled"}{banner.link ? ` · Link: ${banner.link}` : ""}</span>
+            </div>
+            <div className="button-row">
+              <button type="button" onClick={() => edit(banner)}>Edit</button>
+              <button className="danger" type="button" onClick={() => remove(banner)}>Delete</button>
             </div>
           </div>
-        );
-      })}
-    </section>
-  </div>;
+        ))}
+        <h3 className="mt-6">Enabled Shop Product Slides</h3>
+        {!products.length && <p className="muted">No products are enabled for the Hero Slider.</p>}
+        {products.map((product) => {
+          const productId = String(product.slug || product._id || product.id || "").trim();
+          const detailLink = productId ? `/product/${encodeURIComponent(productId)}` : "";
+          return (
+            <div className="list-item" key={product._id || product.id}>
+              <img className="thumb" src={product.imageUrl} alt={product.name} />
+              <div>
+                <strong>{product.name}</strong>
+                <span>
+                  {product.isActive ? "Active" : "Hidden on public site"}
+                  {detailLink ? ` · Auto link: ${detailLink}` : ""}
+                </span>
+              </div>
+            </div>
+          );
+        })}
+      </section>
+
+      <AdminFormModal
+        open={formOpen}
+        title={editingId ? "Edit Hero Banner" : "Add Hero Banner"}
+        subtitle="Custom banners and products marked “Show in Hero Slider” rotate automatically on the home page."
+        onClose={reset}
+        footer={(
+          <>
+            <button className="primary-button" type="button" disabled={busy || !form.imageUrl} onClick={save}>
+              {busy ? "Saving..." : editingId ? "Update Banner" : "Add Banner"}
+            </button>
+            <button className="ghost-button" type="button" onClick={reset}>Cancel</button>
+          </>
+        )}
+      >
+        <ImageField value={form.imageUrl} onChange={(imageUrl) => setForm({ ...form, imageUrl })} />
+        <div className="two-col">
+          <Input label="Banner Title" value={form.title} onChange={(title) => setForm({ ...form, title })} />
+          <Input label="Image alt text" value={form.alt} onChange={(alt) => setForm({ ...form, alt })} />
+        </div>
+        <Input
+          label="Click Link (optional)"
+          value={form.link}
+          onChange={(link) => setForm({ ...form, link })}
+          placeholder="/product/speaker or https://..."
+        />
+        <p className="muted" style={{ marginTop: "-0.35rem" }}>
+          When a visitor taps this banner on the homepage, they go to this link. Product slides from Shop Products auto-use that product’s detail page.
+        </p>
+        <div className="two-col">
+          <Input label="Display Order" type="number" value={form.displayOrder} onChange={(displayOrder) => setForm({ ...form, displayOrder })} />
+          <Toggle label="Enabled in Hero Slider" checked={form.isActive} onChange={(isActive) => setForm({ ...form, isActive })} />
+        </div>
+      </AdminFormModal>
+    </div>
+  );
 }
 
 function ProjectSlidersManager({ sliders, runAction, busy }) {
@@ -4068,12 +4414,14 @@ function ProjectSlidersManager({ sliders, runAction, busy }) {
   };
   const [form, setForm] = useState(empty);
   const [editingId, setEditingId] = useState("");
+  const [formOpen, setFormOpen] = useState(false);
   const [openId, setOpenId] = useState("");
   const batch = useBatchSelection(sliders);
 
   const reset = () => {
     setEditingId("");
     setForm(empty);
+    setFormOpen(false);
   };
 
   const edit = (slider) => {
@@ -4085,6 +4433,7 @@ function ProjectSlidersManager({ sliders, runAction, busy }) {
       displayOrder: slider.displayOrder || 0,
       isActive: slider.isActive !== false,
     });
+    setFormOpen(true);
   };
 
   const save = () => runAction(async () => {
@@ -4111,37 +4460,23 @@ function ProjectSlidersManager({ sliders, runAction, busy }) {
   }, "Wiring accessories sliders deleted");
 
   return (
-    <div className="manager-grid">
-      <section className="editor glass-panel">
-        <h2>{editingId ? "Edit Slider Image" : "Add Slider Image"}</h2>
-        <p className="muted">These banners render on the public Wiring Accessories page carousel.</p>
-        <ImageField value={form.imageUrl} onChange={(imageUrl) => setForm({ ...form, imageUrl })} />
-        <Input label="Slider Title" value={form.title} onChange={(title) => setForm({ ...form, title })} />
-        <Textarea label="Short Description" value={form.description} onChange={(description) => setForm({ ...form, description })} />
-        <div className="two-col">
-          <Input label="Display Order" type="number" value={form.displayOrder} onChange={(displayOrder) => setForm({ ...form, displayOrder })} />
-          <Toggle label="Active on public page" checked={form.isActive} onChange={(isActive) => setForm({ ...form, isActive })} />
-        </div>
-        <div className="button-row">
-          <button className="primary-button" disabled={busy || !form.title || !form.imageUrl} onClick={save}>
-            {busy ? "Saving..." : editingId ? "Update Slider" : "Add Slider"}
-          </button>
-          {editingId && <button className="ghost-button" type="button" onClick={reset}>Cancel</button>}
-        </div>
-      </section>
-
+    <div className="manager-grid list-only">
       <section className="list-panel glass-panel">
-        <h2>Wiring Accessories Slider</h2>
-        {form.imageUrl && (
-          <div className="accordion-card open">
-            <div className="accordion-body">
-              <p className="muted">Realtime preview</p>
-              <img className="preview wide" src={form.imageUrl} alt={form.title || "Slider preview"} />
-              <h3>{form.title || "Slider title"}</h3>
-              <p>{form.description || "Short description"}</p>
-            </div>
-          </div>
-        )}
+        <div className="list-panel-toolbar">
+          <h2>Wiring Accessories Slider</h2>
+          <button
+            type="button"
+            className="primary-button icon-text"
+            onClick={() => {
+              setEditingId("");
+              setForm(empty);
+              setFormOpen(true);
+            }}
+            disabled={busy}
+          >
+            <Plus size={16} /> Add Slider
+          </button>
+        </div>
         {!sliders.length && <p className="muted">No slider images added yet.</p>}
         <BatchToolbar
           total={sliders.length}
@@ -4179,6 +4514,37 @@ function ProjectSlidersManager({ sliders, runAction, busy }) {
           </AccordionCard>
         ))}
       </section>
+
+      <AdminFormModal
+        open={formOpen}
+        title={editingId ? "Edit Slider Image" : "Add Slider Image"}
+        subtitle="These banners render on the public Wiring Accessories page carousel."
+        onClose={reset}
+        footer={(
+          <>
+            <button className="primary-button" type="button" disabled={busy || !form.title || !form.imageUrl} onClick={save}>
+              {busy ? "Saving..." : editingId ? "Update Slider" : "Add Slider"}
+            </button>
+            <button className="ghost-button" type="button" onClick={reset}>Cancel</button>
+          </>
+        )}
+      >
+        <ImageField value={form.imageUrl} onChange={(imageUrl) => setForm({ ...form, imageUrl })} />
+        {form.imageUrl ? (
+          <div className="accordion-card open">
+            <div className="accordion-body">
+              <p className="muted">Realtime preview</p>
+              <img className="preview wide" src={form.imageUrl} alt={form.title || "Slider preview"} />
+            </div>
+          </div>
+        ) : null}
+        <Input label="Slider Title" value={form.title} onChange={(title) => setForm({ ...form, title })} />
+        <Textarea label="Short Description" value={form.description} onChange={(description) => setForm({ ...form, description })} />
+        <div className="two-col">
+          <Input label="Display Order" type="number" value={form.displayOrder} onChange={(displayOrder) => setForm({ ...form, displayOrder })} />
+          <Toggle label="Active on public page" checked={form.isActive} onChange={(isActive) => setForm({ ...form, isActive })} />
+        </div>
+      </AdminFormModal>
     </div>
   );
 }
@@ -4192,12 +4558,14 @@ function BrandsSliderManager({ brands, runAction, busy }) {
   };
   const [form, setForm] = useState(empty);
   const [editingId, setEditingId] = useState("");
+  const [formOpen, setFormOpen] = useState(false);
   const [openId, setOpenId] = useState("");
   const batch = useBatchSelection(brands);
 
   const reset = () => {
     setEditingId("");
     setForm(empty);
+    setFormOpen(false);
   };
 
   const edit = (brand) => {
@@ -4208,6 +4576,7 @@ function BrandsSliderManager({ brands, runAction, busy }) {
       displayOrder: brand.displayOrder || 0,
       isActive: brand.isActive !== false,
     });
+    setFormOpen(true);
   };
 
   const save = () => runAction(async () => {
@@ -4255,42 +4624,23 @@ function BrandsSliderManager({ brands, runAction, busy }) {
   }, `${(Array.isArray(uploaded) ? uploaded : []).filter((image) => image?.url).length || 0} brand logos uploaded`);
 
   return (
-    <div className="manager-grid">
-      <section className="editor glass-panel">
-        <h2>{editingId ? "Edit Brand Logo" : "Add Brand Logo"}</h2>
-        <p className="muted">These logos scroll in an infinite marquee under the homepage hero banner. No cards — just clean logos.</p>
-        <ImageField value={form.imageUrl} onChange={(imageUrl) => setForm({ ...form, imageUrl })} label="Brand logo" />
-        <ImageField
-          label="Bulk brand upload"
-          value=""
-          onChange={() => undefined}
-          multiple
-          onMultipleUpload={addUploadedImages}
-        />
-        <Input label="Brand name (alt text)" value={form.name} onChange={(name) => setForm({ ...form, name })} />
-        <div className="two-col">
-          <Input label="Display Order" type="number" value={form.displayOrder} onChange={(displayOrder) => setForm({ ...form, displayOrder })} />
-          <Toggle label="Active on homepage" checked={form.isActive} onChange={(isActive) => setForm({ ...form, isActive })} />
-        </div>
-        <div className="button-row">
-          <button className="primary-button" disabled={busy || !form.imageUrl} onClick={save}>
-            {busy ? "Saving..." : editingId ? "Update Brand" : "Add Brand"}
-          </button>
-          {editingId && <button className="ghost-button" type="button" onClick={reset}>Cancel</button>}
-        </div>
-      </section>
-
+    <div className="manager-grid list-only">
       <section className="list-panel glass-panel">
-        <h2>Brands Slider</h2>
-        {form.imageUrl && (
-          <div className="accordion-card open">
-            <div className="accordion-body">
-              <p className="muted">Realtime preview</p>
-              <img className="preview wide" src={form.imageUrl} alt={form.name || "Brand preview"} style={{ objectFit: "contain", maxHeight: 120, background: "rgba(255,255,255,0.06)" }} />
-              <h3>{form.name || "Brand"}</h3>
-            </div>
-          </div>
-        )}
+        <div className="list-panel-toolbar">
+          <h2>Brands Slider</h2>
+          <button
+            type="button"
+            className="primary-button icon-text"
+            onClick={() => {
+              setEditingId("");
+              setForm(empty);
+              setFormOpen(true);
+            }}
+            disabled={busy}
+          >
+            <Plus size={16} /> Add Brand
+          </button>
+        </div>
         {!brands.length && <p className="muted">No brand logos added yet.</p>}
         <BatchToolbar
           total={brands.length}
@@ -4327,6 +4677,43 @@ function BrandsSliderManager({ brands, runAction, busy }) {
           </AccordionCard>
         ))}
       </section>
+
+      <AdminFormModal
+        open={formOpen}
+        title={editingId ? "Edit Brand Logo" : "Add Brand Logo"}
+        subtitle="These logos scroll in an infinite marquee under the homepage hero banner. No cards — just clean logos."
+        onClose={reset}
+        footer={(
+          <>
+            <button className="primary-button" type="button" disabled={busy || !form.imageUrl} onClick={save}>
+              {busy ? "Saving..." : editingId ? "Update Brand" : "Add Brand"}
+            </button>
+            <button className="ghost-button" type="button" onClick={reset}>Cancel</button>
+          </>
+        )}
+      >
+        <ImageField value={form.imageUrl} onChange={(imageUrl) => setForm({ ...form, imageUrl })} label="Brand logo" />
+        {form.imageUrl ? (
+          <div className="accordion-card open">
+            <div className="accordion-body">
+              <p className="muted">Realtime preview</p>
+              <img className="preview wide" src={form.imageUrl} alt={form.name || "Brand preview"} style={{ objectFit: "contain", maxHeight: 120, background: "rgba(255,255,255,0.06)" }} />
+            </div>
+          </div>
+        ) : null}
+        <ImageField
+          label="Bulk brand upload"
+          value=""
+          onChange={() => undefined}
+          multiple
+          onMultipleUpload={addUploadedImages}
+        />
+        <Input label="Brand name (alt text)" value={form.name} onChange={(name) => setForm({ ...form, name })} />
+        <div className="two-col">
+          <Input label="Display Order" type="number" value={form.displayOrder} onChange={(displayOrder) => setForm({ ...form, displayOrder })} />
+          <Toggle label="Active on homepage" checked={form.isActive} onChange={(isActive) => setForm({ ...form, isActive })} />
+        </div>
+      </AdminFormModal>
     </div>
   );
 }
@@ -5435,13 +5822,8 @@ function Textarea({ label, value, onChange, rows = 4 }) {
   );
 }
 
-function Toggle({ label, checked, onChange, disabled = false }) {
-  return (
-    <label className={`toggle-line ${disabled ? "disabled" : ""}`}>
-      <input type="checkbox" checked={Boolean(checked)} disabled={disabled} onChange={(event) => onChange(event.target.checked)} />
-      <span>{label}</span>
-    </label>
-  );
+function Toggle({ className = "", ...props }) {
+  return <AdminToggle className={`toggle-line ${className}`.trim()} {...props} />;
 }
 
 export default App;

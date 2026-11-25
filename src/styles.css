@@ -2226,7 +2226,7 @@ html {
   gap: 0.85rem;
   padding: clamp(1.5rem, 5vw, 3rem);
   border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 24px;
+  border-radius: 32px;
   text-align: center;
   background: rgba(255, 255, 255, 0.06);
   backdrop-filter: blur(18px);
@@ -2405,6 +2405,13 @@ a.cart-item-image:focus-visible {
 }
 
 .cart-item-content span,
+.cart-variant-summary {
+  display: block;
+  margin-top: 0.15rem;
+  color: var(--muted, #64748b);
+  font-weight: 600;
+}
+
 .cart-item-content small {
   color: #67e8f9;
   font-size: 0.76rem;
@@ -6953,13 +6960,6 @@ a.cart-item-image:focus-visible {
   }
 }
 
-.science-ai-page .ai-message.ai .ai-bubble.typing {
-  width: fit-content;
-  max-width: fit-content;
-  min-width: 4.25rem;
-  padding-inline: 0.95rem;
-}
-
 /* Production performance and accessibility refinements */
 .App {
   min-height: 100vh;
@@ -8779,7 +8779,7 @@ body.public-light-theme {
 
 .public-site-theme .shop-filter-panel {
   border: 1px solid #d5e1ed;
-  border-radius: 8px;
+  border-radius: 14px;
   background: #ffffff;
   box-shadow: 0 3px 12px rgba(15, 23, 42, 0.06);
   backdrop-filter: none;
@@ -8789,7 +8789,7 @@ body.public-light-theme {
 .public-site-theme .parts-search {
   color: #64748b;
   border-color: #cddbeb;
-  border-radius: 6px;
+  border-radius: 11px;
   background: #f8fafc;
   box-shadow: none;
   backdrop-filter: none;
@@ -8820,7 +8820,7 @@ body.public-light-theme {
 .public-site-theme .shop-filter-trigger.active {
   color: #ffffff;
   border: 1px solid #2563eb;
-  border-radius: 6px;
+  border-radius: 11px;
   background: #2563eb;
   box-shadow: none;
 }
@@ -9267,7 +9267,7 @@ body.public-light-theme .wiring-filter-hint {
   .public-site-theme .part-card,
   .public-site-theme .shop-product-card,
   .public-site-theme .shop-filter-panel {
-    border-radius: 8px;
+    border-radius: 14px;
     background: #ffffff;
   }
 }
@@ -10704,21 +10704,48 @@ body.pulse-ai-route-active .science-ai-chat {
   margin-top: 2rem;
 }
 
-.internal-page-hero-points {
+.internal-page-hero-points,
+.internal-page-hero-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 0;
+  gap: 0.55rem;
   margin: 1.4rem 0 0;
   padding: 0;
-  color: #1e3a8a;
-  font-size: 0.78rem;
-  font-weight: 750;
   list-style: none;
+}
+
+.internal-page-hero-chips li {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2rem;
+  padding: 0.4rem 0.85rem;
+  border: 1px solid #d7e2ef;
+  border-radius: 999px;
+  color: #334155;
+  background: #ffffff;
+  font-size: 0.76rem;
+  font-weight: 650;
+  line-height: 1.2;
+  transition: border-color 0.18s ease, background-color 0.18s ease;
+}
+
+
+@media (hover: hover) and (pointer: fine) {
+  .internal-page-hero-chips li:hover {
+    border-color: rgba(37, 99, 235, 0.32);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.95),
+      0 10px 22px rgba(37, 99, 235, 0.1);
+    transform: translateY(-1px);
+  }
 }
 
 .internal-page-hero-points li {
   padding: 0 0.85rem;
   border-left: 1px solid #bfdbfe;
+  color: #1e3a8a;
+  font-size: 0.78rem;
+  font-weight: 750;
 }
 
 .internal-page-hero-points li:first-child {
@@ -10791,7 +10818,7 @@ body.pulse-ai-route-active .science-ai-chat {
   aspect-ratio: 4 / 3;
   overflow: hidden;
   border: 1px solid #cbd8e6;
-  border-radius: 8px;
+  border-radius: 28px;
   background: #eaf2fb;
   box-shadow: 0 18px 38px rgba(15, 23, 42, 0.13);
 }
@@ -11535,12 +11562,17 @@ body.pulse-ai-route-active .science-ai-chat {
     width: 100%;
   }
 
-  .internal-page-hero-points {
-    gap: 0.45rem 0;
+  .internal-page-hero-points,
+  .internal-page-hero-chips {
+    gap: 0.45rem;
   }
 
   .internal-page-hero-points li {
     padding-inline: 0.6rem;
+  }
+
+  .internal-page-hero-chips li {
+    font-size: 0.72rem;
   }
 }
 
@@ -11928,39 +11960,45 @@ body.pulse-ai-route-active .science-ai-chat {
   .product-breadcrumbs { margin-inline: .35rem; }
 }
 
-/* Pulse AI theme-consistent response surfaces and safe inline links. */
-.science-ai-page .ai-bubble-pro {
-  position: relative;
-  width: auto;
-  max-width: min(620px, calc(100% - 42px));
-  margin: 8px 0;
-  padding: 1.15rem 1.3rem;
-  border: 1px solid var(--ai-line);
-  color: var(--ai-text);
-  background: var(--ai-surface);
-  box-shadow: 0 14px 36px rgba(2, 6, 23, 0.18);
-  backdrop-filter: blur(16px) saturate(145%);
-  -webkit-backdrop-filter: blur(16px) saturate(145%);
-  transition: background-color 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+/* Pulse AI messages and inline links. */
+.science-ai-page .ai-message.ai {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: start;
+  margin-block: 1.3rem 1.8rem;
 }
 
-.science-ai-page .ai-bubble-ai {
-  border-radius: 20px 20px 20px 4px;
+.science-ai-page .ai-message.ai .ai-avatar {
+  width: 26px;
+  height: 26px;
+  border: 0;
+  background: transparent;
+  color: var(--ai-muted);
+}
+
+.science-ai-page .ai-reply {
+  width: 100%;
+  min-width: 0;
+  color: var(--ai-text);
+}
+
+.science-ai-page .ai-reply.typing {
+  min-height: 1.5rem;
 }
 
 .science-ai-page .ai-bubble-user {
-  margin-left: auto;
-  border-color: rgba(96, 165, 250, 0.3);
+  position: relative;
+  width: auto;
+  max-width: min(620px, calc(100% - 42px));
+  margin: 8px 0 8px auto;
+  padding: 1.15rem 1.3rem;
+  border: 1px solid rgba(96, 165, 250, 0.3);
   border-radius: 20px 20px 4px 20px;
   color: #f8fafc;
   background: linear-gradient(135deg, rgba(15, 159, 143, 0.96), rgba(37, 99, 235, 0.92));
   box-shadow: 0 14px 34px rgba(37, 99, 235, 0.18);
-}
-
-.science-ai-page.light .ai-bubble-ai {
-  border-color: rgba(51, 65, 85, 0.13);
-  background: linear-gradient(135deg, rgba(255, 251, 235, 0.94), rgba(255, 255, 255, 0.94));
-  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.09);
+  backdrop-filter: blur(16px) saturate(145%);
+  -webkit-backdrop-filter: blur(16px) saturate(145%);
 }
 
 .science-ai-page.light .ai-bubble-user {
@@ -11968,10 +12006,6 @@ body.pulse-ai-route-active .science-ai-chat {
   color: #18314f;
   background: linear-gradient(135deg, #ebf4ff 55%, #dbeafe 100%);
   box-shadow: 0 10px 28px rgba(96, 165, 250, 0.14);
-}
-
-.science-ai-page .ai-bubble-error {
-  border-color: rgba(248, 113, 113, 0.58);
 }
 
 .science-ai-page .ai-message-body {
@@ -12125,7 +12159,7 @@ body.pulse-ai-route-active .science-ai-chat {
 }
 
 @media (max-width: 560px) {
-  .science-ai-page .ai-bubble-pro {
+  .science-ai-page .ai-bubble-user {
     max-width: calc(100% - 38px);
     padding: 1rem;
   }

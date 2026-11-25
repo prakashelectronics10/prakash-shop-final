@@ -113,7 +113,23 @@ export function createCartProduct(product = {}, overrides = {}) {
   const originalCategory = safeString(overrides.originalCategory || product.originalCategory || (projectPart ? rawCategory : ""));
   const category = projectPart ? SCIENCE_PROJECTS_CATEGORY : safeString(rawCategory, "Electronics");
   const name = safeString(overrides.productName || overrides.name || product.productName || product.name, "Product");
-  const cartId = `${sourceType}:${sourceId || name.toLowerCase().replace(/\s+/g, "-")}`;
+  const variantCombinationId = safeString(
+    overrides.variantCombinationId || product.variantCombinationId || "",
+  );
+  const variantOptionIds = Array.isArray(overrides.variantOptionIds)
+    ? overrides.variantOptionIds.map((id) => String(id || "").trim()).filter(Boolean)
+    : Array.isArray(product.variantOptionIds)
+      ? product.variantOptionIds.map((id) => String(id || "").trim()).filter(Boolean)
+      : [];
+  const variantSummary = safeString(overrides.variantSummary || product.variantSummary);
+  const variantSelections = Array.isArray(overrides.variantSelections)
+    ? overrides.variantSelections
+    : Array.isArray(product.variantSelections)
+      ? product.variantSelections
+      : [];
+  const variantSku = safeString(overrides.variantSku || product.variantSku);
+  const cartIdBase = `${sourceType}:${sourceId || name.toLowerCase().replace(/\s+/g, "-")}`;
+  const cartId = variantCombinationId ? `${cartIdBase}:${variantCombinationId}` : cartIdBase;
   const availability = safeString(overrides.availability || product.availability, "Available");
   const rawStockQuantity =
     overrides.stockQuantity ??
@@ -149,6 +165,11 @@ export function createCartProduct(product = {}, overrides = {}) {
     availableQuantity: stockQuantity,
     price: safeNumber(overrides.price ?? product.price),
     quantity: clampQuantity(rawCartQuantity, stockQuantity || 1),
+    variantCombinationId,
+    variantOptionIds,
+    variantSummary,
+    variantSelections,
+    variantSku,
     addedAt: overrides.addedAt || product.addedAt || new Date().toISOString(),
   };
 }
@@ -176,6 +197,11 @@ export function cartItemToBookingProduct(item) {
     stockQuantity: normalized.stockQuantity,
     sourceType: normalized.sourceType,
     sourceId: normalized.sourceId,
+    variantCombinationId: normalized.variantCombinationId,
+    variantOptionIds: normalized.variantOptionIds,
+    variantSummary: normalized.variantSummary,
+    variantSelections: normalized.variantSelections,
+    variantSku: normalized.variantSku,
   };
 }
 

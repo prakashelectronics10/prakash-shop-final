@@ -15,9 +15,10 @@ function itemLines(order = {}) {
   if (!items.length) return ["No items"];
   return items.map((item, index) => {
     const qty = Number(item.quantity || 1);
+    const variant = item.variantSummary ? ` (${item.variantSummary})` : "";
     const name = item.productName || "Product";
     const line = formatINR(item.discountedLineTotal ?? item.lineTotal);
-    return `${index + 1}. ${name} x${qty} — ${line}`;
+    return `${index + 1}. ${name}${variant} x${qty} — ${line}`;
   });
 }
 
@@ -27,7 +28,8 @@ function itemsHtml(order = {}) {
   return items
     .map((item, index) => {
       const qty = Number(item.quantity || 1);
-      const name = `${item.productName || "Product"} × ${qty}`;
+      const variant = item.variantSummary ? ` · ${item.variantSummary}` : "";
+      const name = `${item.productName || "Product"}${variant} × ${qty}`;
       const line = formatINR(item.discountedLineTotal ?? item.lineTotal);
       return row(`Item ${index + 1}`, `${name} — ${line}`);
     })
@@ -49,12 +51,13 @@ function renderOrderAdminEmail(order = {}) {
   const orderId = order.orderId || "Unknown";
   const total = formatINR(order.total);
   const paidAt = formatDateTime(order.paidAt || order.createdAt);
+  const isCod = order.paymentMethod === "cod";
   const itemCount = Number(order.itemCount || order.items?.length || 0);
 
   return {
     subject: `New product order ${orderId} — ${total}`,
     text: [
-      "New paid product order from the website",
+      isCod ? "New cash on delivery order from WhatsApp" : "New paid product order",
       `Order ID: ${orderId}`,
       `Customer: ${customerName}`,
       `Phone: ${customer.phone || "Not provided"}`,
@@ -65,15 +68,15 @@ function renderOrderAdminEmail(order = {}) {
       `Items (${itemCount}):`,
       ...itemLines(order),
       order.discountTotal > 0 ? `Discount: ${formatINR(order.discountTotal)}` : "",
-      `Total paid: ${total}`,
-      `Paid at: ${paidAt}`,
+      `Total ${isCod ? "due on delivery" : "paid"}: ${total}`,
+      `Placed at: ${paidAt}`,
       `Payment ID: ${order.razorpayPaymentId || "N/A"}`,
     ].filter(Boolean).join("\n"),
     html: renderEmailLayout({
       title: "New Product Order",
-      preheader: `Paid order ${orderId} from ${customerName} — ${total}`,
+      preheader: `Confirmed order ${orderId} from ${customerName} — ${total}`,
       body: `
-        <p style="margin:0 0 16px;color:#334155;font-size:15px;line-height:1.7;">A customer completed payment for a product order on the website.</p>
+        <p style="margin:0 0 16px;color:#334155;font-size:15px;line-height:1.7;">${isCod ? "A cash on delivery order was confirmed. Payment is due on delivery." : "A customer completed payment for a product order."}</p>
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
           ${row("Order ID", orderId)}
           ${row("Customer Name", customerName)}
@@ -84,8 +87,8 @@ function renderOrderAdminEmail(order = {}) {
           ${row("Message", customer.message || "No message")}
           ${itemsHtml(order)}
           ${Number(order.discountTotal || 0) > 0 ? row("Discount", formatINR(order.discountTotal)) : ""}
-          ${row("Total Paid", total)}
-          ${row("Paid At", paidAt)}
+          ${row(isCod ? "Due on Delivery" : "Total Paid", total)}
+          ${row("Placed At", paidAt)}
           ${row("Payment ID", order.razorpayPaymentId || "N/A")}
           ${row("Status", order.orderStatus || "confirmed")}
         </table>

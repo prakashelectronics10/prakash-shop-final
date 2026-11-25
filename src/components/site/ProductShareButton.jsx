@@ -2,9 +2,10 @@ import { useEffect, useState } from "react";
 import { Check, Share2 } from "lucide-react";
 import { getProductShareText, getProductShareUrl } from "../../utils/productShare";
 
-export function ProductShareButton({ product, className = "", compact = false }) {
+export function ProductShareButton({ product, className = "", compact = false, shareOverrides = null }) {
   const [status, setStatus] = useState("");
-  const productName = product?.name || "product";
+  const productForShare = shareOverrides ? { ...product, ...shareOverrides } : product;
+  const productName = productForShare?.name || product?.name || "product";
 
   useEffect(() => {
     if (!status) return undefined;
@@ -16,15 +17,15 @@ export function ProductShareButton({ product, className = "", compact = false })
     event.preventDefault();
     event.stopPropagation();
 
-    if (!product) {
+    if (!productForShare) {
       setStatus("Unable to share this product.");
       return;
     }
 
-    const url = getProductShareUrl(product);
+    const url = getProductShareUrl(productForShare);
     const shareData = {
-      title: product.name || "Prakash Electronics product",
-      text: getProductShareText(product),
+      title: productForShare.name || "Prakash Electronics product",
+      text: getProductShareText(productForShare),
       url,
     };
 

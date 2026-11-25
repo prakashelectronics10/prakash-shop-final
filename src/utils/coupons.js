@@ -3,7 +3,8 @@ const PRODUCT_COUPONS_KEY = "prakash:product-coupons:v2";
 export const COUPON_CHANGED_EVENT = "prakash:coupon-changed";
 
 function productKey(product) {
-  return String(product?.sourceId || product?.productId || product?._id || product?.id || product?.slug || "");
+  const id = String(product?.sourceId || product?.productId || product?._id || product?.id || product?.slug || "");
+  return product?.variantCombinationId ? `${id}:${product.variantCombinationId}` : id;
 }
 
 export function getAppliedCouponCode(product, legacyFallback = true) {
@@ -12,6 +13,10 @@ export function getAppliedCouponCode(product, legacyFallback = true) {
     if (product) {
       const codes = JSON.parse(window.sessionStorage.getItem(PRODUCT_COUPONS_KEY) || "{}");
       if (Object.prototype.hasOwnProperty.call(codes, productKey(product))) return String(codes[productKey(product)] || "");
+      if (product.variantCombinationId) {
+        const legacyKey = productKey({ ...product, variantCombinationId: "" });
+        if (Object.prototype.hasOwnProperty.call(codes, legacyKey)) return String(codes[legacyKey] || "");
+      }
     }
     if (!legacyFallback) return undefined;
     return String(window.sessionStorage.getItem(COUPON_STORAGE_KEY) || "").trim().toUpperCase();
@@ -47,6 +52,8 @@ export function couponOrderItems(items) {
     productSlug: item.productSlug,
     quantity: item.quantity,
     couponCode: getAppliedCouponCode(item, false),
+    variantCombinationId: item.variantCombinationId || "",
+    variantOptionIds: Array.isArray(item.variantOptionIds) ? item.variantOptionIds : [],
   }));
 }
 

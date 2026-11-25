@@ -281,18 +281,6 @@
   cursor: pointer;
 }
 
-.wa-toggle-row input {
-  width: 18px;
-  height: 18px;
-  accent-color: #14b8a6;
-  margin-top: 2px;
-}
-
-.wa-toggle-row span {
-  display: grid;
-  gap: 3px;
-}
-
 .wa-toggle-row small {
   color: var(--muted);
 }

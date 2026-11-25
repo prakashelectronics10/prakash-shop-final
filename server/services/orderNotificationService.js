@@ -13,7 +13,7 @@ async function claimOrderNotification(orderId) {
   return Order.findOneAndUpdate(
     {
       _id: orderId,
-      paymentStatus: "paid",
+      paymentStatus: { $in: ["paid", "cod"] },
       $or: [{ notifiedAt: null }, { notifiedAt: { $exists: false } }],
     },
     { $set: { notifiedAt: new Date() } },
@@ -78,7 +78,7 @@ async function notifyOrderPaid(orderOrId) {
   }
 
   try {
-    await sendPaymentReceivedWhatsApp({ order });
+    if (order.paymentStatus === "paid") await sendPaymentReceivedWhatsApp({ order });
   } catch (error) {
     logger.error("Order WhatsApp payment_received failed", {
       orderId: order.orderId,

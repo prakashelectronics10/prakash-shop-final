@@ -6,7 +6,12 @@ const { normalizeStockQuantity } = require("../utils/inventory");
 const { applyPricingFields } = require("../utils/productPricing");
 const { collectPublicIdsFromSources, deleteImagesStrict } = require("../services/cloudinaryService");
 const { enqueueProductDelete, enqueueProductSync } = require("../services/metaCatalogService");
+const { searchCatalog } = require("../services/catalogSearch");
 const { logger } = require("../utils/logger");
+const {
+  collectVariantImagePublicIds,
+  sanitizeProductVariants,
+} = require("../utils/productVariants");
 
 function positiveInt(value, fallback) {
   const parsed = Number.parseInt(value, 10);
@@ -70,10 +75,11 @@ exports.getProjectParts = catchAsync(async (req, res) => {
     query.subCategory = subCategory;
   }
 
+  const exactFilter = {};
   if (search) {
     const cleanedSearch = String(search).trim().replace(/^#+/, "");
     const searchRegex = { $regex: escapeRegex(cleanedSearch), $options: "i" };
-    query.$or = [
+    exactFilter.$or = [
       { name: searchRegex },
       { shortDescription: searchRegex },
       { description: searchRegex },
@@ -83,30 +89,38 @@ exports.getProjectParts = catchAsync(async (req, res) => {
     ];
   }
 
-  const [parts, total, priceStats] = await Promise.all([
-    ProjectPart.find(query)
-      .select("name slug shortDescription category subCategory mrp discountPercent price stock availability imageUrl tags isActive isFeatured isTopProduct displayOrder viewCount createdAt")
-      .sort({ [sortField]: 1, displayOrder: 1, name: 1, _id: 1 })
-      .skip((page - 1) * limit)
-      .limit(limit)
-      .maxTimeMS(5000)
-      .lean(),
-    ProjectPart.countDocuments(query).maxTimeMS(5000),
-    ProjectPart.aggregate([
-      { $match: query },
-      { $group: { _id: null, maxPrice: { $max: "$price" } } },
-    ]).option({ maxTimeMS: 5000 }),
-  ]);
+  const { items, total, maxPrice, searchMode, canAnalyze } = await searchCatalog(req.query, async (searchFilter = exactFilter) => {
+    const filter = { ...query, ...searchFilter };
+    const [items, total, priceStats] = await Promise.all([
+      ProjectPart.find(filter)
+        .select("name slug shortDescription category subCategory mrp discountPercent price stock availability imageUrl tags hasVariants isActive isFeatured isTopProduct displayOrder viewCount createdAt")
+        .sort({ [sortField]: 1, displayOrder: 1, name: 1, _id: 1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .maxTimeMS(5000)
+        .lean(),
+      ProjectPart.countDocuments(filter).maxTimeMS(5000),
+      ProjectPart.aggregate([
+        { $match: filter },
+        { $group: { _id: null, maxPrice: { $max: "$price" } } },
+      ]).option({ maxTimeMS: 5000 }),
+    ]);
+    return { items, total, maxPrice: priceStats[0]?.maxPrice || 0 };
+  });
 
-  res.set("Cache-Control", "public, max-age=120, stale-while-revalidate=600");
+  res.set("Cache-Control", req.query.smartSearch === "analyze" && !total
+    ? "no-store"
+    : "public, max-age=120, stale-while-revalidate=600");
   res.json({
     success: true,
     data: {
-      items: parts,
+      items,
       total,
       page,
       pages: Math.ceil(total / limit),
-      maxPrice: priceStats[0]?.maxPrice || 0,
+      maxPrice,
+      searchMode,
+      canAnalyze,
     },
   });
 });
@@ -198,6 +212,7 @@ exports.createProjectPart = catchAsync(async (req, res) => {
     throw new AppError("GTIN must contain 8, 12, 13, or 14 digits", 400);
   }
   const pricing = applyPricingFields(req.body);
+  const variants = sanitizeProductVariants(req.body);
 
   const part = await ProjectPart.create({
     name,
@@ -207,6 +222,7 @@ exports.createProjectPart = catchAsync(async (req, res) => {
     category: category || "Wiring Products",
     subCategory: String(subCategory || "").trim(),
     ...pricing,
+    ...variants,
     stock: normalizeStockQuantity(stock, 1),
     availability: normalizeAvailability(availability),
     imageUrl: imageUrl || "",
@@ -255,11 +271,21 @@ exports.updateProjectPart = catchAsync(async (req, res) => {
   if (gtin && !/^(?:\d{8}|\d{12}|\d{13}|\d{14})$/.test(gtin)) {
     throw new AppError("GTIN must contain 8, 12, 13, or 14 digits", 400);
   }
+  const variants = Object.prototype.hasOwnProperty.call(req.body, "hasVariants")
+    || Object.prototype.hasOwnProperty.call(req.body, "variantGroups")
+    || Object.prototype.hasOwnProperty.call(req.body, "variantCombinations")
+    ? sanitizeProductVariants(req.body)
+    : {
+      hasVariants: existing.hasVariants === true,
+      variantGroups: existing.variantGroups || [],
+      variantCombinations: existing.variantCombinations || [],
+    };
   const updateData = {
     ...req.body,
     gtin,
     sku: String(existing.sku || req.body.sku || `PE-WA-${String(existing._id).slice(-8)}`).trim().toUpperCase(),
     ...pricing,
+    ...variants,
     stock: normalizeStockQuantity(req.body.stock ?? req.body.quantity, 1),
   };
   if (Object.prototype.hasOwnProperty.call(req.body, "availability")) {
@@ -280,8 +306,14 @@ exports.updateProjectPart = catchAsync(async (req, res) => {
   if (!part) {
     throw new AppError("Project part not found", 404);
   }
-  const nextIds = new Set(collectPublicIdsFromSources(part.imagePublicId, part.imageUrl, part.images));
-  await deleteCloudinaryImages(collectPublicIdsFromSources(existing.imagePublicId, existing.imageUrl, existing.images).filter((imageId) => !nextIds.has(imageId)));
+  const nextIds = new Set([
+    ...collectPublicIdsFromSources(part.imagePublicId, part.imageUrl, part.images),
+    ...collectVariantImagePublicIds(part),
+  ]);
+  await deleteCloudinaryImages([
+    ...collectPublicIdsFromSources(existing.imagePublicId, existing.imageUrl, existing.images),
+    ...collectVariantImagePublicIds(existing),
+  ].filter((imageId) => !nextIds.has(imageId)));
   await normalizeDisplayOrders(part);
   await enqueueProductSync("project-part", part).catch((error) => {
     logger.error("meta_catalog.enqueue_failed", { sourceType: "project-part", productId: part.id, error: error.message });
@@ -305,7 +337,10 @@ exports.deleteProjectPart = catchAsync(async (req, res) => {
 
   await enqueueProductDelete("project-part", part);
   await part.deleteOne();
-  await deleteCloudinaryImages(collectPublicIdsFromSources(part.imagePublicId, part.imageUrl, part.images));
+  await deleteCloudinaryImages([
+    ...collectPublicIdsFromSources(part.imagePublicId, part.imageUrl, part.images),
+    ...collectVariantImagePublicIds(part),
+  ]);
 
   res.json({
     success: true,

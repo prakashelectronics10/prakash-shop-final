@@ -9,7 +9,6 @@ import { OptimizedImage } from "./OptimizedImage";
 import { clearAppliedCouponCode } from "../../utils/coupons";
 import { useOrderQuote } from "../../hooks/useOrderQuote";
 import { formatINR } from "../../utils/productPricing";
-import { WhatsAppOtpModal } from "./WhatsAppOtpModal";
 import "./OrderExperience.css";
 
 const REQUIRED_FIELD_ORDER = ["name", "phone", "whatsappNumber", "address", "pincode"];
@@ -77,7 +76,6 @@ export function CheckoutPage() {
   const [form, setForm] = useState({ name: "", phone: "", whatsappNumber: "", address: "", pincode: "", landmark: "", message: "" });
   const [fieldErrors, setFieldErrors] = useState({});
   const [busy, setBusy] = useState(false);
-  const [otpOpen, setOtpOpen] = useState(false);
   const [confirmedOrder, setConfirmedOrder] = useState(null);
   const fieldRefs = {
     name: useRef(null),
@@ -153,12 +151,7 @@ export function CheckoutPage() {
 
   const beginPayment = async (event) => {
     event.preventDefault();
-    if (!items.length || chargesLoading || chargesError || !quote || !validate()) return;
-    setOtpOpen(true);
-  };
-
-  const openRazorpayAfterOtp = async ({ challengeId, verifiedToken }) => {
-    setOtpOpen(false);
+    if (!items.length || chargesLoading || chargesError || !quote || !validate() || busy) return;
     setBusy(true);
     try {
       await loadRazorpayCheckout();
@@ -167,8 +160,6 @@ export function CheckoutPage() {
         cache: "no-store",
         body: JSON.stringify({
           customer: form,
-          whatsappOtpChallengeId: challengeId,
-          whatsappOtpToken: verifiedToken,
           ...payload,
         }),
       });
@@ -247,14 +238,6 @@ export function CheckoutPage() {
   return (
     <div className="App order-page">
       <Navbar />
-      <WhatsAppOtpModal
-        open={otpOpen}
-        purpose="checkout"
-        whatsappNumber={form.whatsappNumber}
-        customerName={form.name}
-        onClose={() => !busy && setOtpOpen(false)}
-        onVerified={openRazorpayAfterOtp}
-      />
       <main className="checkout-page-shell">
         <header className="checkout-heading">
           <div className="checkout-heading-pills">
@@ -262,7 +245,7 @@ export function CheckoutPage() {
             <p className="order-kicker"><LockKeyhole size={15} /> Secure checkout</p>
           </div>
           <h1>Delivery & payment</h1>
-          <p>Complete your delivery details, verify WhatsApp, then pay securely with Razorpay.</p>
+          <p>Complete your delivery details, then pay securely with Razorpay.</p>
         </header>
 
         <form className="checkout-layout" onSubmit={beginPayment} noValidate>
@@ -292,7 +275,7 @@ export function CheckoutPage() {
                   autoComplete="tel"
                   value={form.whatsappNumber}
                   onChange={(e) => update("whatsappNumber", e.target.value)}
-                  placeholder="OTP issi number par jayega"
+                  placeholder="10-digit WhatsApp number"
                   aria-invalid={Boolean(fieldErrors.whatsappNumber)}
                 />
                 {fieldErrors.whatsappNumber && <small>{fieldErrors.whatsappNumber}</small>}
@@ -330,6 +313,7 @@ export function CheckoutPage() {
                   <div>{item.productImageUrl ? <OptimizedImage src={item.productImageUrl} alt={item.productName} width={64} height={64} /> : <PackageCheck size={24} />}</div>
                   <span>
                     <strong>{item.productName}</strong>
+                    {item.variantSummary ? <small>{item.variantSummary}</small> : null}
                     <small className="checkout-item-unit-price">
                       {itemQuoteReady ? <>
                         {hasDiscount && <del>{formatINR(quoteItem.unitPrice)}</del>}
@@ -365,8 +349,8 @@ export function CheckoutPage() {
                 <button type="button" onClick={loadAdditionalCharges}>Retry</button>
               </div>
             )}
-            <button className="checkout-pay-button" type="submit" disabled={busy || otpOpen || chargesLoading || Boolean(chargesError) || !currentQuote}>
-              {otpOpen ? "Verify WhatsApp…" : paymentLabel}
+            <button className="checkout-pay-button" type="submit" disabled={busy || chargesLoading || Boolean(chargesError) || !currentQuote}>
+              {paymentLabel}
             </button>
             <small className="checkout-final-sale-note">Please confirm the product, quantity, price, and delivery details before paying. Once placed, the order is final—no cancellation, return, or refund, except where required by law. <a href="/return-refund-policy">View policy</a></small>
             <small className="checkout-secure-note"><ShieldCheck size={15} /> Secured by Razorpay. UPI, cards, netbanking and supported payment methods are available in the payment window.</small>

@@ -9,7 +9,7 @@ import { setAppliedCouponCode } from "../../utils/coupons";
 import { useOrderQuote } from "../../hooks/useOrderQuote";
 import { formatINR } from "../../utils/productPricing";
 import { getProductSharePath } from "../../utils/productShare";
-import cartEmptyImage from "../../assets/cartimage.png";
+import cartEmptyImage from "../../assets/cartimage.webp";
 
 function QuoteValue({ value, loading, label }) {
   if (value !== undefined && value !== null) return formatINR(value);
@@ -60,9 +60,9 @@ export function CartPage() {
                 className="cart-empty-image"
                 src={cartEmptyImage}
                 alt=""
-                width={1040}
-                height={800}
-                sizes="(max-width: 720px) 88vw, 520px"
+                width={640}
+                height={492}
+                sizes="(max-width: 720px) 88vw, 420px"
                 decoding="async"
                 fetchPriority="high"
               />
@@ -88,6 +88,7 @@ export function CartPage() {
                   slug: item.productSlug,
                   _id: item.productId,
                   sourceId: item.sourceId,
+                  variantCombinationId: item.variantCombinationId,
                 });
                 const hasDetailLink = Boolean(item.productSlug || item.productId || item.sourceId);
                 const imageContent = item.productImageUrl ? (
@@ -119,6 +120,7 @@ export function CartPage() {
                   <div className="cart-item-content">
                     <span>{item.productCategory}</span>
                     <h2>{item.productName}</h2>
+                    {item.variantSummary ? <small className="cart-variant-summary">{item.variantSummary}</small> : null}
                     {item.originalCategory && <small>Original category: {item.originalCategory}</small>}
                     <p>{item.productDescription || "Available at Prakash Electronics."}</p>
                     <div className="cart-item-price">

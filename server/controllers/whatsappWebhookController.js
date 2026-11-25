@@ -131,6 +131,8 @@ exports.handleWhatsAppWebhook = catchAsync(async (req, res) => {
         type: event.isWelcomeRequest ? "text" : inboundType,
         text: event.isWelcomeRequest ? "[Chat opened]" : (event.text || ""),
         waMessageId: event.messageId,
+        mediaMimeType: event.mediaMimeType || "",
+        mediaFilename: event.mediaFilename || "",
         meta: {
           isWelcomeRequest: Boolean(event.isWelcomeRequest),
           rawType: event.type,
@@ -228,16 +230,18 @@ exports.handleWhatsAppWebhook = catchAsync(async (req, res) => {
 
       // Welcome-only open: greeting is enough. Real questions → AI.
       if (event.isWelcomeRequest) continue;
-      if (!event.text && !event.buttonReplyId) continue;
+      if (!event.text && !event.buttonReplyId && !(["image", "audio"].includes(event.type) && event.mediaId)) continue;
 
       const aiInput = event.text
         || (event.buttonReplyId ? `Button: ${event.buttonReplyId}` : "");
-      if (!aiInput) continue;
+      if (!aiInput && !event.mediaId) continue;
 
       await maybeReplyWithAI({
         account,
         conversation,
         customerMessage: aiInput,
+        buttonReplyId: event.buttonReplyId,
+        media: event.mediaId ? { id: event.mediaId, type: event.type, messageId: event.messageId } : null,
       });
     } catch (error) {
       logger.error("whatsapp.webhook.event_failed", {

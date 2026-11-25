@@ -20,3 +20,15 @@ test("applying or removing a coupon on one product preserves other products' cou
   clearAppliedCouponCode();
   expect(getAppliedCouponCode(fan)).toBe("");
 });
+
+test("cart coupons carry the selected combination without overwriting other variants", () => {
+  const pink = { sourceId: "speaker-id", variantCombinationId: "pink", variantOptionIds: ["opt-pink"] };
+  const blue = { sourceId: "speaker-id", variantCombinationId: "blue", variantOptionIds: ["opt-blue"] };
+  setAppliedCouponCode("OLD50", { sourceId: "speaker-id" });
+  expect(getAppliedCouponCode(pink)).toBe("OLD50");
+  setAppliedCouponCode("PINK10", pink);
+  setAppliedCouponCode("", blue);
+  expect(couponOrderItems([pink, blue]).map(({ couponCode, variantCombinationId, variantOptionIds }) => (
+    [couponCode, variantCombinationId, variantOptionIds]
+  ))).toEqual([["PINK10", "pink", ["opt-pink"]], ["", "blue", ["opt-blue"]]]);
+});

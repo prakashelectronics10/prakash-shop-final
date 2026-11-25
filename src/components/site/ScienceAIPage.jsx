@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ArrowUpRight, Bot, Camera, Check, ChevronLeft, ChevronRight, ImagePlus, Images, Link2, Moon, PackageSearch, PanelLeftClose, PanelLeftOpen, Plus, ShoppingCart, Sun, Trash2, Wrench } from "lucide-react";
 import { apiRequest, apiUrl } from "../../api/client";
@@ -6,10 +6,11 @@ import { SCIENCE_PROJECTS_CATEGORY, getCartStockLimit, useCart } from "../../con
 import { notifyCartResult } from "../../utils/cartToast";
 import { couponOrderItems, getAppliedCouponCode } from "../../utils/coupons";
 import { formatINR } from "../../utils/productPricing";
+import { consumePulseAISearchPrompt, readPulseAISearchPrompt } from "../../utils/pulseAISearchPrompt";
 import { AIChatInput } from "../ui/AIChatInput";
 import { LottieSvgAnimation } from "./LottieSvgAnimation";
 import { OptimizedImage } from "./OptimizedImage";
-import cartImage from "../../assets/Cart.png";
+import cartImage from "../../assets/Cart.webp";
 
 const welcomeMessage = {
   role: "ai",
@@ -486,7 +487,19 @@ function offlinePulseMessage(promptText, imageCount = 0) {
 
 export function ScienceAIPage() {
   const { items: cartItems, totals } = useCart();
-  const [chatState, setChatState] = useState(loadScienceAIState);
+  const [chatState, setChatState] = useState(() => {
+    const state = loadScienceAIState();
+    if (!readPulseAISearchPrompt()) return state;
+
+    const activeSession = state.sessions.find((item) => item.id === state.activeSessionId);
+    if (!activeSession?.messages.some((message) => message.role === "user")) return state;
+
+    const nextSession = createSession();
+    return {
+      activeSessionId: nextSession.id,
+      sessions: [nextSession, ...state.sessions].slice(0, MAX_TEMPORARY_CHAT_SESSIONS),
+    };
+  });
   const [input, setInput] = useState("");
   const [images, setImages] = useState([]);
   const [busy, setBusy] = useState(false);
@@ -527,10 +540,8 @@ export function ScienceAIPage() {
     [hasStarted, messages],
   );
   const lastMessageId = visibleMessages[visibleMessages.length - 1]?.id || "";
-  const isStreamingReply = useMemo(
-    () => busy || visibleMessages.some((message) => message.isStreaming),
-    [busy, visibleMessages],
-  );
+  const hasStreamingMessage = visibleMessages.some((message) => message.isStreaming);
+  const isStreamingReply = busy || hasStreamingMessage;
   const streamingTextLength = useMemo(() => {
     const streaming = visibleMessages.find((message) => message.isStreaming);
     return streaming ? String(streaming.text || "").length : 0;
@@ -635,14 +646,14 @@ export function ScienceAIPage() {
     if (streamTimer.current) window.clearInterval(streamTimer.current);
   }, []);
 
-  const updateSessionById = (sessionId, updater) => {
+  const updateSessionById = useCallback((sessionId, updater) => {
     setChatState((current) => ({
       ...current,
       sessions: current.sessions.map((item) => (
         item.id === sessionId ? { ...updater(item), updatedAt: Date.now() } : item
       )),
     }));
-  };
+  }, []);
 
   const conversationHistory = useMemo(
     () => {
@@ -701,7 +712,7 @@ export function ScienceAIPage() {
     }
   };
 
-  const stopStreaming = () => {
+  const stopStreaming = useCallback(() => {
     if (streamTimer.current) {
       window.clearInterval(streamTimer.current);
       streamTimer.current = null;
@@ -710,13 +721,13 @@ export function ScienceAIPage() {
       streamResolve.current();
       streamResolve.current = null;
     }
-  };
+  }, []);
 
   const closeNavOnMobile = () => {
     if (typeof window !== "undefined" && window.innerWidth <= 860) setNavOpen(false);
   };
 
-  const revealAssistantMessage = ({ text, suggestions, linkCards = [], warning, memory, isError = false, targetSessionId = session.id }) => new Promise((resolve) => {
+  const revealAssistantMessage = useCallback(({ text, suggestions, linkCards = [], warning, memory, isError = false, targetSessionId }) => new Promise((resolve) => {
     stopStreaming();
     streamResolve.current = resolve;
     const id = createMessageId("ai");
@@ -757,7 +768,7 @@ export function ScienceAIPage() {
         resolve();
       }
     }, 45);
-  });
+  }), [stopStreaming, updateSessionById]);
 
   const newChat = () => {
     const nextSession = createSession(buildPreviousChatsSummary(sessions));
@@ -795,7 +806,7 @@ export function ScienceAIPage() {
     closeNavOnMobile();
   };
 
-  const sendMessage = async (overrideText) => {
+  const sendMessage = useCallback(async (overrideText) => {
     const text = String(overrideText ?? input).trim();
     if ((!text && images.length === 0) || busy) return;
 
@@ -867,7 +878,12 @@ export function ScienceAIPage() {
     } finally {
       setBusy(false);
     }
-  };
+  }, [busy, cartItems, conversationHistory, conversationMemory, images, input, revealAssistantMessage, session.id, session.titleGenerated, updateSessionById]);
+
+  useEffect(() => {
+    const prompt = consumePulseAISearchPrompt();
+    if (prompt) void sendMessage(prompt);
+  }, [sendMessage]);
 
   const onDragEnter = (event) => {
     event.preventDefault();
@@ -1006,10 +1022,14 @@ export function ScienceAIPage() {
           {!hasStarted && <EmptyState animationData={heroAnimationData} />}
 
           {visibleMessages.map((message, index) => (
-            <article className={`ai-message ${message.role} ${message.isError ? "error" : ""}`} key={message.id || `${message.role}-${index}`}>
-              <div className="ai-avatar">{message.role === "user" ? "You" : <Bot size={18} />}</div>
+            <article
+              className={`ai-message ${message.role}`}
+              aria-label={message.role === "user" ? "Your message" : "Pulse AI response"}
+              key={message.id || `${message.role}-${index}`}
+            >
+              <div className="ai-avatar" aria-hidden="true">{message.role === "user" ? "You" : <Bot size={18} />}</div>
               <div
-                className={`ai-bubble-pro ${message.role === 'user' ? 'ai-bubble-user' : 'ai-bubble-ai'}${message.isError ? ' ai-bubble-error' : ''}`}
+                className={message.role === "user" ? "ai-bubble-user" : "ai-reply"}
               >
                 {message.images?.length > 0 && (
                   <div className="ai-message-images-pro">
@@ -1048,10 +1068,10 @@ export function ScienceAIPage() {
        
             </article>
           ))}
-          {busy && (
-            <article className="ai-message ai">
-              <div className="ai-avatar"><Bot size={18} /></div>
-              <div className="ai-bubble typing"><span /><span /><span /></div>
+          {busy && !hasStreamingMessage && (
+            <article className="ai-message ai" aria-label="Pulse AI is responding">
+              <div className="ai-avatar" aria-hidden="true"><Bot size={18} /></div>
+              <div className="ai-reply typing" aria-hidden="true"><span /><span /><span /></div>
             </article>
           )}
           <div ref={endRef} />
@@ -1343,10 +1363,10 @@ function SuggestionCards({ suggestions, theme }) {
                 </div>
                 <div className="ai-suggestion-actions">
                   <a href={`/product/${encodeURIComponent(item.slug || item.productId)}`}>
-                    View Product
+                    {item.hasVariants ? "Choose options" : "View Product"}
                     <ArrowUpRight size={15} />
                   </a>
-                  <button
+                  {!item.hasVariants && <button
                     className={`ai-cart-icon-button ${getQuantity(item, cartOverrides(item)) ? "added" : ""}`}
                     type="button"
                     onClick={() => addSuggestionToCart(item)}
@@ -1359,7 +1379,7 @@ function SuggestionCards({ suggestions, theme }) {
                     ) : (
                       <ShoppingCart size={16} color={cartIconColor} style={{ color: cartIconColor, stroke: cartIconColor }} />
                     )}
-                  </button>
+                  </button>}
                   <span>{item.category || "Component"}</span>
                 </div>
               </div>

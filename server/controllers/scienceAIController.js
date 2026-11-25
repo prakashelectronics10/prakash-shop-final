@@ -260,6 +260,7 @@ function suggestionFromProduct(product, component) {
     available: true,
     status: product.availability === "Low Stock" ? "Low Stock" : "Available Now",
     productId: String(product._id),
+    hasVariants: product.hasVariants === true && Boolean(product.variantGroups?.length),
     slug: product.slug,
     name: product.name,
     price: product.price,
@@ -676,6 +677,7 @@ STRICT PRODUCT SUGGESTION RULES:
 8. If they ask for cooling/fan/cooler, ONLY mention finished cooling/fan/cooler catalog items — never motors, capacitors, speakers, lamps, or unrelated SKUs unless a spare part was explicitly requested.
 9. If they ask for a color (e.g. blue fan / white cooler), the recommended card must match that color.
 10. For image-only chats, identify the product and return IMAGE_FINDINGS + CATALOG_MATCHES.
+11. Whenever you recommend catalog products, including in text-only chats, append a CATALOG_MATCHES line with their exact catalog names separated by |, in the same order as the reply. Omit the line when you make no product recommendation.
 
 PUBLIC COUPONS AND OFFERS:
 - Catalog entries may include verified current public coupons and an after-offer effective price. Use these when answering price, offer, coupon and budget questions.

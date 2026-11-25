@@ -23,8 +23,10 @@ function trackOrderUrl(orderId) {
   return `${siteBaseUrl()}/orders?id=${encodeURIComponent(String(orderId || "").trim())}`;
 }
 
-async function withAccount() {
-  const account = await getActiveWhatsAppAccount();
+async function withAccount(order) {
+  const account = order?.whatsappAccount
+    ? (env.whatsapp.enabled ? await require("../models/WhatsAppAccount").findOne({ _id: order.whatsappAccount, isActive: true }) : null)
+    : await getActiveWhatsAppAccount();
   if (!account) {
     logger.warn("whatsapp.transactional.no_account");
     return null;
@@ -268,7 +270,7 @@ async function sendBookingConfirmationWhatsApp({ booking }) {
 }
 
 async function sendOrderConfirmationWhatsApp({ order }) {
-  const account = await withAccount();
+  const account = await withAccount(order);
   if (!account) return { ok: false, reason: "whatsapp_disabled" };
 
   const whatsappNumber = order.customer?.whatsappNumber || order.customer?.phone;
@@ -289,7 +291,9 @@ async function sendOrderConfirmationWhatsApp({ order }) {
   const customerName = String(order.customer?.name || "").trim();
   const bodyText = [
     `Namaste${customerName ? ` ${customerName}` : ""},`,
-    "Prakash Electronics mein aapka order confirm ho gaya hai aur payment receive ho gayi hai.",
+    order.paymentMethod === "cod"
+      ? `Prakash Electronics mein aapka Cash on Delivery order confirm ho gaya hai. Delivery par ${formatInrAmount(order.total)} pay karein.`
+      : "Prakash Electronics mein aapka order confirm ho gaya hai aur payment receive ho gayi hai.",
     "",
     `*Order ID:* ${orderId}`,
     "",
@@ -302,7 +306,7 @@ async function sendOrderConfirmationWhatsApp({ order }) {
   const { result, usedTemplate } = await tryTemplateThenFallback({
     account,
     customerWaId,
-    templateName: templates.orderConfirm,
+    templateName: order.paymentMethod === "cod" ? "" : templates.orderConfirm,
     languageCode: templates.orderConfirmLanguage || "en",
     components: [
       {
@@ -357,7 +361,7 @@ async function sendOrderConfirmationWhatsApp({ order }) {
 }
 
 async function sendPaymentUnsuccessfulWhatsApp({ order }) {
-  const account = await withAccount();
+  const account = await withAccount(order);
   if (!account) return { ok: false, reason: "whatsapp_disabled" };
 
   const whatsappNumber = order.customer?.whatsappNumber || order.customer?.phone;
@@ -455,7 +459,7 @@ async function sendPaymentUnsuccessfulWhatsApp({ order }) {
 }
 
 async function sendPaymentReceivedWhatsApp({ order }) {
-  const account = await withAccount();
+  const account = await withAccount(order);
   if (!account) return { ok: false, reason: "whatsapp_disabled" };
 
   const whatsappNumber = order.customer?.whatsappNumber || order.customer?.phone;
@@ -509,7 +513,7 @@ async function sendPaymentReceivedWhatsApp({ order }) {
 }
 
 async function sendOrderShipmentWhatsApp({ order }) {
-  const account = await withAccount();
+  const account = await withAccount(order);
   if (!account) return { ok: false, reason: "whatsapp_disabled" };
 
   const whatsappNumber = order.customer?.whatsappNumber || order.customer?.phone;
@@ -581,7 +585,7 @@ async function sendOrderShipmentWhatsApp({ order }) {
 }
 
 async function sendCustomerReviewWhatsApp({ order }) {
-  const account = await withAccount();
+  const account = await withAccount(order);
   if (!account) return { ok: false, reason: "whatsapp_disabled" };
 
   const whatsappNumber = order.customer?.whatsappNumber || order.customer?.phone;

@@ -27,6 +27,8 @@ async function connectDB() {
   logger.info("mongodb.connected", { host: mongoose.connection.host });
   await ensureAdminSessionIndexes();
   logger.info("mongodb.admin_session_indexes_ready");
+  await require("../services/whatsappCheckoutIndexes").ensureWhatsAppCheckoutIndexes();
+  logger.info("mongodb.whatsapp_checkout_indexes_ready");
   const cleanup = await revokeAllAdminSessionsOnce();
   if (!cleanup.skipped) {
     logger.info("mongodb.admin_sessions_revoked_once", { modifiedCount: cleanup.modifiedCount });

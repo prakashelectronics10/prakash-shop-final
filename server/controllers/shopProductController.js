@@ -8,7 +8,18 @@ const { availableStockQuantity, normalizeStockQuantity } = require("../utils/inv
 const { applyPricingFields } = require("../utils/productPricing");
 const { collectPublicIdsFromSources, deleteImagesStrict } = require("../services/cloudinaryService");
 const { enqueueProductDelete, enqueueProductSync } = require("../services/metaCatalogService");
+const { searchCatalog } = require("../services/catalogSearch");
 const { logger } = require("../utils/logger");
+const {
+  collectVariantImagePublicIds,
+  productHasVariants,
+  resolveSelectedCombination,
+  resolveVariantAvailability,
+  resolveVariantImage,
+  resolveVariantPricing,
+  resolveVariantStock,
+  sanitizeProductVariants,
+} = require("../utils/productVariants");
 
 const SCIENCE_PROJECTS_CATEGORY = "Wiring Accessories";
 const LEGACY_SCIENCE_PROJECTS_CATEGORY = "Science Projects and Parts";
@@ -31,6 +42,9 @@ const publicListProductProjection = [
   "availability",
   "imageUrl",
   "tags",
+  "hasVariants",
+  "variantGroups",
+  "variantCombinations",
   "isActive",
   "showInHeroSlider",
   "isTopProduct",
@@ -52,6 +66,9 @@ const publicListProjectPartProjection = [
   "availability",
   "imageUrl",
   "tags",
+  "hasVariants",
+  "variantGroups",
+  "variantCombinations",
   "isActive",
   "isTopProduct",
   "displayOrder",
@@ -139,11 +156,28 @@ function buildPublicProjectPartFilter(query) {
   return filter;
 }
 
-function normalizeShopProduct(product) {
+function normalizeShopProduct(product, { detail = false } = {}) {
+  const hasVariants = productHasVariants(product);
+  const defaultCombination = hasVariants ? resolveSelectedCombination(product) : null;
+  const stockQuantity = hasVariants
+    ? resolveVariantStock(product, defaultCombination)
+    : availableStockQuantity(product, "quantity");
+  const pricing = hasVariants && !detail ? resolveVariantPricing(product, defaultCombination) : null;
   return {
     ...product,
+    hasVariants,
+    variantGroups: Array.isArray(product.variantGroups) ? product.variantGroups : [],
+    variantCombinations: Array.isArray(product.variantCombinations) ? product.variantCombinations : [],
     quantity: product.quantity ?? 1,
-    stockQuantity: availableStockQuantity(product, "quantity"),
+    stockQuantity,
+    availability: hasVariants && !detail ? resolveVariantAvailability(product, defaultCombination) : product.availability,
+    ...(pricing ? { price: pricing.price, mrp: pricing.mrp, discountPercent: null } : {}),
+    ...(hasVariants && defaultCombination
+      ? {
+          defaultVariantCombinationId: defaultCombination.id,
+          ...(detail ? {} : { imageUrl: resolveVariantImage(product, defaultCombination) || product.imageUrl }),
+        }
+      : {}),
     viewCount: Number(product.viewCount || 0),
     sourceType: "shop-product",
     sourceCollection: "shop-products",
@@ -151,14 +185,31 @@ function normalizeShopProduct(product) {
   };
 }
 
-function normalizeProjectPart(part) {
+function normalizeProjectPart(part, { detail = false } = {}) {
   const originalCategory = part.originalCategory || part.category || "Wiring Products";
   const originalSubCategory = part.originalSubCategory || part.subCategory || "";
+  const hasVariants = productHasVariants(part);
+  const defaultCombination = hasVariants ? resolveSelectedCombination(part) : null;
+  const stockQuantity = hasVariants
+    ? resolveVariantStock(part, defaultCombination)
+    : availableStockQuantity(part, "stock");
+  const pricing = hasVariants && !detail ? resolveVariantPricing(part, defaultCombination) : null;
   return {
     ...part,
+    hasVariants,
+    variantGroups: Array.isArray(part.variantGroups) ? part.variantGroups : [],
+    variantCombinations: Array.isArray(part.variantCombinations) ? part.variantCombinations : [],
     stock: part.stock ?? 1,
     quantity: part.stock ?? 1,
-    stockQuantity: availableStockQuantity(part, "stock"),
+    stockQuantity,
+    availability: hasVariants && !detail ? resolveVariantAvailability(part, defaultCombination) : part.availability,
+    ...(pricing ? { price: pricing.price, mrp: pricing.mrp, discountPercent: null } : {}),
+    ...(hasVariants && defaultCombination
+      ? {
+          defaultVariantCombinationId: defaultCombination.id,
+          ...(detail ? {} : { imageUrl: resolveVariantImage(part, defaultCombination) || part.imageUrl }),
+        }
+      : {}),
     viewCount: Number(part.viewCount || 0),
     category: SCIENCE_PROJECTS_CATEGORY,
     originalCategory,
@@ -190,6 +241,9 @@ function projectShopProductFields() {
     availability: 1,
     imageUrl: 1,
     tags: { $ifNull: ["$tags", []] },
+    hasVariants: { $ifNull: ["$hasVariants", false] },
+    variantGroups: { $ifNull: ["$variantGroups", []] },
+    variantCombinations: { $ifNull: ["$variantCombinations", []] },
     isActive: 1,
     showInHeroSlider: 1,
     isTopProduct: 1,
@@ -227,6 +281,9 @@ function projectProjectPartFields() {
         { $ifNull: ["$tags", []] },
       ],
     },
+    hasVariants: { $ifNull: ["$hasVariants", false] },
+    variantGroups: { $ifNull: ["$variantGroups", []] },
+    variantCombinations: { $ifNull: ["$variantCombinations", []] },
     isActive: 1,
     showInHeroSlider: { $literal: false },
     isTopProduct: 1,
@@ -279,51 +336,60 @@ exports.getShopProducts = catchAsync(async (req, res) => {
   const page = positiveInt(req.query.page, 1);
   const limit = Math.min(positiveInt(req.query.limit, 60), 120);
   const skip = (page - 1) * limit;
-  const shopFilter = buildPublicShopFilter(req.query);
-  const projectPartFilter = buildPublicProjectPartFilter(req.query);
-  const pipeline = [
-    { $match: shopFilter || { _id: { $exists: false } } },
-    { $project: projectShopProductFields() },
-  ];
+  const loadResults = async (searchFilter) => {
+    const query = searchFilter ? { ...req.query, search: "" } : req.query;
+    const shopFilter = buildPublicShopFilter(query);
+    const projectPartFilter = buildPublicProjectPartFilter(query);
+    const pipeline = [
+      { $match: shopFilter ? { ...shopFilter, ...searchFilter } : { _id: { $exists: false } } },
+      { $project: projectShopProductFields() },
+    ];
 
-  if (projectPartFilter) {
-    pipeline.push({
-      $unionWith: {
-        coll: ProjectPart.collection.name,
-        pipeline: [
-          { $match: projectPartFilter },
-          { $project: projectProjectPartFields() },
-        ],
+    if (projectPartFilter) {
+      pipeline.push({
+        $unionWith: {
+          coll: ProjectPart.collection.name,
+          pipeline: [
+            { $match: { ...projectPartFilter, ...searchFilter } },
+            { $project: projectProjectPartFields() },
+          ],
+        },
+      });
+    }
+
+    pipeline.push(
+      { $sort: { displayOrder: 1, name: 1, _id: 1 } },
+      {
+        $facet: {
+          items: [
+            { $skip: skip },
+            { $limit: limit },
+          ],
+          meta: [
+            { $count: "total" },
+          ],
+          price: [
+            { $group: { _id: null, maxPrice: { $max: "$price" } } },
+          ],
+        },
       },
-    });
-  }
+    );
 
-  pipeline.push(
-    { $sort: { displayOrder: 1, name: 1, _id: 1 } },
-    {
-      $facet: {
-        items: [
-          { $skip: skip },
-          { $limit: limit },
-        ],
-        meta: [
-          { $count: "total" },
-        ],
-        price: [
-          { $group: { _id: null, maxPrice: { $max: "$price" } } },
-        ],
-      },
-    },
-  );
-
-  const [result] = await ShopProduct.aggregate(pipeline).option({ maxTimeMS: 7000 });
-  const items = (result?.items || []).map((item) =>
+    const [result] = await ShopProduct.aggregate(pipeline).option({ maxTimeMS: 7000 });
+    return {
+      items: result?.items || [],
+      total: result?.meta?.[0]?.total || 0,
+      maxPrice: result?.price?.[0]?.maxPrice || 0,
+    };
+  };
+  const { items: matches, total, maxPrice, searchMode, canAnalyze } = await searchCatalog(req.query, loadResults);
+  const items = matches.map((item) =>
     item.sourceType === "project-part" ? normalizeProjectPart(item) : normalizeShopProduct(item));
-  const total = result?.meta?.[0]?.total || 0;
-  const maxPrice = result?.price?.[0]?.maxPrice || 0;
 
-  res.set("Cache-Control", "public, max-age=120, stale-while-revalidate=600");
-  res.json({ success: true, data: { items, total, page, pages: Math.ceil(total / limit), maxPrice } });
+  res.set("Cache-Control", req.query.smartSearch === "analyze" && !total
+    ? "no-store"
+    : "public, max-age=120, stale-while-revalidate=600");
+  res.json({ success: true, data: { items, total, page, pages: Math.ceil(total / limit), maxPrice, searchMode, canAnalyze } });
 });
 
 exports.getShopProductById = catchAsync(async (req, res) => {
@@ -334,14 +400,14 @@ exports.getShopProductById = catchAsync(async (req, res) => {
   const product = await ShopProduct.findOne(query).maxTimeMS(5000).lean();
   if (product) {
     res.set("Cache-Control", "public, max-age=120, stale-while-revalidate=600");
-    res.json({ success: true, data: normalizeShopProduct(product) });
+    res.json({ success: true, data: normalizeShopProduct(product, { detail: true }) });
     return;
   }
 
   const part = await ProjectPart.findOne(query).maxTimeMS(5000).lean();
   if (!part) throw new AppError("Shop product not found", 404);
   res.set("Cache-Control", "public, max-age=120, stale-while-revalidate=600");
-  res.json({ success: true, data: normalizeProjectPart(part) });
+  res.json({ success: true, data: normalizeProjectPart(part, { detail: true }) });
 });
 
 exports.getTrendingProducts = catchAsync(async (req, res) => {
@@ -364,8 +430,8 @@ exports.getTrendingProducts = catchAsync(async (req, res) => {
   ]);
 
   const items = [
-    ...shopItems.map(normalizeShopProduct),
-    ...projectPartItems.map(normalizeProjectPart),
+    ...shopItems.map((item) => normalizeShopProduct(item)),
+    ...projectPartItems.map((item) => normalizeProjectPart(item)),
   ]
     .sort((a, b) => {
       const viewsA = Number(a.viewCount || 0);
@@ -406,8 +472,8 @@ exports.getTopProducts = catchAsync(async (req, res) => {
   ]);
 
   const items = [
-    ...shopItems.map(normalizeShopProduct),
-    ...projectPartItems.map(normalizeProjectPart),
+    ...shopItems.map((item) => normalizeShopProduct(item)),
+    ...projectPartItems.map((item) => normalizeProjectPart(item)),
   ]
     .sort(sortPublicCatalog)
     .slice(0, limit);
@@ -489,10 +555,12 @@ exports.createShopProduct = catchAsync(async (req, res) => {
     throw new AppError("GTIN must contain 8, 12, 13, or 14 digits", 400);
   }
   const pricing = applyPricingFields(req.body);
+  const variants = sanitizeProductVariants(req.body);
   const product = await ShopProduct.create({
     ...req.body,
     gtin,
     ...pricing,
+    ...variants,
     slug: req.body.slug || slugify(req.body.name),
     category: req.body.category || "Electronics",
     quantity: normalizeStockQuantity(req.body.quantity, 1),
@@ -515,10 +583,20 @@ exports.updateShopProduct = catchAsync(async (req, res) => {
   if (gtin && !/^(?:\d{8}|\d{12}|\d{13}|\d{14})$/.test(gtin)) {
     throw new AppError("GTIN must contain 8, 12, 13, or 14 digits", 400);
   }
+  const variants = Object.prototype.hasOwnProperty.call(req.body, "hasVariants")
+    || Object.prototype.hasOwnProperty.call(req.body, "variantGroups")
+    || Object.prototype.hasOwnProperty.call(req.body, "variantCombinations")
+    ? sanitizeProductVariants(req.body)
+    : {
+      hasVariants: existing.hasVariants === true,
+      variantGroups: existing.variantGroups || [],
+      variantCombinations: existing.variantCombinations || [],
+    };
   const payload = {
     ...req.body,
     gtin,
     ...pricing,
+    ...variants,
     slug: req.body.slug || slugify(req.body.name),
     sku: String(existing.sku || req.body.sku || `PE-${String(existing._id).slice(-10)}`).trim().toUpperCase(),
     category: req.body.category || "Electronics",
@@ -534,8 +612,15 @@ exports.updateShopProduct = catchAsync(async (req, res) => {
     runValidators: true,
   });
   if (!product) throw new AppError("Shop product not found", 404);
-  const nextIds = new Set(collectPublicIdsFromSources(product.imagePublicId, product.imageUrl, product.images));
-  await deleteCloudinaryImages(collectPublicIdsFromSources(existing.imagePublicId, existing.imageUrl, existing.images).filter((id) => !nextIds.has(id)));
+  const nextIds = new Set([
+    ...collectPublicIdsFromSources(product.imagePublicId, product.imageUrl, product.images),
+    ...collectVariantImagePublicIds(product),
+  ]);
+  const previousIds = [
+    ...collectPublicIdsFromSources(existing.imagePublicId, existing.imageUrl, existing.images),
+    ...collectVariantImagePublicIds(existing),
+  ];
+  await deleteCloudinaryImages(previousIds.filter((id) => !nextIds.has(id)));
   await normalizeShopDisplayOrders(product);
   await enqueueProductSync("shop-product", product).catch((error) => {
     logger.error("meta_catalog.enqueue_failed", { sourceType: "shop-product", productId: product.id, error: error.message });
@@ -549,6 +634,9 @@ exports.deleteShopProduct = catchAsync(async (req, res) => {
 
   await enqueueProductDelete("shop-product", product);
   await product.deleteOne();
-  await deleteCloudinaryImages(collectPublicIdsFromSources(product.imagePublicId, product.imageUrl, product.images));
+  await deleteCloudinaryImages([
+    ...collectPublicIdsFromSources(product.imagePublicId, product.imageUrl, product.images),
+    ...collectVariantImagePublicIds(product),
+  ]);
   res.json({ success: true, message: "Shop product deleted successfully" });
 });

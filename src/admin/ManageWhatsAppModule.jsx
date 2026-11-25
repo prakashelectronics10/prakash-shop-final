@@ -14,6 +14,7 @@ import {
   UploadCloud,
   X,
 } from "lucide-react";
+import AdminToggle from "./AdminToggle";
 import "./ManageWhatsAppModule.css";
 
 const TABS = [
@@ -75,6 +76,10 @@ const emptyAI = () => ({
   systemPromptExtra: "",
   sendProductImages: true,
   sendOfferImages: true,
+  codEnabled: false,
+  enhancedPaymentsEnabled: false,
+  paymentTemplateName: "pulse_order_payment",
+  paymentTemplateLanguage: "en",
   maxImagesPerReply: 3,
   allowButtons: true,
   pauseOnHumanReply: true,
@@ -702,31 +707,20 @@ export default function ManageWhatsAppModule({ apiFetch }) {
                 Meta <strong>Welcome Message</strong> notifies us when a customer opens chat the first time
                 (<code>request_welcome</code>). Then this multi-step greeting is sent automatically.
               </p>
-              <label className="wa-toggle-row">
-                <input
-                  type="checkbox"
-                  checked={greeting.enabled}
-                  onChange={(event) => setGreeting((current) => ({ ...current, enabled: event.target.checked }))}
-                />
-                <span>
-                  <strong>Enable greeting sequence</strong>
-                  <small>Sent on first chat open / first contact (with cooldown).</small>
-                </span>
-              </label>
-              <label className="wa-toggle-row">
-                <input
-                  type="checkbox"
-                  checked={greeting.enableWelcomeMessage}
-                  onChange={(event) => setGreeting((current) => ({
-                    ...current,
-                    enableWelcomeMessage: event.target.checked,
-                  }))}
-                />
-                <span>
-                  <strong>Enable Meta welcome trigger</strong>
-                  <small>Syncs Conversational Components so chat-open fires a webhook.</small>
-                </span>
-              </label>
+              <AdminToggle
+                className="wa-toggle-row"
+                label={<strong>Enable greeting sequence</strong>}
+                description="Sent on first chat open / first contact (with cooldown)."
+                checked={greeting.enabled}
+                onChange={(enabled) => setGreeting((current) => ({ ...current, enabled }))}
+              />
+              <AdminToggle
+                className="wa-toggle-row"
+                label={<strong>Enable Meta welcome trigger</strong>}
+                description="Syncs Conversational Components so chat-open fires a webhook."
+                checked={greeting.enableWelcomeMessage}
+                onChange={(enableWelcomeMessage) => setGreeting((current) => ({ ...current, enableWelcomeMessage }))}
+              />
               <Field label="Ice breakers" hint="up to 4, max 80 chars each (no emoji)">
                 <textarea
                   value={(greeting.iceBreakers || []).join("\n")}
@@ -946,17 +940,13 @@ export default function ManageWhatsAppModule({ apiFetch }) {
                 Uses Pulse AI knowledge, catalog/offer images, and can attach images + buttons when useful.
                 Extra instructions below are WhatsApp-specific.
               </p>
-              <label className="wa-toggle-row">
-                <input
-                  type="checkbox"
-                  checked={aiSettings.enabled}
-                  onChange={(event) => setAISettings((current) => ({ ...current, enabled: event.target.checked }))}
-                />
-                <span>
-                  <strong>Enable AI auto-replies</strong>
-                  <small>For {selectedAccount?.label || "this account"} after greeting / on customer questions.</small>
-                </span>
-              </label>
+              <AdminToggle
+                className="wa-toggle-row"
+                label={<strong>Enable AI auto-replies</strong>}
+                description={`For ${selectedAccount?.label || "this account"} after greeting / on customer questions.`}
+                checked={aiSettings.enabled}
+                onChange={(enabled) => setAISettings((current) => ({ ...current, enabled }))}
+              />
               <Field label="Extra WhatsApp AI instructions">
                 <textarea
                   value={aiSettings.systemPromptExtra}
@@ -968,51 +958,55 @@ export default function ManageWhatsAppModule({ apiFetch }) {
                 />
               </Field>
               <div className="wa-grid-2">
-                <label className="wa-toggle-row">
-                  <input
-                    type="checkbox"
-                    checked={aiSettings.sendOfferImages}
-                    onChange={(event) => setAISettings((current) => ({
-                      ...current,
-                      sendOfferImages: event.target.checked,
-                    }))}
-                  />
-                  <span><strong>Send offer images</strong></span>
-                </label>
-                <label className="wa-toggle-row">
-                  <input
-                    type="checkbox"
-                    checked={aiSettings.sendProductImages}
-                    onChange={(event) => setAISettings((current) => ({
-                      ...current,
-                      sendProductImages: event.target.checked,
-                    }))}
-                  />
-                  <span><strong>Send product images</strong></span>
-                </label>
-                <label className="wa-toggle-row">
-                  <input
-                    type="checkbox"
-                    checked={aiSettings.allowButtons}
-                    onChange={(event) => setAISettings((current) => ({
-                      ...current,
-                      allowButtons: event.target.checked,
-                    }))}
-                  />
-                  <span><strong>Allow AI buttons</strong></span>
-                </label>
-                <label className="wa-toggle-row">
-                  <input
-                    type="checkbox"
-                    checked={aiSettings.pauseOnHumanReply}
-                    onChange={(event) => setAISettings((current) => ({
-                      ...current,
-                      pauseOnHumanReply: event.target.checked,
-                    }))}
-                  />
-                  <span><strong>Pause AI when admin replies</strong></span>
-                </label>
+                <AdminToggle
+                  label="Allow cash on delivery"
+                  description="Confirm WhatsApp orders with payment due on delivery. Prepaid orders require verified Razorpay payment."
+                  checked={aiSettings.codEnabled}
+                  onChange={(codEnabled) => setAISettings((current) => ({ ...current, codEnabled }))}
+                />
+                <AdminToggle
+                  className="wa-toggle-row"
+                  label={<strong>Send offer images</strong>}
+                  checked={aiSettings.sendOfferImages}
+                  onChange={(sendOfferImages) => setAISettings((current) => ({ ...current, sendOfferImages }))}
+                />
+                <AdminToggle
+                  className="wa-toggle-row"
+                  label={<strong>Send product images</strong>}
+                  checked={aiSettings.sendProductImages}
+                  onChange={(sendProductImages) => setAISettings((current) => ({ ...current, sendProductImages }))}
+                />
+                <AdminToggle
+                  className="wa-toggle-row"
+                  label={<strong>Allow AI buttons</strong>}
+                  checked={aiSettings.allowButtons}
+                  onChange={(allowButtons) => setAISettings((current) => ({ ...current, allowButtons }))}
+                />
+                <AdminToggle
+                  className="wa-toggle-row"
+                  label={<strong>Pause AI when admin replies</strong>}
+                  checked={aiSettings.pauseOnHumanReply}
+                  onChange={(pauseOnHumanReply) => setAISettings((current) => ({ ...current, pauseOnHumanReply }))}
+                />
               </div>
+              <h3>WhatsApp payment card</h3>
+              <p>Activate Enhanced Payment Links for this WhatsApp account with Meta or your provider, then approve a Utility template with no header and exactly one dynamic Razorpay URL button.</p>
+              <AdminToggle
+                className="wa-toggle-row"
+                label={<strong>Enhanced Payment Links activated</strong>}
+                description="Enable after Meta activates this account. Prepaid checkout stays unavailable until activation, an approved template, and the payment webhook are configured."
+                checked={aiSettings.enhancedPaymentsEnabled}
+                onChange={(enhancedPaymentsEnabled) => setAISettings((current) => ({ ...current, enhancedPaymentsEnabled }))}
+              />
+              <div className="wa-grid-2">
+                <Field label="Payment template name">
+                  <input value={aiSettings.paymentTemplateName} onChange={(event) => setAISettings((current) => ({ ...current, paymentTemplateName: event.target.value }))} placeholder="pulse_order_payment" />
+                </Field>
+                <Field label="Template language code">
+                  <input value={aiSettings.paymentTemplateLanguage} onChange={(event) => setAISettings((current) => ({ ...current, paymentTemplateLanguage: event.target.value }))} placeholder="en" />
+                </Field>
+              </div>
+              <p>Template body variables: 1 = customer name, 2 = order ID, 3 = amount in INR. Button: Pay now, dynamic URL <code>{"https://rzp.io/rzp/{{1}}"}</code> (or <code>{"https://rzp.io/i/{{1}}"}</code> if your Razorpay links use /i/). Save AI settings after setup.</p>
               <Field label="Max images per AI reply">
                 <input
                   type="number"
@@ -1213,10 +1207,12 @@ export default function ManageWhatsAppModule({ apiFetch }) {
             <Field label="Notes">
               <textarea value={accountForm.notes} onChange={(event) => setAccountForm((current) => ({ ...current, notes: event.target.value }))} />
             </Field>
-            <label className="wa-toggle-row">
-              <input type="checkbox" checked={accountForm.isActive} onChange={(event) => setAccountForm((current) => ({ ...current, isActive: event.target.checked }))} />
-              <span><strong>Active</strong></span>
-            </label>
+            <AdminToggle
+              className="wa-toggle-row"
+              label={<strong>Active</strong>}
+              checked={accountForm.isActive}
+              onChange={(isActive) => setAccountForm((current) => ({ ...current, isActive }))}
+            />
             <footer>
               <button type="button" className="wa-secondary" onClick={() => setModalOpen(false)}>Cancel</button>
               <button type="submit" className="wa-primary" disabled={busy}>{busy ? "Saving…" : "Save"}</button>

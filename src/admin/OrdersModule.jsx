@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { CalendarDays, ChevronRight, Edit3, LoaderCircle, PackageCheck, Plus, ReceiptIndianRupee, Search, ShoppingBag, Trash2, Truck, X } from "lucide-react";
+import AdminToggle from "./AdminToggle";
 import "./OrdersModule.css";
 
 const STATUS_OPTIONS = [
@@ -206,7 +207,7 @@ export default function OrdersModule({ apiFetch }) {
   return (
     <section className="orders-admin-page">
       <div className="orders-admin-head glass-panel">
-        <div><p className="eyebrow">Paid customer orders</p><h2>Orders</h2><span>{total} confirmed payment{total === 1 ? "" : "s"}</span></div>
+        <div><p className="eyebrow">Confirmed customer orders</p><h2>Orders</h2><span>{total} confirmed order{total === 1 ? "" : "s"}</span></div>
         <div className="orders-admin-head-actions">
           <button type="button" onClick={openCharges}><ReceiptIndianRupee size={18} /> Manage Additional Charges</button>
           <ShoppingBag size={30} />
@@ -232,7 +233,7 @@ export default function OrdersModule({ apiFetch }) {
             <button className="order-list-row" type="button" key={order._id} onClick={() => setSelected(order)}>
               <span className="order-list-thumb">{order.items?.[0]?.productImageUrl ? <img src={order.items[0].productImageUrl} alt="" /> : <PackageCheck size={24} />}</span>
               <span className="order-list-primary"><strong>{order.customer?.name}</strong><small>{order.customer?.phone} · {order.orderId}</small></span>
-              <span className="order-list-meta"><strong>{money(order.total)}</strong><small>{order.itemCount} items · {dateTime(order.paidAt)}</small></span>
+              <span className="order-list-meta"><strong>{money(order.total)}</strong><small>{order.paymentMethod === "cod" ? "COD · " : ""}{order.itemCount} items · {dateTime(order.paidAt || order.createdAt)}</small></span>
               <span className={`admin-order-status ${order.orderStatus}`}>{labelStatus(order.orderStatus)}</span>
               <ChevronRight size={19} />
             </button>
@@ -245,14 +246,23 @@ export default function OrdersModule({ apiFetch }) {
         <div className="order-drawer-layer" role="presentation">
           <button className="order-drawer-backdrop" type="button" aria-label="Close order details" onClick={() => setSelected(null)} />
           <aside className="order-admin-drawer" role="dialog" aria-modal="true" aria-label={`Order ${selected.orderId}`}>
-            <header><div><p className="eyebrow">Order details</p><h2>{selected.orderId}</h2><span>{dateTime(selected.paidAt)}</span></div><button type="button" onClick={() => setSelected(null)} aria-label="Close"><X size={20} /></button></header>
+            <header><div><p className="eyebrow">Order details</p><h2>{selected.orderId}</h2><span>{dateTime(selected.paidAt || selected.createdAt)}</span></div><button type="button" onClick={() => setSelected(null)} aria-label="Close"><X size={20} /></button></header>
 
             <section className="drawer-order-items">
               <h3>Items ({selected.itemCount})</h3>
               {selected.items.map((item) => (
-                <a href={`/product/${encodeURIComponent(item.productSlug || item.productId)}`} target="_blank" rel="noreferrer" key={`${item.productId}-${item.productName}`}>
+                <a
+                  href={`/product/${encodeURIComponent(item.productSlug || item.productId)}${item.variantCombinationId ? `?v=${encodeURIComponent(item.variantCombinationId)}` : ""}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  key={`${item.productId}-${item.variantCombinationId || "base"}-${item.productName}`}
+                >
                   <span>{item.productImageUrl ? <img src={item.productImageUrl} alt={item.productName} /> : <PackageCheck size={24} />}</span>
-                  <div><strong>{item.productName}</strong><small>{item.productCategory}</small><em>{money(item.unitPrice)} × {item.quantity}</em></div>
+                  <div>
+                    <strong>{item.productName}</strong>
+                    <small>{item.productCategory}{item.variantSummary ? ` · ${item.variantSummary}` : ""}</small>
+                    <em>{money(item.unitPrice)} × {item.quantity}</em>
+                  </div>
                   <b>{money(item.lineTotal)}</b>
                 </a>
               ))}
@@ -274,6 +284,8 @@ export default function OrdersModule({ apiFetch }) {
               <div><span>Pincode</span><strong>{selected.customer?.pincode}</strong></div>
               <div><span>Landmark</span><strong>{selected.customer?.landmark || "Not provided"}</strong></div>
               <div className="wide"><span>Message</span><strong>{selected.customer?.message || "No message"}</strong></div>
+              <div><span>Payment</span><strong>{selected.paymentMethod === "cod" ? "Cash on delivery — payment due" : selected.paymentStatus}</strong></div>
+              <div><span>Channel</span><strong>{selected.source || "website"}</strong></div>
               <div><span>Razorpay Order</span><strong>{selected.razorpayOrderId}</strong></div>
               <div><span>Payment ID</span><strong>{selected.razorpayPaymentId}</strong></div>
             </section>
@@ -284,7 +296,7 @@ export default function OrdersModule({ apiFetch }) {
               {orderChargeRows(selected).map((charge) => (
                 <p key={charge.slug || charge.name}><span>{charge.name}</span><strong>{Number(charge.amount || 0) ? money(charge.amount) : "Free"}</strong></p>
               ))}
-              <p><span>Paid total</span><strong>{money(selected.total)}</strong></p>
+              <p><span>{selected.paymentMethod === "cod" ? "Amount due on delivery" : "Paid total"}</span><strong>{money(selected.total)}</strong></p>
             </section>
           </aside>
         </div>
@@ -327,11 +339,21 @@ export default function OrdersModule({ apiFetch }) {
           <button className="charge-modal-backdrop" type="button" aria-label="Close charge editor" onClick={() => setChargeEditor(null)} />
           <form className="charge-modal" onSubmit={saveCharge} role="dialog" aria-modal="true" aria-label={chargeEditor.mode === "edit" ? "Edit additional charge" : "Add additional charge"}>
             <header><div><p className="eyebrow">{chargeEditor.mode === "edit" ? "Update charge" : "New charge"}</p><h3>{chargeEditor.charge?.isSystem ? "Delivery charge" : chargeEditor.mode === "edit" ? "Edit additional charge" : "Add additional charge"}</h3></div><button type="button" onClick={() => setChargeEditor(null)} aria-label="Close"><X size={19} /></button></header>
-            {chargeEditor.charge?.isSystem && <p className="system-charge-note">Delivery charge is protected. Its name cannot be changed and it cannot be deleted. Leave the amount blank to offer free delivery.</p>}
-            <label><span>Charge name</span><input value={chargeForm.name} disabled={Boolean(chargeEditor.charge?.isSystem)} onChange={(e) => setChargeForm({ ...chargeForm, name: e.target.value })} placeholder="e.g. Handling charge" required /></label>
-            <label><span>Charge amount (₹) <em>Blank means Free</em></span><input type="number" min="0" max="1000000" step="0.01" inputMode="decimal" value={chargeForm.amount} onChange={(e) => setChargeForm({ ...chargeForm, amount: e.target.value })} placeholder="Free" /></label>
-            {!chargeEditor.charge?.isSystem && <label className="charge-active-toggle"><input type="checkbox" checked={chargeForm.isActive} onChange={(e) => setChargeForm({ ...chargeForm, isActive: e.target.checked })} /><span><strong>Show in checkout</strong><small>Inactive charges remain saved but are not applied.</small></span></label>}
-            {chargeError && <div className="orders-error" role="alert">{chargeError}</div>}
+            <div className="charge-modal-body">
+              {chargeEditor.charge?.isSystem && <p className="system-charge-note">Delivery charge is protected. Its name cannot be changed and it cannot be deleted. Leave the amount blank to offer free delivery.</p>}
+              <label><span>Charge name</span><input value={chargeForm.name} disabled={Boolean(chargeEditor.charge?.isSystem)} onChange={(e) => setChargeForm({ ...chargeForm, name: e.target.value })} placeholder="e.g. Handling charge" required /></label>
+              <label><span>Charge amount (₹) <em>Blank means Free</em></span><input type="number" min="0" max="1000000" step="0.01" inputMode="decimal" value={chargeForm.amount} onChange={(e) => setChargeForm({ ...chargeForm, amount: e.target.value })} placeholder="Free" /></label>
+              {!chargeEditor.charge?.isSystem && (
+                <AdminToggle
+                  className="charge-active-toggle"
+                  label={<strong>Show in checkout</strong>}
+                  description="Inactive charges remain saved but are not applied."
+                  checked={chargeForm.isActive}
+                  onChange={(isActive) => setChargeForm({ ...chargeForm, isActive })}
+                />
+              )}
+              {chargeError && <div className="orders-error" role="alert">{chargeError}</div>}
+            </div>
             <footer><button type="button" className="secondary" onClick={() => setChargeEditor(null)}>Cancel</button><button type="submit" disabled={chargeSaving}>{chargeSaving ? <LoaderCircle className="orders-spinner" /> : null}{chargeEditor.mode === "edit" ? "Save changes" : "Add charge"}</button></footer>
           </form>
         </div>

@@ -67,3 +67,31 @@ test("invalid public product data fails before a Meta request", () => {
   );
   assert.throws(() => mapProductToMeta(product({ sku: "" })), /stable SKU/);
 });
+
+test("variant products map to one Meta item per combination with item_group_id", () => {
+  const mapped = mapProductToMeta(product({
+    hasVariants: true,
+    variantGroups: [
+      {
+        id: "grp1",
+        name: "Colour",
+        displayType: "color_text",
+        options: [
+          { id: "opt_black", label: "Black", colour: "#000000" },
+          { id: "opt_white", label: "White", colour: "#FFFFFF" },
+        ],
+      },
+    ],
+    variantCombinations: [
+      { id: "cmb_black", optionIds: ["opt_black"], sku: "PE-FAN-BLACK", stock: 3, isAvailable: true },
+      { id: "cmb_white", optionIds: ["opt_white"], sku: "PE-FAN-WHITE", stock: 2, isAvailable: true },
+    ],
+  }), { origin: "https://prakashshop.in" });
+
+  assert.equal(Array.isArray(mapped), true);
+  assert.equal(mapped.length, 2);
+  assert.equal(mapped[0].item_group_id, "PE-FAN-001");
+  assert.equal(mapped[0].color, "Black");
+  assert.match(mapped[0].url, /\?v=cmb_black/);
+  assert.equal(mapped[1].retailer_id, "PE-FAN-WHITE");
+});

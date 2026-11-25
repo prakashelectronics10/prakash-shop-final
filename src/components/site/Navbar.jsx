@@ -6,7 +6,7 @@ import { CANONICAL_WIRING_PARTS_PATH } from "../../utils/routes";
 import { usePageScroll } from "../../hooks/usePageScroll";
 import { MenuVertical } from "../ui/MenuVertical";
 import { useCart } from "../../context/CartContext";
-import cartImage from "../../assets/Cart.png";
+import cartImage from "../../assets/Cart.webp";
 
 const exactNavRoutes = {
   home: "/#home",

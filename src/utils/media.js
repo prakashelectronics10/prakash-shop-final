@@ -25,7 +25,7 @@ const SEED_AVIF_WIDTHS = {
   "hero-technician": [360, 480, 720, 960, 1080, 1254],
 };
 
-const RESPONSIVE_IMAGE_WIDTHS = [240, 360, 480, 720, 960, 1200, 1600, 1920];
+const RESPONSIVE_IMAGE_WIDTHS = [160, 240, 360, 480, 640, 720, 960, 1200, 1600];
 
 function normalizeLocalSeedPath(url) {
   if (/^https?:\/\/(?:localhost|127\.0\.0\.1):\d+\/seed-assets\//i.test(url)) {

@@ -1,0 +1,94 @@
+.parts-search.catalog-search-field {
+  gap: 0.45rem;
+  padding-inline: 0.75rem 0.5rem;
+}
+
+.catalog-search-field-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  cursor: text;
+}
+
+.catalog-search-field input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.parts-search.catalog-search-field .catalog-search-clear {
+  width: 28px;
+  height: 32px;
+  border-color: transparent;
+  background: transparent;
+}
+
+.parts-search.catalog-search-field .catalog-ask-ai {
+  position: relative;
+  isolation: isolate;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  flex: none;
+  overflow: hidden;
+  width: auto;
+  height: auto;
+  min-height: 32px;
+  padding: 0 0.65rem;
+  border: 1px solid #d7d3fc;
+  border-radius: 999px;
+  background: linear-gradient(110deg, #eff4ff, #f3eaff);
+  color: #44318c;
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.catalog-ask-ai svg {
+  color: #6842c2;
+  filter: drop-shadow(0 0 3px #bba3fc);
+}
+
+.catalog-search-field .catalog-ask-ai::after {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 25%, #fff 50%, transparent 75%);
+  content: "";
+  pointer-events: none;
+  animation: catalog-ask-ai-shine 4.5s ease-in-out infinite;
+}
+
+.parts-search.catalog-search-field .catalog-ask-ai:hover {
+  border-color: #ac9ae4;
+  background: linear-gradient(110deg, #e9f0ff, #ecddff);
+}
+
+.catalog-search-field :is(button, .catalog-ask-ai):focus-visible {
+  outline: 2px solid #6b45bf;
+  outline-offset: 2px;
+}
+
+@keyframes catalog-ask-ai-shine {
+  0%, 65% { transform: translateX(-110%); }
+  88%, 100% { transform: translateX(110%); }
+}
+
+@media (max-width: 420px) {
+  .parts-search.catalog-search-field {
+    gap: 0.25rem;
+    padding-inline: 0.5rem 0.35rem;
+  }
+
+  .parts-search.catalog-search-field .catalog-ask-ai {
+    padding-inline: 0.45rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .catalog-search-field .catalog-ask-ai::after {
+    animation: none;
+    opacity: 0;
+  }
+}

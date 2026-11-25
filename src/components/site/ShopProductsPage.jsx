@@ -1,8 +1,9 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import toast from "react-hot-toast";
-import { ArrowLeft, ArrowUpRight, BadgePercent, Ban, Check, Expand, Filter, PackageSearch, Search, ShoppingBag, ShoppingCart, Tag, X } from "lucide-react";
+import { ArrowLeft, ArrowUpRight, BadgePercent, Ban, Check, Expand, Filter, PackageSearch, ShoppingBag, ShoppingCart, Tag, X } from "lucide-react";
 import { apiRequest } from "../../api/client";
+import { requestCatalogResults } from "../../api/catalogSearch";
 import { isWiringAccessoriesCategory, cartStockMessage, getCartStockLimit, useCart, useCartActions, useCartQuantity } from "../../context/CartContext";
 import { Navbar } from "./Navbar";
 import { CANONICAL_WIRING_PARTS_PATH } from "../../utils/routes";
@@ -10,7 +11,9 @@ import { Footer } from "./Footer";
 import { OptimizedImage } from "./OptimizedImage";
 import { ProductShareButton } from "./ProductShareButton";
 import { ProductPriceDisplay } from "./ProductPriceDisplay";
+import { ProductVariantSelector } from "./ProductVariantSelector";
 import { CatalogInfiniteLoader } from "./CatalogInfiniteLoader";
+import { CatalogSearchField, CatalogSearchStatus } from "./CatalogSearchField";
 import { RelatedProductsSection } from "./RelatedProductsSection";
 import { Lightbox } from "./Lightbox";
 import { SuccessCelebrationOverlay } from "./BookingSuccessOverlay";
@@ -32,6 +35,18 @@ import {
   readCatalogCache,
   writeCatalogCache,
 } from "../../utils/catalogCache";
+import {
+  formatVariantSummary,
+  productHasVariants,
+  readVariantIdFromLocation,
+  resolveSelectedCombination,
+  resolveVariantAvailability,
+  resolveVariantImage,
+  resolveVariantPricing,
+  resolveVariantSku,
+  resolveVariantStock,
+  selectionLabels,
+} from "../../utils/productVariants";
 
 const DESCRIPTION_PREVIEW_LIMIT = 520;
 const CATALOG_BATCH_SIZE = 24;
@@ -59,8 +74,9 @@ const ProductCard = memo(function ProductCard({ product, onAddToCart, eager = fa
   const cartQuantity = useCartQuantity(product, { sourceType });
   const detailUrl = getProductSharePath(product);
   const category = product.category || "Electronics";
+  const requiresVariantChoice = Boolean(product.hasVariants);
   const stockLimit = getCartStockLimit(product);
-  const atStockLimit = stockLimit > 0 && cartQuantity >= stockLimit;
+  const atStockLimit = !requiresVariantChoice && stockLimit > 0 && cartQuantity >= stockLimit;
   const isOutOfStock = stockLimit < 1;
   const buttonTextColor = isOutOfStock ? "#00a5f8" : atStockLimit ? "#0f172a" : "#fffefe";
   return (
@@ -76,8 +92,8 @@ const ProductCard = memo(function ProductCard({ product, onAddToCart, eager = fa
               loading={eager ? "eager" : "lazy"}
               decoding="async"
               fetchPriority={eager ? "high" : undefined}
-              width={720}
-              height={540}
+              width={480}
+              height={360}
               sizes="(min-width: 1024px) 25vw, (min-width: 760px) 50vw, 46vw"
             />
           ) : <PackageSearch size={48} />}
@@ -93,30 +109,50 @@ const ProductCard = memo(function ProductCard({ product, onAddToCart, eager = fa
         <ProductPriceDisplay product={product} size="card" />
         <div className="product-card-actions">
           <a href={detailUrl}>.</a>
-          <button
-            className={`cart-icon-button ${cartQuantity ? "added" : ""}`}
-            type="button"
-            onClick={() => onAddToCart(product)}
-            aria-label={`Add ${product.name} to cart`}
-            title={stockLimit < 1 ? "Out of stock" : atStockLimit ? cartStockMessage(product) : "Add to Cart"}
-            disabled={stockLimit < 1 || atStockLimit}
-            style={{
-              color: buttonTextColor,
-              opacity: 1,
-              WebkitTextFillColor: buttonTextColor,
-            }}
-          >
-            {isOutOfStock || atStockLimit ? <Ban size={17} /> : cartQuantity ? <Check size={17} /> : <ShoppingCart size={17} />}
-            <span
+          {requiresVariantChoice ? (
+            <a
+              className="cart-icon-button"
+              href={detailUrl}
+              aria-label={`Choose options for ${product.name}`}
+              title="Choose options"
+              style={{
+                color: buttonTextColor,
+                opacity: 1,
+                WebkitTextFillColor: buttonTextColor,
+                textDecoration: "none",
+              }}
+            >
+              <ShoppingCart size={17} />
+              <span style={{ color: buttonTextColor, opacity: 1, WebkitTextFillColor: buttonTextColor }}>
+                Choose options
+              </span>
+            </a>
+          ) : (
+            <button
+              className={`cart-icon-button ${cartQuantity ? "added" : ""}`}
+              type="button"
+              onClick={() => onAddToCart(product)}
+              aria-label={`Add ${product.name} to cart`}
+              title={stockLimit < 1 ? "Out of stock" : atStockLimit ? cartStockMessage(product) : "Add to Cart"}
+              disabled={stockLimit < 1 || atStockLimit}
               style={{
                 color: buttonTextColor,
                 opacity: 1,
                 WebkitTextFillColor: buttonTextColor,
               }}
             >
-              {stockLimit < 1 ? "Out of Stock" : atStockLimit ? "Stock Limit" : cartQuantity ? `Added (${cartQuantity})` : "Add to Cart"}
-            </span>
-          </button>
+              {isOutOfStock || atStockLimit ? <Ban size={17} /> : cartQuantity ? <Check size={17} /> : <ShoppingCart size={17} />}
+              <span
+                style={{
+                  color: buttonTextColor,
+                  opacity: 1,
+                  WebkitTextFillColor: buttonTextColor,
+                }}
+              >
+                {stockLimit < 1 ? "Out of Stock" : atStockLimit ? "Stock Limit" : cartQuantity ? `Added (${cartQuantity})` : "Add to Cart"}
+              </span>
+            </button>
+          )}
         </div>
       </div>
     </article>
@@ -150,8 +186,10 @@ function ExpandableDescription({ text }) {
   );
 }
 
-function productGalleryItems(product = {}) {
+function productGalleryItems(product = {}, featuredImageUrl = "") {
+  const featured = String(featuredImageUrl || "").trim();
   const rawItems = [
+    featured ? { src: featured, label: `${product.name} selected variant image` } : null,
     product.imageUrl ? { src: product.imageUrl, label: `${product.name} product image` } : null,
     ...(Array.isArray(product.images) ? product.images.map((item, index) => ({
       src: item?.url,
@@ -166,8 +204,8 @@ function productGalleryItems(product = {}) {
   });
 }
 
-function ProductGallery({ product }) {
-  const items = useMemo(() => productGalleryItems(product), [product]);
+function ProductGallery({ product, featuredImageUrl = "" }) {
+  const items = useMemo(() => productGalleryItems(product, featuredImageUrl), [product, featuredImageUrl]);
   const [activeIndex, setActiveIndex] = useState(0);
   const [lightboxIndex, setLightboxIndex] = useState(null);
   const viewportRef = useRef(null);
@@ -177,6 +215,7 @@ function ProductGallery({ product }) {
   const scrollSettleTimerRef = useRef(0);
   const pointerStartRef = useRef(null);
   const suppressOpenRef = useRef(false);
+  const previousFeaturedRef = useRef(featuredImageUrl);
   const active = items[activeIndex];
 
   useEffect(() => {
@@ -189,10 +228,15 @@ function ProductGallery({ product }) {
   }, [activeIndex]);
 
   useEffect(() => {
+    const featuredChanged = featuredImageUrl !== previousFeaturedRef.current;
+    previousFeaturedRef.current = featuredImageUrl;
     setActiveIndex(0);
     activeIndexRef.current = 0;
-    viewportRef.current?.scrollTo({ left: 0, behavior: "auto" });
-  }, [product?._id, product?.slug]);
+    viewportRef.current?.scrollTo({
+      left: 0,
+      behavior: featuredChanged ? "smooth" : "auto",
+    });
+  }, [product?._id, product?.slug, featuredImageUrl]);
 
   useEffect(() => () => {
     window.cancelAnimationFrame(scrollFrameRef.current);
@@ -416,8 +460,9 @@ export function ShopProductsPage() {
   const [page, setPage] = useState(() => cachedCatalog?.data?.page || 1);
   const [catalogTotal, setCatalogTotal] = useState(() => cachedCatalog?.data?.total || cachedCatalog?.data?.products?.length || 0);
   const [catalogPages, setCatalogPages] = useState(() => cachedCatalog?.data?.pages || 1);
+  const [searchMode, setSearchMode] = useState("");
   const [highestPrice, setHighestPrice] = useState(() => cachedCatalog?.data?.maxPrice || 0);
-  const [loading, setLoading] = useState(() => !(cachedCatalog?.data?.products?.length));
+  const [loadingPhase, setLoadingPhase] = useState(() => cachedCatalog?.data?.products?.length ? "" : "searching");
   const [error, setError] = useState("");
   const [loadMoreError, setLoadMoreError] = useState("");
   const [retryKey, setRetryKey] = useState(0);
@@ -425,8 +470,12 @@ export function ShopProductsPage() {
   const [category, setCategory] = useState("");
   const [maxPrice, setMaxPrice] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
-  const debouncedSearch = useDebouncedValue(search);
+  const searchTerm = search.trim();
+  const debouncedSearch = useDebouncedValue(searchTerm, 400);
+  const searchPending = searchTerm !== debouncedSearch;
+  const loading = Boolean(loadingPhase);
   const debouncedMaxPrice = useDebouncedValue(maxPrice, 180);
+  const appliedMaxPrice = highestPrice && Number(debouncedMaxPrice) < highestPrice ? debouncedMaxPrice : "";
 
   useEffect(() => {
     const fromUrl = readSearchQueryFromLocation();
@@ -434,10 +483,11 @@ export function ShopProductsPage() {
   }, []);
 
   useEffect(() => {
+    if (searchPending) return undefined;
     let mounted = true;
     async function load() {
       try {
-        setLoading(true);
+        setLoadingPhase("searching");
         setLoadMoreError("");
         if (page === 1) setError("");
         const query = new URLSearchParams({
@@ -446,11 +496,16 @@ export function ShopProductsPage() {
         });
         if (debouncedSearch) query.set("search", debouncedSearch);
         if (category) query.set("category", category);
-        if (highestPrice && debouncedMaxPrice && Number(debouncedMaxPrice) < highestPrice) {
-          query.set("maxPrice", debouncedMaxPrice);
-        }
+        if (appliedMaxPrice) query.set("maxPrice", appliedMaxPrice);
         const [productsResponse, categoriesResponse] = await Promise.all([
-          apiRequest(`/shop-products/public/products?${query.toString()}`, { cacheTtl: CATALOG_CACHE_TTL_MS }),
+          requestCatalogResults("/shop-products/public/products", query, {
+            cacheTtl: CATALOG_CACHE_TTL_MS,
+            startAnalysis: () => {
+              if (!mounted) return false;
+              if (page === 1) setLoadingPhase("analyzing");
+              return true;
+            },
+          }),
           page === 1
             ? apiRequest("/shop-products/public/categories", { cacheTtl: CATALOG_CACHE_TTL_MS })
             : Promise.resolve(null),
@@ -461,21 +516,22 @@ export function ShopProductsPage() {
         if (categoriesResponse) setCategories(categoriesResponse.data || []);
         setCatalogTotal(productsResponse.data?.total || 0);
         setCatalogPages(productsResponse.data?.pages || 1);
-        if (!highestPrice) setHighestPrice(productsResponse.data?.maxPrice || 0);
+        setSearchMode(productsResponse.data?.searchMode || "");
+        setHighestPrice((current) => current || productsResponse.data?.maxPrice || 0);
         setError("");
       } catch (err) {
         if (!mounted) return;
         if (page === 1) setError(err.message || "Unable to load products.");
         else setLoadMoreError(err.message || "Unable to load more products.");
       } finally {
-        if (mounted) setLoading(false);
+        if (mounted) setLoadingPhase("");
       }
     }
     load();
     return () => {
       mounted = false;
     };
-  }, [cachedCatalog, category, debouncedMaxPrice, debouncedSearch, highestPrice, page, retryKey]);
+  }, [appliedMaxPrice, category, debouncedSearch, page, retryKey, searchPending]);
 
   useEffect(() => {
     const priceFiltered = highestPrice && maxPrice && Number(maxPrice) < highestPrice;
@@ -516,9 +572,9 @@ export function ShopProductsPage() {
   }, [highestPrice, restartCatalog]);
 
   const loadMoreProducts = useCallback(() => {
-    if (loading || page >= catalogPages) return;
+    if (loading || searchPending || page >= catalogPages) return;
     setPage((current) => current + 1);
-  }, [catalogPages, loading, page]);
+  }, [catalogPages, loading, page, searchPending]);
 
   useEffect(() => {
     if (!filterOpen) return undefined;
@@ -535,6 +591,10 @@ export function ShopProductsPage() {
   }, [closeFilters, filterOpen]);
 
   const addProductToCart = useCallback((product) => {
+    if (product?.hasVariants) {
+      window.location.href = getProductSharePath(product);
+      return;
+    }
     const result = addItem(product, {
       sourceType: product.sourceType || (isWiringAccessoriesCategory(product.category) ? "project-part" : "shop-product"),
     });
@@ -650,7 +710,6 @@ export function ShopProductsPage() {
               <span>Back to home</span>
             </a>
             <div className="catalog-page-heading">
-              <p className="parts-kicker"><ShoppingBag size={16} /> Public shop products</p>
               <h1>Shop Products</h1>
               <h2>Browse electronics, home appliances, lights, speakers, and useful products from Prakash Electronics.</h2>
             </div>
@@ -660,17 +719,13 @@ export function ShopProductsPage() {
         <section className="parts-products">
 
           <div className="shop-filter-panel">
-            <label className="parts-search shop-search" htmlFor="shop-search-input">
-              <Search size={18} />
-              <input
-                id="shop-search-input"
-                type="search"
-                value={search}
-                placeholder="Search products or #tags (e.g. #speaker)..."
-                onChange={(event) => { setSearch(event.target.value); restartCatalog(); }}
-              />
-              {search && <button type="button" onClick={() => { setSearch(""); restartCatalog(); }} aria-label="Clear search"><X size={16} /></button>}
-            </label>
+            <CatalogSearchField
+              id="shop-search-input"
+              label="Search shop products"
+              placeholder="Search products or #tags (e.g. #speaker)..."
+              value={search}
+              onChange={(value) => { setSearch(value); restartCatalog(); }}
+            />
 
             <button
               className={`shop-filter-trigger ${activeFilterCount ? "active" : ""}`}
@@ -687,13 +742,11 @@ export function ShopProductsPage() {
           </div>
 
           {!error && (
-            <span className="parts-search-count shop-count">
-              {loading && products.length ? "Updating results..." : `${catalogTotal} ${catalogTotal === 1 ? "product" : "products"}`}
-            </span>
+            <CatalogSearchStatus phase={searchPending ? "searching" : loadingPhase} total={catalogTotal} mode={searchMode} />
           )}
           {error && <div className="parts-state">{error}</div>}
           {loading && products.length === 0 && <CatalogGridSkeleton count={8} />}
-          {!loading && !error && products.length === 0 && (
+          {!loading && !searchPending && !error && products.length === 0 && (
             <EmptyProductsState message={search || category || activeFilterCount ? "No matching products found." : "No shop products are published yet."} />
           )}
 
@@ -740,13 +793,15 @@ export function ProductDetailPage() {
   const [source, setSource] = useState("shop");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [publicOffers, setPublicOffers] = useState([]);
-  const [appliedCoupon, setAppliedCoupon] = useState(null);
+  const [couponOffers, setCouponOffers] = useState(null);
+  const [couponSelection, setCouponSelection] = useState(null);
   const [privateCode, setPrivateCode] = useState("");
   const [couponError, setCouponError] = useState("");
   const [couponApplying, setCouponApplying] = useState(false);
   const [lastValidatedCoupon, setLastValidatedCoupon] = useState(null);
   const [showCouponSuccess, setShowCouponSuccess] = useState(false);
+  const [selectedCombinationId, setSelectedCombinationId] = useState(() => readVariantIdFromLocation());
+  const couponRequestRef = useRef(0);
 
   useEffect(() => {
     let mounted = true;
@@ -780,9 +835,22 @@ export function ProductDetailPage() {
     };
   }, [id]);
 
+  const activeCombination = useMemo(() => {
+    if (!product || !productHasVariants(product)) return null;
+    return resolveSelectedCombination(product, { combinationId: selectedCombinationId });
+  }, [product, selectedCombinationId]);
+  const selectedOptionIds = useMemo(() => (activeCombination?.optionIds || []).map(String), [activeCombination]);
+  const combinationId = activeCombination?.id || "";
+  const couponProduct = useMemo(() => product && { ...product, variantCombinationId: combinationId }, [product, combinationId]);
+  const publicOffers = useMemo(() => (
+    couponOffers?.combinationId === combinationId ? couponOffers.offers : []
+  ), [couponOffers, combinationId]);
+  const appliedCoupon = couponSelection?.combinationId === combinationId ? couponSelection.offer : null;
+  const setAppliedCoupon = useCallback((offer) => setCouponSelection({ combinationId, offer }), [combinationId]);
+
   useEffect(() => {
     if (!product || source !== "shop") {
-      setPublicOffers([]);
+      setCouponOffers(null);
       setAppliedCoupon(null);
       return undefined;
     }
@@ -791,40 +859,96 @@ export function ProductDetailPage() {
       setCouponError("");
       setLastValidatedCoupon(null);
       try {
-        const response = await apiRequest(`/coupons/product/${encodeURIComponent(product._id || product.slug)}`, { cache: "no-store" });
+        const productId = product._id || product.slug;
+        const variantQuery = combinationId ? `?variantCombinationId=${encodeURIComponent(combinationId)}` : "";
+        const response = await apiRequest(`/coupons/product/${encodeURIComponent(productId)}${variantQuery}`, { cache: "no-store" });
         if (!mounted) return;
         const offers = Array.isArray(response.data?.coupons) ? response.data.coupons : [];
-        setPublicOffers(offers);
-        const storedCode = getAppliedCouponCode(product);
+        setCouponOffers({ combinationId, offers });
+        const storedCode = getAppliedCouponCode(couponProduct);
         if (storedCode) {
           try {
-            const validated = await apiRequest("/coupons/validate", { method: "POST", cache: "no-store", body: JSON.stringify({ productId: product._id || product.slug, code: storedCode }) });
+            const validated = await apiRequest("/coupons/validate", { method: "POST", cache: "no-store", body: JSON.stringify({ productId, code: storedCode, variantCombinationId: combinationId }) });
             if (!mounted) return;
             setAppliedCoupon(validated.data);
-            setAppliedCouponCode(validated.data.code, product);
+            setAppliedCouponCode(validated.data.code, couponProduct);
             if (validated.data?.visibility === "private") setLastValidatedCoupon(validated.data);
             setPrivateCode(validated.data?.visibility === "private" ? storedCode : "");
             return;
           } catch (_invalidStoredCoupon) {
-            // A coupon for another product should not block this product's best public offer.
+            // The stored coupon may not apply to the selected variant's price.
           }
         }
+        if (!mounted) return;
         const bestOffer = offers[0] || null;
         setAppliedCoupon(bestOffer);
-        setAppliedCouponCode(bestOffer?.code || "", product);
+        setPrivateCode("");
+        setAppliedCouponCode(bestOffer?.code || "", couponProduct);
       } catch (_couponLoadError) {
-        if (mounted) setPublicOffers([]);
+        if (mounted) setCouponOffers(null);
       }
     }
     loadCoupons();
     return () => { mounted = false; };
-  }, [product, source]);
+  }, [combinationId, couponProduct, product, setAppliedCoupon, source]);
+
+  const variantView = useMemo(() => {
+    if (!product || !productHasVariants(product) || !activeCombination) {
+      return {
+        pricing: product ? resolveProductPricing(product) : null,
+        stock: product && !productHasVariants(product) ? getCartStockLimit(product) : 0,
+        availability: productHasVariants(product) ? "Out of Stock" : product?.availability || "Available",
+        imageUrl: "",
+        sku: product?.sku || "",
+        summary: "",
+        selections: [],
+      };
+    }
+    const pricing = resolveVariantPricing(product, activeCombination, resolveProductPricing);
+    return {
+      pricing,
+      stock: resolveVariantStock(product, activeCombination),
+      availability: resolveVariantAvailability(product, activeCombination),
+      imageUrl: resolveVariantImage(product, activeCombination, selectedOptionIds),
+      sku: resolveVariantSku(product, activeCombination),
+      summary: formatVariantSummary(product, activeCombination.optionIds || selectedOptionIds),
+      selections: selectionLabels(product, activeCombination.optionIds || selectedOptionIds),
+    };
+  }, [product, activeCombination, selectedOptionIds]);
+
+  const handleVariantChange = useCallback((combination) => {
+    couponRequestRef.current += 1;
+    setCouponApplying(false);
+    setShowCouponSuccess(false);
+    setLastValidatedCoupon(null);
+    setCouponError("");
+    setSelectedCombinationId(combination.id);
+    const url = new URL(window.location.href);
+    url.searchParams.set("v", combination.id);
+    url.searchParams.delete("variant");
+    window.history.replaceState(window.history.state, "", url);
+  }, []);
+
+  const shareProductPayload = useMemo(() => {
+    if (!product) return null;
+    if (!productHasVariants(product) || !activeCombination) return product;
+    return {
+      ...product,
+      variantCombinationId: activeCombination.id,
+      variantOptionIds: activeCombination.optionIds || selectedOptionIds,
+      variantSummary: variantView.summary,
+      imageUrl: variantView.imageUrl || product.imageUrl,
+      sku: variantView.sku || product.sku,
+      price: variantView.pricing?.price ?? product.price,
+      mrp: variantView.pricing?.mrp ?? product.mrp,
+    };
+  }, [product, activeCombination, selectedOptionIds, variantView]);
 
   useEffect(() => {
-    if (product) {
-      applyProductPageMeta(product, publicOffers);
+    if (shareProductPayload) {
+      applyProductPageMeta(shareProductPayload, publicOffers);
     }
-  }, [product, publicOffers]);
+  }, [shareProductPayload, publicOffers]);
 
   useEffect(() => {
     if (product) trackProductPageView(product);
@@ -832,7 +956,7 @@ export function ProductDetailPage() {
 
   const applyPublicOffer = (offer) => {
     setAppliedCoupon(offer);
-    setAppliedCouponCode(offer.code, product);
+    setAppliedCouponCode(offer.code, couponProduct);
     setPrivateCode("");
     setCouponError("");
   };
@@ -843,75 +967,104 @@ export function ProductDetailPage() {
     setCouponError("");
     if (lastValidatedCoupon?.code === safeCode) {
       setAppliedCoupon(lastValidatedCoupon);
-      setAppliedCouponCode(lastValidatedCoupon.code, product);
+      setAppliedCouponCode(lastValidatedCoupon.code, couponProduct);
       return;
     }
     if (appliedCoupon?.visibility === "private") {
       const fallback = publicOffers[0] || null;
       setAppliedCoupon(fallback);
-      setAppliedCouponCode(fallback?.code || "", product);
+      setAppliedCouponCode(fallback?.code || "", couponProduct);
     }
   };
 
   const applyPrivateCoupon = async (event) => {
     event.preventDefault();
     if (!product || !privateCode.trim()) return;
+    const requestId = ++couponRequestRef.current;
     setCouponApplying(true);
     setCouponError("");
     try {
-      const response = await apiRequest("/coupons/validate", { method: "POST", cache: "no-store", body: JSON.stringify({ productId: product._id || product.slug, code: privateCode }) });
+      const response = await apiRequest("/coupons/validate", { method: "POST", cache: "no-store", body: JSON.stringify({ productId: product._id || product.slug, code: privateCode, variantCombinationId: combinationId }) });
+      if (requestId !== couponRequestRef.current) return;
       setAppliedCoupon(response.data);
       setLastValidatedCoupon(response.data);
-      setAppliedCouponCode(response.data.code, product);
+      setAppliedCouponCode(response.data.code, couponProduct);
       toast.success(`${response.data.code} applied. You saved ${formatINR(response.data.discountAmount)}.`, { id: "coupon-apply" });
       setShowCouponSuccess(true);
     } catch (couponApplyError) {
+      if (requestId !== couponRequestRef.current) return;
       setCouponError(couponApplyError.message || "This coupon could not be applied.");
       toast.error(couponApplyError.message || "This coupon could not be applied.", { id: "coupon-apply" });
     } finally {
-      setCouponApplying(false);
+      if (requestId === couponRequestRef.current) setCouponApplying(false);
     }
   };
 
-  const bookNow = () => {
-    if (!product) return;
-    if (getCartStockLimit(product) < 1) {
-      setError("This product is out of stock.");
-      return;
+  const cartOverrides = useMemo(() => {
+    if (!product) return {};
+    const sourceType = source === "project-part" || product.sourceType === "project-part" ? "project-part" : "shop-product";
+    if (!productHasVariants(product) || !activeCombination) {
+      return { sourceType };
     }
-    const result = addItem(product, {
-      sourceType: source === "project-part" || product.sourceType === "project-part" ? "project-part" : "shop-product",
-    });
+    return {
+      sourceType,
+      variantCombinationId: activeCombination.id,
+      variantOptionIds: activeCombination.optionIds || selectedOptionIds,
+      variantSummary: variantView.summary,
+      variantSelections: variantView.selections,
+      variantSku: variantView.sku,
+      price: variantView.pricing?.price ?? product.price,
+      availability: variantView.availability,
+      stockQuantity: variantView.stock,
+      productImageUrl: variantView.imageUrl || product.imageUrl,
+    };
+  }, [product, source, activeCombination, selectedOptionIds, variantView]);
+
+  const detailStockLimit = productHasVariants(product) ? variantView.stock : product ? getCartStockLimit(product) : 0;
+  const variantPrice = variantView.pricing?.price;
+  const variantUnavailable = productHasVariants(product)
+    && (detailStockLimit < 1 || !Number.isFinite(variantPrice) || variantPrice <= 0);
+  const canPurchase = detailStockLimit > 0 && !variantUnavailable;
+
+  const bookNow = () => {
+    if (!product || !canPurchase) return;
+    const result = addItem(product, cartOverrides);
     notifyCartResult(result, product.name);
     if (result?.status !== "blocked") window.location.href = "/cart";
   };
 
   const addCurrentToCart = () => {
-    if (!product) return;
-    const result = addItem(product, {
-      sourceType: source === "project-part" || product.sourceType === "project-part" ? "project-part" : "shop-product",
-    });
+    if (!product || !canPurchase) return;
+    const result = addItem(product, cartOverrides);
     notifyCartResult(result, product.name);
   };
 
-  const detailCartQuantity = product ? getQuantity(product, {
-    sourceType: source === "project-part" || product.sourceType === "project-part" ? "project-part" : "shop-product",
-  }) : 0;
-  const detailStockLimit = product ? getCartStockLimit(product) : 0;
+  const detailCartQuantity = product ? getQuantity(product, cartOverrides) : 0;
   const displayedProduct = useMemo(() => {
-    if (!product || !appliedCoupon || !Number.isFinite(Number(appliedCoupon.finalPrice))) return product;
-    const basePricing = resolveProductPricing(product);
+    if (!product) return product;
+    const basePricing = productHasVariants(product) && variantView.pricing
+      ? variantView.pricing
+      : resolveProductPricing(product);
+    const withVariant = {
+      ...product,
+      mrp: basePricing.mrp ?? product.mrp,
+      price: basePricing.price ?? product.price,
+      discountPercent: productHasVariants(product) ? null : product.discountPercent,
+      availability: productHasVariants(product) ? variantView.availability : product.availability,
+      sku: productHasVariants(product) ? (variantView.sku || product.sku) : product.sku,
+    };
+    if (!appliedCoupon || !Number.isFinite(Number(appliedCoupon.finalPrice))) return withVariant;
     const finalPrice = Number(appliedCoupon.finalPrice);
     const comparisonPrice = Number.isFinite(Number(basePricing.mrp)) && Number(basePricing.mrp) > finalPrice
       ? Number(basePricing.mrp)
       : Number(basePricing.price);
     return {
-      ...product,
-      mrp: Number.isFinite(comparisonPrice) && comparisonPrice > finalPrice ? comparisonPrice : product.mrp,
+      ...withVariant,
+      mrp: Number.isFinite(comparisonPrice) && comparisonPrice > finalPrice ? comparisonPrice : withVariant.mrp,
       price: finalPrice,
       discountPercent: null,
     };
-  }, [appliedCoupon, product]);
+  }, [appliedCoupon, product, variantView]);
 
   return (
     <div className="App project-parts-page shop-products-page">
@@ -940,9 +1093,11 @@ export function ProductDetailPage() {
         {product && !loading && (
           <section className="part-detail-panel">
             <div className="part-detail-media">
-              <ProductShareButton product={product} compact />
-              <ProductGallery product={product} />
-              <span className={`part-status ${String(product.availability || "").toLowerCase().replace(/\s+/g, "-")}`}>{product.availability || "Available"}</span>
+              <ProductShareButton product={product} shareOverrides={shareProductPayload} compact />
+              <ProductGallery product={product} featuredImageUrl={variantView.imageUrl} />
+              <span className={`part-status ${String((productHasVariants(product) ? variantView.availability : product.availability) || "").toLowerCase().replace(/\s+/g, "-")}`}>
+                {(productHasVariants(product) ? variantView.availability : product.availability) || "Available"}
+              </span>
             </div>
 
             <div className="part-detail-content">
@@ -956,7 +1111,12 @@ export function ProductDetailPage() {
                 {product.originalCategory ? (
                   <span className="detail-meta-chip">{product.originalCategory}</span>
                 ) : null}
-                <span className="detail-meta-chip detail-meta-chip--stock">{cartStockMessage(product)}</span>
+                <span className="detail-meta-chip detail-meta-chip--stock">
+                  {cartStockMessage({
+                    availability: productHasVariants(product) ? variantView.availability : product.availability,
+                    stockQuantity: detailStockLimit,
+                  })}
+                </span>
               </div>
               {product.shortDescription && <p className="detail-lead" style={{marginLeft:"6px", fontWeight:"800"}}>{product.shortDescription}</p>}
               <ExpandableDescription text={product.description} />
@@ -1015,7 +1175,18 @@ export function ProductDetailPage() {
                   })}
                 </div>
               )}
-         
+
+              <ProductVariantSelector
+                product={product}
+                selectedOptionIds={selectedOptionIds}
+                onChange={handleVariantChange}
+              />
+              {variantUnavailable && (
+                <p className="variant-purchase-status" role="status">
+                  {detailStockLimit < 1 ? "This option is out of stock." : "This option is currently unavailable for online purchase."}
+                </p>
+              )}
+
               <div className="detail-action-bar">
                 <ProductPriceDisplay product={displayedProduct} className={appliedCoupon ? "coupon-price-applied" : ""} size="detail" showDiscountBadge />
                 <div className="detail-button-group">
@@ -1023,11 +1194,11 @@ export function ProductDetailPage() {
                     className="book-now-button cart-secondary-button"
                     type="button"
                     onClick={addCurrentToCart}
-                    disabled={detailStockLimit < 1 || (detailStockLimit > 0 && detailCartQuantity >= detailStockLimit)}
+                    disabled={!canPurchase || detailCartQuantity >= detailStockLimit}
                   >
                     {detailCartQuantity ? <Check size={18} /> : <ShoppingCart size={18} />} {detailCartQuantity ? `In Cart (${detailCartQuantity})` : "Add to Cart"}
                   </button>
-                  <button className="book-now-button" type="button" onClick={bookNow} disabled={detailStockLimit < 1}>
+                  <button className="book-now-button" type="button" onClick={bookNow} disabled={!canPurchase}>
                     <ShoppingBag size={18} /> Buy Now
                   </button>
                 </div>
@@ -1049,7 +1220,7 @@ export function ProductDetailPage() {
           />
         ) : null}
 
-        {product && !loading ? <ProductInformation product={product} /> : null}
+        {product && !loading ? <ProductInformation product={displayedProduct || product} /> : null}
 
         {product && !loading ? (
           <RelatedProductsSection

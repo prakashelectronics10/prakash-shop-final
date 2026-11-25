@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Check, Clock3, MapPin, PackageCheck, Phone, Search, Truck, UserRound, WalletCards } from "lucide-react";
 import { apiRequest } from "../../api/client";
 import { formatINR } from "../../utils/productPricing";
-import trackOrderHero from "../../assets/track-order-hero.jpg";
+import trackOrderHero from "../../assets/track-order-hero.webp";
 import { Navbar } from "./Navbar";
 import { Footer } from "./Footer";
 import { OptimizedImage } from "./OptimizedImage";
@@ -95,7 +95,10 @@ function OrderResult({ order }) {
       <div className="tracking-products">
         <h3>Items in your order</h3>
         {order.items.map((item) => (
-          <a href={`/product/${encodeURIComponent(item.productSlug || item.productId)}`} key={`${item.productId}-${item.productName}`}>
+          <a
+            href={`/product/${encodeURIComponent(item.productSlug || item.productId)}${item.variantCombinationId ? `?v=${encodeURIComponent(item.variantCombinationId)}` : ""}`}
+            key={`${item.productId}-${item.variantCombinationId || "base"}-${item.productName}`}
+          >
             <div>
               {item.productImageUrl ? (
                 <OptimizedImage
@@ -111,7 +114,11 @@ function OrderResult({ order }) {
                 <PackageCheck size={30} />
               )}
             </div>
-            <span><strong>{item.productName}</strong><small>{item.productCategory}</small><em>{formatINR(item.unitPrice)} × {item.quantity}</em></span>
+            <span>
+              <strong>{item.productName}</strong>
+              <small>{item.productCategory}{item.variantSummary ? ` · ${item.variantSummary}` : ""}</small>
+              <em>{formatINR(item.unitPrice)} × {item.quantity}</em>
+            </span>
             <b>{formatINR(item.lineTotal)}</b>
           </a>
         ))}
@@ -134,7 +141,7 @@ function OrderResult({ order }) {
                 return (
                   <li className={`${complete ? "complete" : ""} ${current ? "current" : ""}`} key={step.key}>
                     <span>{complete ? <Check size={16} /> : <Icon size={16} />}</span>
-                    <div><small>{complete ? formatDate(index === activeIndex ? order.statusUpdatedAt : order.placedAt) : "Pending"}</small><strong>{step.title}</strong><p>{step.detail}</p></div>
+                    <div><small>{complete ? formatDate(index === activeIndex ? order.statusUpdatedAt : order.placedAt) : "Pending"}</small><strong>{step.title}</strong><p>{step.key === "confirmed" && order.paymentMethod === "cod" ? "Cash on delivery order accepted" : step.detail}</p></div>
                   </li>
                 );
               })}
@@ -152,8 +159,8 @@ function OrderResult({ order }) {
               <strong>{Number(charge.amount || 0) ? formatINR(charge.amount) : "Free"}</strong>
             </p>
           ))}
-          <p className="tracking-total"><span>Paid total</span><strong>{formatINR(order.total)}</strong></p>
-          <small><Check size={15} /> Payment verified</small>
+          <p className="tracking-total"><span>{order.paymentMethod === "cod" ? "Due on delivery" : "Paid total"}</span><strong>{formatINR(order.total)}</strong></p>
+          <small><Check size={15} /> {order.paymentMethod === "cod" ? "Cash on delivery — payment due" : "Payment verified"}</small>
         </aside>
       </div>
     </section>
@@ -202,16 +209,16 @@ export function OrderTrackingPage() {
               className="tracking-hero-image"
               src={trackOrderHero}
               alt=""
-              width={1040}
-              height={720}
-              sizes="(max-width: 720px) 88vw, 520px"
+              width={640}
+              height={443}
+              sizes="(max-width: 720px) 88vw, 420px"
               decoding="async"
               fetchPriority="high"
             />
           </div>
           <p className="order-kicker"><Clock3 size={15} /> Live order tracking</p>
           <h1>Track your order</h1>
-          <p>Enter the Order ID you received after payment to see products, payment summary and the latest delivery status.</p>
+          <p>Enter the Order ID you received after confirmation to see products, payment summary and the latest delivery status.</p>
           <form onSubmit={findOrder}>
             <label htmlFor="order-id">Order ID</label>
             <div>

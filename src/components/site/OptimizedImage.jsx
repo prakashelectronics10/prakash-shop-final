@@ -10,9 +10,10 @@ export function OptimizedImage({
   decoding = "async",
   fetchPriority,
   className,
+  style,
   ...props
 }) {
-  const displayWidth = Number(width) > 0 ? Number(width) : 1200;
+  const displayWidth = Number(width) > 0 ? Number(width) : 960;
   const optimizedSrc = getOptimizedImageUrl(src, { width: displayWidth });
   const sources = getResponsiveImageSources(src, { width: displayWidth });
   const isPriority = fetchPriority === "high";
@@ -30,6 +31,7 @@ export function OptimizedImage({
       decoding={decoding}
       fetchpriority={fetchPriority}
       className={className}
+      style={style}
       {...props}
     />
   );

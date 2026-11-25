@@ -1,5 +1,15 @@
 const mongoose = require("mongoose");
 
+const orderItemVariantSelectionSchema = new mongoose.Schema(
+  {
+    groupId: { type: String, trim: true, default: "" },
+    groupName: { type: String, trim: true, default: "" },
+    optionId: { type: String, trim: true, default: "" },
+    label: { type: String, trim: true, default: "" },
+  },
+  { _id: false },
+);
+
 const orderItemSchema = new mongoose.Schema(
   {
     sourceType: { type: String, enum: ["shop-product", "project-part"], required: true },
@@ -15,6 +25,10 @@ const orderItemSchema = new mongoose.Schema(
     couponCode: { type: String, trim: true, default: "" },
     discountedUnitPrice: { type: Number, required: true, min: 0, default: 0 },
     discountedLineTotal: { type: Number, required: true, min: 0, default: 0 },
+    variantCombinationId: { type: String, trim: true, default: "" },
+    variantSku: { type: String, trim: true, uppercase: true, default: "" },
+    variantSummary: { type: String, trim: true, default: "" },
+    variantSelections: { type: [orderItemVariantSelectionSchema], default: [] },
   },
   { _id: false },
 );
@@ -64,14 +78,24 @@ const orderSchema = new mongoose.Schema(
     deliveryCharge: { type: Number, required: true, min: 0, default: 0 },
     total: { type: Number, required: true, min: 1 },
     currency: { type: String, default: "INR", enum: ["INR"] },
-    paymentStatus: { type: String, default: "pending", enum: ["pending", "paid", "failed", "refunded"], index: true },
+    paymentStatus: { type: String, default: "pending", enum: ["pending", "paid", "failed", "refunded", "cod"], index: true },
+    paymentMethod: { type: String, enum: ["online", "cod"], default: "online" },
+    source: { type: String, enum: ["website", "whatsapp"], default: "website" },
+    whatsappAccount: { type: mongoose.Schema.Types.ObjectId, ref: "WhatsAppAccount" },
+    whatsappConversation: { type: mongoose.Schema.Types.ObjectId, ref: "WhatsAppConversation" },
+    checkoutKey: { type: String, unique: true, sparse: true },
+    razorpayPaymentLinkId: { type: String, default: "", index: true },
+    paymentLinkUrl: { type: String, default: "" },
+    paymentLinkExpiresAt: Date,
+    paymentRequestMessageId: { type: String, default: "" },
+    paymentRequestClaimUntil: Date,
     orderStatus: {
       type: String,
-      default: "confirmed",
-      enum: ["confirmed", "shipped", "out_for_delivery", "delivered", "cancelled"],
+      default: "awaiting_payment",
+      enum: ["awaiting_payment", "confirmed", "shipped", "out_for_delivery", "delivered", "cancelled"],
       index: true,
     },
-    razorpayOrderId: { type: String, required: true, index: true },
+    razorpayOrderId: { type: String, default: "", index: true },
     razorpayPaymentId: { type: String, trim: true, default: "", index: true },
     paidAt: Date,
     notifiedAt: { type: Date, default: null },

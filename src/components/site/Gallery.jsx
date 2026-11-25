@@ -11,15 +11,15 @@ function GalleryMarqueeCard({ item, index, onOpen, eager = false }) {
       type="button"
       onClick={() => onOpen(index)}
       aria-label={`Open ${item.label} in lightbox`}
-      className="gallery-marquee-card gallery-tile group relative cursor-zoom-in overflow-hidden rounded-2xl border-glow shadow-card text-left"
+      className="gallery-marquee-card gallery-tile group relative cursor-zoom-in overflow-hidden rounded-3xl border-glow shadow-card text-left"
     >
       <OptimizedImage
         src={item.src}
         alt={item.label}
         loading={eager ? "eager" : "lazy"}
         decoding="async"
-        width={720}
-        height={840}
+        width={480}
+        height={560}
         sizes="(min-width: 768px) 240px, 70vw"
         className="gallery-tile-image h-full w-full object-cover"
       />

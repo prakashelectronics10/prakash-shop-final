@@ -85,6 +85,10 @@ const whatsAppGreetingSchema = z.object({
 
 const whatsAppAISettingsSchema = z.object({
   accountId: z.string().trim().min(1),
+  codEnabled: booleanValue.default(false),
+  enhancedPaymentsEnabled: booleanValue.default(false),
+  paymentTemplateName: z.string().trim().regex(/^[a-z0-9_]+$/).max(512).optional().default("pulse_order_payment"),
+  paymentTemplateLanguage: z.string().trim().regex(/^[a-z]{2,3}(?:_[A-Z]{2})?$/).max(12).optional().default("en"),
   enabled: booleanValue.default(true),
   systemPromptExtra: z.string().trim().max(4000).optional().default(""),
   sendProductImages: booleanValue.default(true),

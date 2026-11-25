@@ -260,10 +260,10 @@
 }
 .tracking-hero > .order-kicker { justify-content: center; }
 .tracking-hero > p { max-width: 680px; margin: .8rem auto 1.4rem; }
-.tracking-hero form { display: grid; gap: .55rem; padding: .85rem; border: 1px solid #dbe7f5; border-radius: 18px; text-align: left; background: white; box-shadow: 0 18px 45px rgba(30,64,175,.08); }
+.tracking-hero form { display: grid; gap: .55rem; padding: .95rem; border: 1px solid #dbe7f5; border-radius: 24px; text-align: left; background: white; box-shadow: 0 18px 45px rgba(30,64,175,.08); }
 .tracking-hero form > label { padding-left: .25rem; color: #475569; font-size: .72rem; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
 .tracking-hero form > div { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: .6rem; }
-.tracking-hero input { min-width: 0; min-height: 50px; border: 1px solid #dbe7f5; border-radius: 12px; padding: 0 .9rem; color: #0f172a; background: #f8fafc; font-weight: 800; text-transform: uppercase; outline: none; }
+.tracking-hero input { min-width: 0; min-height: 50px; border: 1px solid #dbe7f5; border-radius: 16px; padding: 0 .9rem; color: #0f172a; background: #f8fafc; font-weight: 800; text-transform: uppercase; outline: none; }
 .tracking-hero input:focus { border-color: #60a5fa; box-shadow: 0 0 0 4px rgba(59,130,246,.1); }
 .tracking-hero button { gap: .4rem; padding: 0 1.15rem; }
 .tracking-hero form > small { padding-left: .25rem; color: #dc2626; font-weight: 750; }
@@ -352,7 +352,7 @@
 .tracking-products > a { display: grid; grid-template-columns: 78px minmax(0,1fr) auto; gap: .9rem; align-items: center; padding: .75rem; border: 1px solid #e2e8f0; border-radius: 16px; color: #0f172a; text-decoration: none; transition: .18s ease; }
 .tracking-products > a + a { margin-top: .65rem; }
 .tracking-products > a:hover { border-color: #93c5fd; transform: translateY(-1px); box-shadow: 0 12px 30px rgba(37,99,235,.08); }
-.tracking-products > a > div { display: grid; width: 78px; height: 78px; place-items: center; overflow: hidden; border-radius: 13px; background: #f1f5f9; }
+.tracking-products > a > div { display: grid; width: 78px; height: 78px; place-items: center; overflow: hidden; border-radius: 18px; background: #f1f5f9; }
 .tracking-products img { width: 100%; height: 100%; object-fit: contain; }
 .tracking-products a > span { min-width: 0; display: grid; gap: .18rem; }
 .tracking-products a strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -50,10 +50,10 @@ export function ContactPage() {
             <p className="internal-page-kicker">Contact us</p>
             <h1>Contact Prakash <span>Electronics</span></h1>
             <p>Reach the workshop directly for product enquiries, repair guidance, bookings, and availability.</p>
-            <ul className="internal-page-hero-points" aria-label="Available contact support">
-              <li>Product enquiries</li>
-              <li>Repair bookings</li>
-              <li>Workshop directions</li>
+            <ul className="internal-page-hero-chips" aria-label="Available contact support">
+              <li><span className="internal-page-hero-chip-dot" aria-hidden="true" />Product enquiries</li>
+              <li><span className="internal-page-hero-chip-dot" aria-hidden="true" />Repair bookings</li>
+              <li><span className="internal-page-hero-chip-dot" aria-hidden="true" />Workshop directions</li>
             </ul>
             <div className="contact-page-hero-actions">
               {phoneHref ? <a className="internal-page-primary" href={phoneHref}><Phone size={17} />Call now</a> : null}

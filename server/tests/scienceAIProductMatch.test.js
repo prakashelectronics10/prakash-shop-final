@@ -5,6 +5,7 @@ const {
   isGeneralProductDiscoveryRequest,
   isServiceOnlyRequest,
   rankProductsForDemand,
+  stripCatalogMatchLine,
 } = require("../controllers/scienceAIProductMatch");
 
 test("recognizes generic product discovery requests in conversational Hinglish", () => {
@@ -36,6 +37,53 @@ test("model output cannot inject unrelated product cards into a website-informat
     products,
   );
   assert.deepEqual(results, []);
+});
+
+test("recovers exact speaker cards from a numbered Pulse AI reply for Bluetooth song player", () => {
+  const retro = { _id: "1", name: "MZ Pink Retro Wireless Bluetooth Speaker 5W", price: 699 };
+  const soundbar = { _id: "2", name: "Speaker (MZ M12VP) - Soundbar", description: "Bluetooth and AUX", price: 849 };
+  const soundBox = { _id: "3", name: "Bluetooth Sound Box (MZ A005)", price: 274 };
+  const products = [
+    soundBox, retro, soundbar,
+    { _id: "4", name: "DVD Player" },
+    { _id: "5", name: "Bluetooth Audio Adapter", description: "Connects to a speaker" },
+    { _id: "6", name: "Bluetooth Boombox" },
+  ];
+  const answer = [
+    "Ye Bluetooth speakers songs sunne ke liye available hain.",
+    "1. **MZ Pink Retro Wireless Bluetooth Speaker 5W** 🎵",
+    "2. **Speaker (MZ M12VP) - Soundbar**",
+    "3. **Bluetooth Sound Box (MZ A005)**",
+    "4. **Unverified Bluetooth Speaker**",
+  ].join("\n");
+  assert.deepEqual(
+    rankProductsForDemand("bluetooth song player", answer, products).map(({ product }) => product._id),
+    ["1", "2", "3"],
+  );
+  assert.deepEqual(
+    new Set(rankProductsForDemand("bluetooth song player", "", products).map(({ product }) => product._id)),
+    new Set(["1", "2", "3", "6"]),
+  );
+});
+
+test("checks AI-listed product cards against the requested spec and budget", () => {
+  const products = [
+    { _id: "1", name: "Pink Bluetooth Speaker", price: 699 },
+    { _id: "2", name: "Pink Wired Speaker", price: 600 },
+    { _id: "3", name: "Black Bluetooth Speaker", price: 599 },
+    { _id: "4", name: "Pink Bluetooth Boombox", price: 1200 },
+  ];
+  const reply = "Here's a recommendation.\n**CATALOG_MATCHES:** Pink Wired Speaker | Black Bluetooth Speaker | Pink Bluetooth Boombox | Pink Bluetooth Speaker";
+  assert.deepEqual(
+    rankProductsForDemand("pink bluetooth music player under 1000", reply, products).map(({ product }) => product._id),
+    ["1"],
+  );
+  assert.equal(stripCatalogMatchLine(reply), "Here's a recommendation.");
+});
+
+test("a product heading alone cannot add a card to a non-shopping reply", () => {
+  const products = [{ _id: "1", name: "Bluetooth Speaker" }];
+  assert.deepEqual(rankProductsForDemand("contact", "1. **Bluetooth Speaker**", products), []);
 });
 
 test("brand and subtype words found in the catalog remain hard requirements", () => {

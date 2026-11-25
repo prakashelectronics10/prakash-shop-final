@@ -3,6 +3,10 @@
  * Only products that match the customer's demand (type/color/keywords) are ranked.
  */
 
+const { normalizeWirelessPlayerIntent } = require("../utils/catalogIntent");
+
+const SPEAKER_TYPES = ["speaker", "speakers", "soundbar", "sound bar", "soundbox", "sound box", "boombox"];
+const CATALOG_MATCH_LINE = /^[ \t]*(?:\*\*|__)?CATALOG_MATCHES(?:\*\*|__)?[ \t]*:[ \t]*(?:\*\*|__)?(.*)$/gim;
 const COLOR_WORDS = [
   "red", "blue", "white", "black", "green", "yellow", "pink", "gold", "golden",
   "silver", "grey", "gray", "orange", "purple", "brown", "beige", "transparent",
@@ -12,7 +16,7 @@ const COLOR_WORDS = [
 const PRODUCT_FAMILIES = [
   { id: "cooling", keys: ["cooling", "cooler", "cool", "fan", "spray fan", "air cooler", "blower", "portable cooler", "mini cooler"] },
   { id: "lighting", keys: ["led", "light", "lamp", "bulb", "strip", "rgb", "rope", "torch", "flashlight"] },
-  { id: "audio", keys: ["speaker", "mic", "microphone", "amplifier", "bluetooth", "audio"] },
+  { id: "audio", keys: [...SPEAKER_TYPES, "mic", "microphone", "amplifier", "bluetooth", "audio"] },
   { id: "wiring", keys: ["wire", "cable", "mcb", "switch", "socket", "plug", "board"] },
   { id: "motor", keys: ["motor", "servo", "driver"] },
   { id: "sensor", keys: ["sensor", "ultrasonic", "ir", "module", "arduino", "relay"] },
@@ -123,7 +127,8 @@ function extractWantedComponents(text) {
 }
 
 function extractUserIntent(promptText) {
-  const normalized = normalize(promptText);
+  const raw = normalize(promptText);
+  const normalized = normalizeWirelessPlayerIntent(raw);
   const keywords = meaningfulWords(normalized).slice(0, 16);
   const colors = extractColors(normalized);
   const families = detectFamilies(normalized);
@@ -134,7 +139,8 @@ function extractUserIntent(promptText) {
     colors,
     families,
     wantedComponents,
-    hasSpecificDemand: Boolean(families.length || wantedComponents.length || colors.length || keywords.length >= 2),
+    wantsWirelessSpeaker: normalized !== raw,
+    hasSpecificDemand: Boolean(families.length || wantedComponents.length || colors.length || keywords.length >= 2 || extractModelTokens(normalized).length),
   };
 }
 
@@ -209,7 +215,7 @@ function expandComponentTerms(component) {
     fan: ["fan", "ceiling fan", "table fan", "spray fan", "cooling fan"],
     cooler: ["cooler", "air cooler", "portable cooler", "mini cooler", "desert cooler"],
     cooling: ["cooling", "cooler", "fan", "spray fan", "air cooler", "portable cooler"],
-    speaker: ["speaker", "bluetooth speaker", "boombox"],
+    speaker: SPEAKER_TYPES,
     "ir sensor": ["ir sensor", "infrared sensor", "line sensor"],
     ultrasonic: ["ultrasonic", "hc sr04", "distance sensor"],
     "ultrasonic sensor": ["ultrasonic sensor", "hc sr04", "distance sensor"],
@@ -260,6 +266,8 @@ function scoreProductForUserIntent(product, intent) {
   const productWords = new Set(meaningfulWords(productText));
   const nameWords = meaningfulWords(productName);
   const families = productFamilyIds(product);
+
+  if (intent.wantsWirelessSpeaker && !SPEAKER_TYPES.some((type) => containsPhrase(identityText, type))) return 0;
 
   // "cooling products" / fan / cooler → finished appliances only (not motors used inside coolers)
   if (intent.families.includes("cooling") && !wantsSpareParts(intent)) {
@@ -325,20 +333,23 @@ function scoreProductForUserIntent(product, intent) {
 }
 
 function extractCatalogMatchesFromAi(aiText, products) {
-  const match = String(aiText || "").match(/CATALOG_MATCHES\s*:\s*(.+)$/im);
-  if (!match) return [];
-  const names = match[1]
-    .split("|")
-    .map((item) => normalize(item))
-    .filter((item) => item.length >= 3);
+  const text = String(aiText || "");
+  const names = Array.from(text.matchAll(CATALOG_MATCH_LINE), ([, names]) => names).flatMap((line) => line.split("|"));
+  // Recover exact catalog names from recommendation headings if the model omits its metadata.
+  for (const line of stripAiMetaLines(text).split(/\r?\n/)) {
+    const heading = line.match(/^\s*\d+[.)]\s+(?:\*\*(.+?)\*\*|(.+))$/)
+      || line.match(/^\s*(?:[-*+]\s+)?\*\*(.+?)\*\*[\s:]*$/);
+    if (heading) names.push(heading[1] || heading[2]);
+  }
 
-  return (products || [])
-    .map((product) => {
-      const productName = normalize(product.name);
-      const hit = names.find((name) => productName === name || productName.includes(name) || name.includes(productName));
-      return hit ? { product, score: 120 + (productName === hit ? 25 : 0), component: "Exact demand match" } : null;
-    })
-    .filter(Boolean);
+  const byName = new Map();
+  for (const product of products || []) {
+    const name = normalize(product.name);
+    if (name) byName.set(name, [...(byName.get(name) || []), product]);
+  }
+  return unique(names.map(normalize))
+    .flatMap((name) => byName.get(name) || [])
+    .map((product) => ({ product, score: 145, component: "Exact demand match" }));
 }
 
 function extractImageFindings(aiText) {
@@ -386,6 +397,7 @@ function mergeIntents(primary, secondary) {
     colors,
     families,
     wantedComponents,
+    wantsWirelessSpeaker: primary.wantsWirelessSpeaker || secondary.wantsWirelessSpeaker,
     hasSpecificDemand: Boolean(families.length || wantedComponents.length || colors.length || keywords.length >= 2),
   };
 }
@@ -458,7 +470,7 @@ function scoreProductAgainstImageFindings(product, findings) {
 
 function stripAiMetaLines(text) {
   return String(text || "")
-    .replace(/\n?\s*CATALOG_MATCHES\s*:.*$/gim, "")
+    .replace(CATALOG_MATCH_LINE, "")
     .replace(/\n?\s*IMAGE_FINDINGS\s*:.*$/gim, "")
     .trim();
 }
@@ -504,6 +516,7 @@ function matchesPriceConstraint(product, constraint) {
 function catalogHardTerms(intent, products) {
   return unique((intent.keywords || []).filter((word) => {
     if (broadProductWords.has(word) || COLOR_WORDS.includes(word)) return false;
+    if (word === "bluetooth" && intent.wantsWirelessSpeaker) return true;
     return (products || []).some((product) => containsPhrase(productIdentityText(product), word));
   }));
 }
@@ -566,7 +579,11 @@ function rankProductsForDemand(promptText, aiText, products, deepSearch = false,
   const findings = hasImages ? extractImageFindings(aiText) : null;
   const hardTerms = catalogHardTerms(intent, products);
   const priceConstraint = extractPriceConstraint(promptText);
-  const catalogHits = extractCatalogMatchesFromAi(aiText, products);
+  const discoveryRequest = isGeneralProductDiscoveryRequest(promptText);
+  const catalogHits = hasImages || intent.hasSpecificDemand || discoveryRequest
+    ? extractCatalogMatchesFromAi(aiText, products)
+    : [];
+  const limit = deepSearch ? 10 : 6;
   const used = new Set();
   const candidates = [];
 
@@ -588,6 +605,8 @@ function rankProductsForDemand(promptText, aiText, products, deepSearch = false,
     used.add(id);
     candidates.push(item);
   });
+
+  if (candidates.length && !hasImages) return candidates.slice(0, limit);
 
   (products || []).forEach((product) => {
     const id = String(product._id);
@@ -613,9 +632,8 @@ function rankProductsForDemand(promptText, aiText, products, deepSearch = false,
     });
   });
 
-  const limit = deepSearch ? 10 : 6;
   const hasSpecificDemand = intent.families.length || intent.colors.length || intent.wantedComponents.length;
-  if (!candidates.length && !hasImages && !hasSpecificDemand && isGeneralProductDiscoveryRequest(promptText)) {
+  if (!candidates.length && !hasImages && !hasSpecificDemand && discoveryRequest) {
     return [...(products || [])]
       .sort((a, b) => Number(b.isTopProduct) - Number(a.isTopProduct) || Number(b.viewCount || 0) - Number(a.viewCount || 0) || Number(a.displayOrder || 0) - Number(b.displayOrder || 0))
       .slice(0, limit)

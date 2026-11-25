@@ -2,11 +2,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowRight } from "lucide-react";
 import { CANONICAL_WIRING_PARTS_PATH } from "../../utils/routes";
 import { useSwipeNavigation } from "../../hooks/useSwipeNavigation";
-import exploreGalleryImage from "../../assets/ExploreGallery.png";
-import bookRepairImage from "../../assets/bookrepair.png";
-import exploreProductsImage from "../../assets/ExploreProducts.png";
-import exploreWiringImage from "../../assets/ExploreWiring.png";
-import pulseAiImage from "../../assets/pulseAi.png";
+import exploreGalleryImage from "../../assets/ExploreGallery.webp";
+import bookRepairImage from "../../assets/bookrepair.webp";
+import exploreProductsImage from "../../assets/ExploreProducts.webp";
+import exploreWiringImage from "../../assets/ExploreWiring.webp";
+import pulseAiImage from "../../assets/pulseAi.webp";
+import { OptimizedImage } from "./OptimizedImage";
 
 const SLIDE_INTERVAL_MS = 2500;
 const SLIDE_TRANSITION_MS = 560;
@@ -141,14 +142,16 @@ export function ExploreProductsBanner() {
               <div className="explore-products-banner__inner">
                 <div className="explore-products-banner__visual">
                   <span className="explore-products-banner__glow" aria-hidden="true" />
-                  <img
+                  <OptimizedImage
                     className="explore-products-banner__image"
                     src={slide.image}
                     alt={slide.alt}
                     width={720}
                     height={560}
+                    sizes="(min-width: 900px) 360px, 70vw"
                     loading={index === 0 ? "eager" : "lazy"}
                     decoding="async"
+                    fetchPriority={index === 0 ? "high" : "low"}
                     draggable={false}
                   />
                 </div>

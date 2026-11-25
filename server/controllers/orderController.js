@@ -7,6 +7,10 @@ const AppError = require("../utils/AppError");
 const asyncHandler = require("../utils/asyncHandler");
 const { availableStockQuantity } = require("../utils/inventory");
 const { resolveProductPricing } = require("../utils/productPricing");
+const {
+  assertOrderableVariant,
+  productHasVariants,
+} = require("../utils/productVariants");
 const env = require("../config/env");
 const { getOrderChargeSnapshots } = require("../services/additionalChargeService");
 const { priceOrderCoupons } = require("../services/couponService");
@@ -17,7 +21,6 @@ const {
   verifyWebhookSignature,
 } = require("../services/razorpayService");
 const { enqueueOrderPaidNotification } = require("../services/orderNotificationService");
-const { consumeVerifiedWhatsAppOtp } = require("../services/customerWhatsAppOtpService");
 const {
   sendPaymentUnsuccessfulWhatsApp,
   sendOrderShipmentWhatsApp,
@@ -82,6 +85,40 @@ async function resolveOrderItems(rawItems = []) {
     const product = await Model.findOne(productQuery(item)).lean();
     if (!product) throw new AppError("A product in your cart is no longer available", 409);
     const quantity = Math.min(99, Math.max(1, Number.parseInt(item.quantity, 10) || 1));
+    const combinationId = item.variantCombinationId || item.combinationId || "";
+    const optionIds = item.variantOptionIds || item.optionIds || [];
+
+    if (productHasVariants(product)) {
+      let variant;
+      try {
+        variant = assertOrderableVariant(product, {
+          combinationId,
+          optionIds,
+          quantity,
+        });
+      } catch (error) {
+        throw new AppError(error.message || "Selected variant is unavailable", error.statusCode || 409);
+      }
+      return {
+        sourceType: isProjectPart ? "project-part" : "shop-product",
+        productId: product._id,
+        productSlug: product.slug || "",
+        productName: product.name,
+        productCategory: product.category || (isProjectPart ? "Wiring Accessories" : "Electronics"),
+        productImageUrl: variant.imageUrl || product.imageUrl || product.images?.[0]?.url || "",
+        unitPrice: variant.pricing.price,
+        quantity,
+        lineTotal: Number((variant.pricing.price * quantity).toFixed(2)),
+        variantCombinationId: variant.combination.id,
+        variantSku: variant.sku,
+        variantSummary: variant.summary,
+        variantSelections: variant.selections,
+      };
+    }
+
+    if (combinationId || optionIds.length) {
+      throw new AppError(`${product.name} has changed. Please remove the old variant from your cart and select the product again.`, 409);
+    }
     const stock = availableStockQuantity(product, isProjectPart ? "stock" : "quantity");
     if (stock < quantity) throw new AppError(`${product.name} has only ${stock} item${stock === 1 ? "" : "s"} available`, 409);
     const unitPrice = resolveProductPricing(product).price;
@@ -96,6 +133,10 @@ async function resolveOrderItems(rawItems = []) {
       unitPrice,
       quantity,
       lineTotal: Number((unitPrice * quantity).toFixed(2)),
+      variantCombinationId: "",
+      variantSku: "",
+      variantSummary: "",
+      variantSelections: [],
     };
   }));
 }
@@ -151,6 +192,8 @@ function publicOrder(order) {
     total: order.total,
     currency: order.currency,
     paymentStatus: order.paymentStatus,
+    paymentMethod: order.paymentMethod || "online",
+    source: order.source || "website",
     orderStatus: order.orderStatus,
     placedAt: order.paidAt || order.createdAt,
     statusUpdatedAt: order.statusUpdatedAt,
@@ -165,12 +208,6 @@ function publicOrder(order) {
 
 exports.createPaymentOrder = asyncHandler(async (req, res) => {
   const customer = sanitizeCustomer(req.body.customer);
-  await consumeVerifiedWhatsAppOtp({
-    challengeId: req.body.whatsappOtpChallengeId || req.body.customer?.whatsappOtpChallengeId,
-    verifiedToken: req.body.whatsappOtpToken || req.body.customer?.whatsappOtpToken,
-    whatsappNumber: customer.whatsappNumber,
-    purpose: "checkout",
-  });
   const { items, subtotal, discountedSubtotal, coupon, discountTotal, additionalCharges, deliveryCharge, total } = await buildOrderQuote(req.body.items, req.body.couponCode);
   if (total < 1) throw new AppError("Online payment requires an order total of at least Rs. 1. Please contact the shop for this order.", 400);
   const orderId = newPublicOrderId();
@@ -227,7 +264,7 @@ exports.markPaymentFailed = asyncHandler(async (req, res) => {
   if (!orderId) throw new AppError("Order ID is required", 400);
   const order = await Order.findOne({ orderId });
   if (!order) throw new AppError("Order not found", 404);
-  if (["paid", "refunded"].includes(order.paymentStatus)) {
+  if (["paid", "refunded", "cod"].includes(order.paymentStatus) || order.source === "whatsapp") {
     return res.json({ success: true, data: { orderId: order.orderId, paymentStatus: order.paymentStatus, notified: false } });
   }
 
@@ -282,7 +319,7 @@ exports.verifyPayment = asyncHandler(async (req, res) => {
   const razorpayPaymentId = String(req.body.razorpayPaymentId || "").trim();
   const signature = String(req.body.razorpaySignature || "").trim();
   const order = await Order.findOne({ orderId });
-  if (!order || order.razorpayOrderId !== razorpayOrderId) throw new AppError("Order verification failed", 400);
+  if (!order || order.source === "whatsapp" || order.razorpayOrderId !== razorpayOrderId) throw new AppError("Order verification failed", 400);
   if (["paid", "refunded"].includes(order.paymentStatus)) return res.json({ success: true, data: publicOrder(order) });
   if (!verifyPaymentSignature({ razorpayOrderId, razorpayPaymentId, signature })) {
     order.paymentStatus = "failed";
@@ -300,7 +337,7 @@ exports.verifyPayment = asyncHandler(async (req, res) => {
   const validProviderPayment = payment.order_id === razorpayOrderId
     && payment.currency === "INR"
     && Number(payment.amount) === Math.round(order.total * 100)
-    && ["captured", "authorized"].includes(payment.status);
+    && payment.status === "captured";
   if (!validProviderPayment) throw new AppError("Payment details do not match this order", 400);
 
   order.paymentStatus = "paid";
@@ -319,12 +356,14 @@ exports.handleRazorpayWebhook = asyncHandler(async (req, res) => {
     throw new AppError("Invalid Razorpay webhook signature", 400);
   }
   const event = JSON.parse(req.body.toString("utf8"));
+  await require("../services/whatsappCheckoutService").handlePaymentLinkWebhook(event);
   if (event.event === "payment.captured") {
     const payment = event.payload?.payment?.entity;
     if (payment?.order_id && payment?.id) {
-      const order = await Order.findOne({ razorpayOrderId: payment.order_id });
+      const order = await Order.findOne({ razorpayOrderId: payment.order_id, source: { $ne: "whatsapp" } });
       if (
         order
+        && payment.status === "captured"
         && payment.currency === "INR"
         && Number(payment.amount) === Math.round(order.total * 100)
         && !["paid", "refunded"].includes(order.paymentStatus)
@@ -369,7 +408,7 @@ exports.handleRazorpayWebhook = asyncHandler(async (req, res) => {
 
 exports.getPublicOrder = asyncHandler(async (req, res) => {
   const orderId = String(req.params.orderId || "").trim().toUpperCase();
-  const order = await Order.findOne({ orderId, paymentStatus: { $in: ["paid", "refunded"] } }).lean();
+  const order = await Order.findOne({ orderId, paymentStatus: { $in: ["paid", "refunded", "cod"] } }).lean();
   if (!order) throw new AppError("No confirmed order was found with this Order ID", 404);
   res.set("Cache-Control", "no-store");
   res.json({ success: true, data: publicOrder(order) });
@@ -378,7 +417,7 @@ exports.getPublicOrder = asyncHandler(async (req, res) => {
 exports.listOrders = asyncHandler(async (req, res) => {
   const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
   const limit = Math.min(50, Math.max(10, Number.parseInt(req.query.limit, 10) || 20));
-  const filter = { paymentStatus: { $in: ["paid", "refunded"] } };
+  const filter = { paymentStatus: { $in: ["paid", "refunded", "cod"] } };
   const search = String(req.query.search || "").trim();
   if (search) {
     const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -390,12 +429,12 @@ exports.listOrders = asyncHandler(async (req, res) => {
     ];
   }
   if (req.query.from || req.query.to) {
-    filter.paidAt = {};
-    if (req.query.from) filter.paidAt.$gte = new Date(`${req.query.from}T00:00:00.000Z`);
-    if (req.query.to) filter.paidAt.$lte = new Date(`${req.query.to}T23:59:59.999Z`);
+    filter.createdAt = {};
+    if (req.query.from) filter.createdAt.$gte = new Date(`${req.query.from}T00:00:00.000Z`);
+    if (req.query.to) filter.createdAt.$lte = new Date(`${req.query.to}T23:59:59.999Z`);
   }
   const [items, total] = await Promise.all([
-    Order.find(filter).sort({ paidAt: -1, createdAt: -1 }).skip((page - 1) * limit).limit(limit).lean(),
+    Order.find(filter).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).lean(),
     Order.countDocuments(filter),
   ]);
   res.json({ success: true, data: { items, total, page, pages: Math.ceil(total / limit), hasMore: page * limit < total } });
@@ -404,9 +443,10 @@ exports.listOrders = asyncHandler(async (req, res) => {
 exports.updateOrderStatus = asyncHandler(async (req, res) => {
   const orderStatus = String(req.body.orderStatus || "").trim();
   if (!ORDER_STATUSES.includes(orderStatus)) throw new AppError("Invalid order status", 400);
-  const previous = await Order.findById(req.params.id).select("orderStatus").lean();
+  const previous = await Order.findById(req.params.id).select("orderStatus paymentStatus").lean();
   if (!previous) throw new AppError("Order not found", 404);
 
+  if (!["paid", "refunded", "cod"].includes(previous.paymentStatus)) throw new AppError("Unpaid orders cannot be confirmed or shipped", 409);
   const update = { orderStatus, statusUpdatedAt: new Date() };
   const order = await Order.findByIdAndUpdate(
     req.params.id,
@@ -442,4 +482,5 @@ exports.updateOrderStatus = asyncHandler(async (req, res) => {
 
 exports.ORDER_STATUSES = ORDER_STATUSES;
 exports.buildOrderQuote = buildOrderQuote;
+exports.sanitizeCustomer = sanitizeCustomer;
 exports.newPublicOrderId = newPublicOrderId;

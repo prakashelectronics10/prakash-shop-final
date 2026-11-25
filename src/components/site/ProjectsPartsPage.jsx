@@ -1,7 +1,8 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowLeft, Check, Filter, PackageSearch, Search, ShoppingBag, ShoppingCart, Tag, X, Zap } from "lucide-react";
+import { ArrowLeft, Check, Filter, PackageSearch, ShoppingBag, ShoppingCart, Tag, X, Zap } from "lucide-react";
 import { apiRequest } from "../../api/client";
+import { requestCatalogResults } from "../../api/catalogSearch";
 import { SCIENCE_PROJECTS_CATEGORY, cartStockMessage, getCartStockLimit, useCart, useCartActions, useCartQuantity } from "../../context/CartContext";
 import { useSwipeNavigation } from "../../hooks/useSwipeNavigation";
 import { Navbar } from "./Navbar";
@@ -10,6 +11,7 @@ import { OptimizedImage } from "./OptimizedImage";
 import { ProductShareButton } from "./ProductShareButton";
 import { ProductPriceDisplay } from "./ProductPriceDisplay";
 import { CatalogInfiniteLoader } from "./CatalogInfiniteLoader";
+import { CatalogSearchField, CatalogSearchStatus } from "./CatalogSearchField";
 import { ProgressSliderDots } from "./ProgressSliderDots";
 import { RelatedProductsSection } from "./RelatedProductsSection";
 import { CatalogGridSkeleton, EmptyProductsState, ProductDetailSkeleton } from "./StateLottie";
@@ -80,8 +82,8 @@ const WiringPartCard = memo(function WiringPartCard({ part, onAddToCart, eager =
               loading={eager ? "eager" : "lazy"}
               decoding="async"
               fetchPriority={eager ? "high" : undefined}
-              width={720}
-              height={540}
+              width={480}
+              height={360}
               sizes="(min-width: 1024px) 25vw, (min-width: 760px) 50vw, 46vw"
             />
           ) : <PackageSearch size={48} />}
@@ -101,7 +103,11 @@ const WiringPartCard = memo(function WiringPartCard({ part, onAddToCart, eager =
       <div className="part-card-foot cart-card-foot">
         <ProductPriceDisplay product={part} size="card" />
         <div className="product-card-actions">
-          <button
+          {part.hasVariants ? (
+            <a className="cart-icon-button" href={detailUrl} aria-label={`Choose options for ${part.name}`}>
+              <ShoppingCart size={17} /> <span>Choose options</span>
+            </a>
+          ) : <button
             className={`cart-icon-button ${cartQuantity ? "added" : ""}`}
             type="button"
             onClick={() => onAddToCart(part)}
@@ -119,7 +125,7 @@ const WiringPartCard = memo(function WiringPartCard({ part, onAddToCart, eager =
                     ? `Added (${cartQuantity})`
                     : "Add to Cart"}
             </span>
-          </button>
+          </button>}
         </div>
       </div>
     </article>
@@ -138,8 +144,9 @@ export function ProjectsPartsPage() {
   const [page, setPage] = useState(() => cachedCatalog?.data?.page || 1);
   const [catalogTotal, setCatalogTotal] = useState(() => cachedCatalog?.data?.total || cachedCatalog?.data?.parts?.length || 0);
   const [catalogPages, setCatalogPages] = useState(() => cachedCatalog?.data?.pages || 1);
+  const [searchMode, setSearchMode] = useState("");
   const [activeSlide, setActiveSlide] = useState(0);
-  const [loading, setLoading] = useState(() => !(cachedCatalog?.data?.parts?.length));
+  const [loadingPhase, setLoadingPhase] = useState(() => cachedCatalog?.data?.parts?.length ? "" : "searching");
   const [error, setError] = useState("");
   const [loadMoreError, setLoadMoreError] = useState("");
   const [retryKey, setRetryKey] = useState(0);
@@ -149,7 +156,10 @@ export function ProjectsPartsPage() {
   const [filterOpen, setFilterOpen] = useState(false);
   const [sliderInView, setSliderInView] = useState(true);
   const sliderSectionRef = useRef(null);
-  const debouncedSearch = useDebouncedValue(searchQuery);
+  const searchTerm = searchQuery.trim();
+  const debouncedSearch = useDebouncedValue(searchTerm, 400);
+  const searchPending = searchTerm !== debouncedSearch;
+  const loading = Boolean(loadingPhase);
 
   useEffect(() => {
     const fromUrl = readSearchQueryFromLocation();
@@ -157,10 +167,11 @@ export function ProjectsPartsPage() {
   }, []);
 
   useEffect(() => {
+    if (searchPending) return undefined;
     let mounted = true;
     async function load() {
       try {
-        setLoading(true);
+        setLoadingPhase("searching");
         setLoadMoreError("");
         if (page === 1) setError("");
         const query = new URLSearchParams({
@@ -171,7 +182,14 @@ export function ProjectsPartsPage() {
         if (category) query.set("category", category);
         if (subCategory) query.set("subCategory", subCategory);
         const [partsResponse, slidersResponse, taxonomyResponse] = await Promise.all([
-          apiRequest(`/project-parts/public/parts?${query.toString()}`, { cacheTtl: CATALOG_CACHE_TTL_MS }),
+          requestCatalogResults("/project-parts/public/parts", query, {
+            cacheTtl: CATALOG_CACHE_TTL_MS,
+            startAnalysis: () => {
+              if (!mounted) return false;
+              if (page === 1) setLoadingPhase("analyzing");
+              return true;
+            },
+          }),
           page === 1
             ? apiRequest("/project-parts/public/sliders", { cacheTtl: CATALOG_CACHE_TTL_MS })
             : Promise.resolve(null),
@@ -184,6 +202,7 @@ export function ProjectsPartsPage() {
         setParts((current) => (page === 1 ? nextParts : mergePartItems(current, nextParts)));
         setCatalogTotal(partsResponse.data?.total || 0);
         setCatalogPages(partsResponse.data?.pages || 1);
+        setSearchMode(partsResponse.data?.searchMode || "");
         if (slidersResponse) setSliders(slidersResponse.data || []);
         if (taxonomyResponse) {
           setTaxonomy({
@@ -197,14 +216,14 @@ export function ProjectsPartsPage() {
         if (page === 1) setError(err.message || "Unable to load wiring accessories.");
         else setLoadMoreError(err.message || "Unable to load more products.");
       } finally {
-        if (mounted) setLoading(false);
+        if (mounted) setLoadingPhase("");
       }
     }
     load();
     return () => {
       mounted = false;
     };
-  }, [cachedCatalog, category, debouncedSearch, page, retryKey, subCategory]);
+  }, [cachedCatalog, category, debouncedSearch, page, retryKey, searchPending, subCategory]);
 
   useEffect(() => {
     if (debouncedSearch || category || subCategory || !parts.length) return;
@@ -297,9 +316,9 @@ export function ProjectsPartsPage() {
   }, [restartCatalog]);
 
   const loadMoreParts = useCallback(() => {
-    if (loading || page >= catalogPages) return;
+    if (loading || searchPending || page >= catalogPages) return;
     setPage((current) => current + 1);
-  }, [catalogPages, loading, page]);
+  }, [catalogPages, loading, page, searchPending]);
 
   useEffect(() => {
     if (!filterOpen) return undefined;
@@ -517,21 +536,13 @@ export function ProjectsPartsPage() {
           </div>
 
           <div className="shop-filter-panel wiring-filter-panel">
-            <label className="parts-search shop-search" htmlFor="wiring-search-input">
-              <Search size={18} />
-              <input
-                id="wiring-search-input"
-                type="search"
-                value={searchQuery}
-                placeholder="Search products or #tags (e.g. #switch)..."
-                onChange={(event) => { setSearchQuery(event.target.value); restartCatalog(); }}
-              />
-              {searchQuery && (
-                <button type="button" onClick={() => { setSearchQuery(""); restartCatalog(); }} aria-label="Clear product search">
-                  <X size={16} />
-                </button>
-              )}
-            </label>
+            <CatalogSearchField
+              id="wiring-search-input"
+              label="Search wiring accessories"
+              placeholder="Search products or #tags (e.g. #switch)..."
+              value={searchQuery}
+              onChange={(value) => { setSearchQuery(value); restartCatalog(); }}
+            />
 
             <button
               className={`shop-filter-trigger ${activeFilterCount ? "active" : ""}`}
@@ -548,13 +559,11 @@ export function ProjectsPartsPage() {
           </div>
 
           {!error && (
-            <span className="parts-search-count shop-count">
-              {loading && parts.length ? "Updating results..." : `${catalogTotal} ${catalogTotal === 1 ? "product" : "products"}`}
-            </span>
+            <CatalogSearchStatus phase={searchPending ? "searching" : loadingPhase} total={catalogTotal} mode={searchMode} />
           )}
           {error && <div className="parts-state">{error}</div>}
           {loading && parts.length === 0 && <CatalogGridSkeleton count={8} />}
-          {!loading && !error && parts.length === 0 && (
+          {!loading && !searchPending && !error && parts.length === 0 && (
             <EmptyProductsState message={searchQuery || category || subCategory ? "No matching wiring products found." : "No wiring accessories are published yet."} />
           )}
           {!error && parts.length > 0 && (
@@ -613,6 +622,15 @@ export function ProjectPartDetailPage() {
 
       try {
         const response = await apiRequest(`/project-parts/public/parts/${encodeURIComponent(slug)}`);
+        if (mounted && response.data?.hasVariants) {
+          const detail = new URL(getProductSharePath(response.data), window.location.origin);
+          const current = new URL(window.location.href);
+          detail.search = current.search;
+          detail.searchParams.delete("page");
+          detail.searchParams.delete("slug");
+          window.location.replace(detail);
+          return;
+        }
         if (mounted) setPart(response.data || null);
       } catch (_err) {
         if (mounted) window.location.replace(CANONICAL_WIRING_PARTS_PATH);

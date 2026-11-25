@@ -4,6 +4,7 @@ const ShopProduct = require("../models/ShopProduct");
 const AppError = require("../utils/AppError");
 const asyncHandler = require("../utils/asyncHandler");
 const { resolveProductPricing } = require("../utils/productPricing");
+const { assertOrderableVariant, productHasVariants } = require("../utils/productVariants");
 const { deleteImagesStrict } = require("../services/cloudinaryService");
 const {
   listPublicCouponsForProduct,
@@ -18,10 +19,13 @@ function productQuery(identifier) {
     : { slug: safe.toLowerCase(), isActive: true };
 }
 
-async function findPricedProduct(identifier) {
+async function findPricedProduct(identifier, combinationId = "") {
   const product = await ShopProduct.findOne(productQuery(identifier)).lean();
   if (!product) throw new AppError("Product not found", 404);
-  const unitPrice = resolveProductPricing(product).price;
+  let unitPrice = resolveProductPricing(product).price;
+  if (productHasVariants(product)) {
+    unitPrice = assertOrderableVariant(product, { combinationId }).pricing.price;
+  }
   if (!Number.isFinite(unitPrice) || unitPrice <= 0) throw new AppError("This product does not have an online price", 409);
   return { product, unitPrice };
 }
@@ -66,14 +70,14 @@ exports.deleteCoupon = asyncHandler(async (req, res) => {
 });
 
 exports.getPublicProductCoupons = asyncHandler(async (req, res) => {
-  const { product, unitPrice } = await findPricedProduct(req.params.productId);
+  const { product, unitPrice } = await findPricedProduct(req.params.productId, req.query.variantCombinationId);
   const coupons = await listPublicCouponsForProduct(product, unitPrice);
   res.set("Cache-Control", "public, max-age=60, stale-while-revalidate=120");
   res.json({ success: true, data: { productId: String(product._id), unitPrice, coupons } });
 });
 
 exports.validateProductCoupon = asyncHandler(async (req, res) => {
-  const { product, unitPrice } = await findPricedProduct(req.body.productId);
+  const { product, unitPrice } = await findPricedProduct(req.body.productId, req.body.variantCombinationId);
   const item = {
     sourceType: "shop-product",
     productId: product._id,

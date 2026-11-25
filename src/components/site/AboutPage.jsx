@@ -99,7 +99,7 @@ export function AboutPage() {
             <p className="about-page-hero-copy">
               Trusted electronics sales, careful diagnostics, and practical repair support for Chitarpur and nearby communities.
             </p>
-            <ul className="internal-page-hero-points" aria-label="Prakash Electronics services">
+            <ul className="internal-page-hero-chips" aria-label="Prakash Electronics services">
               <li>Repair expertise</li>
               <li>Electronics sales</li>
               <li>Local support</li>
@@ -127,11 +127,12 @@ export function AboutPage() {
               <OptimizedImage
                 src={workshopImage}
                 alt="Inside the Prakash Electronics workshop"
-                width={1080}
-                height={810}
+                width={960}
+                height={720}
                 sizes="(min-width: 960px) 44vw, 100vw"
                 className="about-page-story-image"
                 loading="lazy"
+                decoding="async"
               />
             ) : (
               <img src="/logo512.png" alt="Prakash Electronics" className="about-page-story-logo" />

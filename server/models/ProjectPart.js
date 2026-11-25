@@ -1,6 +1,51 @@
 const mongoose = require("mongoose");
 const slugify = require("../utils/slugify");
 
+const variantOptionSchema = new mongoose.Schema(
+  {
+    id: { type: String, required: true, trim: true },
+    label: { type: String, required: true, trim: true },
+    imageUrl: { type: String, default: "" },
+    imagePublicId: { type: String, default: "" },
+    colour: { type: String, default: "" },
+    priceAdjustment: { type: Number, default: null },
+    sortOrder: { type: Number, default: 0 },
+    isDefault: { type: Boolean, default: false },
+  },
+  { _id: false },
+);
+
+const variantGroupSchema = new mongoose.Schema(
+  {
+    id: { type: String, required: true, trim: true },
+    name: { type: String, required: true, trim: true },
+    displayType: {
+      type: String,
+      enum: ["auto", "image_text", "color_text", "text"],
+      default: "auto",
+    },
+    sortOrder: { type: Number, default: 0 },
+    options: { type: [variantOptionSchema], default: [] },
+  },
+  { _id: false },
+);
+
+const variantCombinationSchema = new mongoose.Schema(
+  {
+    id: { type: String, required: true, trim: true },
+    optionIds: [{ type: String, trim: true }],
+    sku: { type: String, trim: true, uppercase: true, default: "" },
+    price: { type: Number, default: null, min: 0 },
+    priceAdjustment: { type: Number, default: null },
+    stock: { type: Number, default: null, min: 0, max: 9999 },
+    isAvailable: { type: Boolean, default: true },
+    imageUrl: { type: String, default: "" },
+    imagePublicId: { type: String, default: "" },
+    sortOrder: { type: Number, default: 0 },
+  },
+  { _id: false },
+);
+
 const projectPartSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true },
@@ -58,6 +103,9 @@ const projectPartSchema = new mongoose.Schema(
     },
     seoTitle: { type: String, trim: true, default: "" },
     seoDescription: { type: String, trim: true, default: "" },
+    hasVariants: { type: Boolean, default: false, index: true },
+    variantGroups: { type: [variantGroupSchema], default: [] },
+    variantCombinations: { type: [variantCombinationSchema], default: [] },
     isActive: { type: Boolean, default: true, index: true },
     isFeatured: { type: Boolean, default: false, index: true },
     isTopProduct: { type: Boolean, default: false, index: true },
@@ -74,6 +122,7 @@ const projectPartSchema = new mongoose.Schema(
       lastSyncedAt: { type: Date, default: null },
       lastAttemptAt: { type: Date, default: null },
       error: { type: String, default: "" },
+      variantRetailerIds: { type: [String], default: [] },
     },
   },
   { timestamps: true },
