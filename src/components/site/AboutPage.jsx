@@ -1,10 +1,10 @@
 import {
   ArrowLeft,
-  ArrowRight,
   CheckCircle2,
 } from "lucide-react";
 import { useMemo } from "react";
 import { useSiteData } from "../../context/SiteDataContext";
+import { ArrowFillButton } from "../ui/ArrowFillButton";
 import { AboutStoryShowcase } from "./AboutStoryShowcase";
 import { FaqSection } from "./FaqSection";
 import { Footer } from "./Footer";
@@ -105,9 +105,7 @@ export function AboutPage() {
               <li>Local support</li>
             </ul>
             <div className="about-page-hero-actions">
-              <a className="internal-page-primary" href="/booking">
-                Book a repair <ArrowRight size={17} aria-hidden="true" />
-              </a>
+              <ArrowFillButton href="/booking">Book a repair</ArrowFillButton>
               <a className="internal-page-secondary" href="/contact">Contact the workshop</a>
             </div>
           </div>
@@ -200,7 +198,7 @@ export function AboutPage() {
           <p className="internal-page-kicker">Visit or contact us</p>
           <h2>Need help with a product or repair?</h2>
           <p>Speak directly with the Prakash Electronics team for the right next step.</p>
-          <a className="internal-page-primary" href="/contact">Contact Prakash Electronics <ArrowRight size={17} aria-hidden="true" /></a>
+          <ArrowFillButton className="mt-4" href="/contact">Contact Prakash Electronics</ArrowFillButton>
         </section>
       </main>
       <Footer />

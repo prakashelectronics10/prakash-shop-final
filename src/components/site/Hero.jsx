@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Calendar, Phone, ShieldCheck, Sparkles, Star } from "lucide-react";
+import { Phone, ShieldCheck, Sparkles, Star } from "lucide-react";
 import { useSiteData } from "../../context/SiteDataContext";
 import { useSwipeNavigation } from "../../hooks/useSwipeNavigation";
 import { getPhoneHref, contactDigits } from "../../utils/contactDefaults";
+import { ArrowFillButton } from "../ui/ArrowFillButton";
 import { OptimizedImage } from "./OptimizedImage";
 import { ProgressSliderDots } from "./ProgressSliderDots";
 
@@ -186,12 +187,7 @@ export function Hero() {
           </p>
 
           <div className="mt-8 flex flex-wrap gap-4">
-            <a
-              href="/booking"
-              className="group relative inline-flex items-center gap-2 rounded-xl bg-gradient-primary px-6 py-3.5 text-sm font-semibold text-primary-foreground shadow-glow transition-transform duration-300 hover:scale-105"
-            >
-              <Calendar className="h-4 w-4" /> {primaryCta.label || "Book Repair"}
-            </a>
+            <ArrowFillButton href="/booking">{primaryCta.label || "Book Repair"}</ArrowFillButton>
             <a
               href={callHref}
               className="inline-flex items-center gap-2 rounded-xl glass border-glow px-6 py-3.5 text-sm font-semibold text-foreground transition-colors hover:bg-secondary"

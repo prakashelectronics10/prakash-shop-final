@@ -1,0 +1,29 @@
+.contact-page-hero-actions > a,
+.contact-page-form-section button[type="submit"],
+.contact-page-note > a {
+  border-radius: 12px;
+}
+
+.contact-page-hero-actions > a,
+.contact-page-note > a {
+  min-height: 44px;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.contact-page-note > a {
+  justify-self: start;
+  padding: 0.55rem 0.85rem;
+  border: 1px solid #bfdbfe;
+  background: #fff;
+}
+
+.contact-page-note > a:hover {
+  border-color: #60a5fa;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.1);
+}
+
+.contact-page-note > a:focus-visible,
+.contact-page-form-section button[type="submit"]:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 3px;
+}

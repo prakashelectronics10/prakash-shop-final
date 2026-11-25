@@ -1,0 +1,98 @@
+.arrow-fill-button {
+  --arrow-circle: 2.125rem;
+  --arrow-inset: 0.375rem;
+  --arrow-padding: 1.35rem;
+  --arrow-fill: var(--primary-foreground);
+  --arrow-ink: var(--primary);
+  --arrow-easing: 450ms cubic-bezier(0.785, 0.135, 0.15, 0.86);
+  --arrow-clip: inset(calc((100% - var(--arrow-circle)) / 2) var(--arrow-inset) calc((100% - var(--arrow-circle)) / 2) calc(100% - var(--arrow-inset) - var(--arrow-circle)) round 999px);
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  min-height: 3rem;
+  padding-inline: var(--arrow-padding) calc(var(--arrow-circle) + var(--arrow-inset) + 0.75rem);
+  overflow: hidden;
+  border: 1px solid var(--primary);
+  border-radius: 999px;
+  background: var(--gradient-primary);
+  color: var(--primary-foreground);
+  box-shadow: var(--shadow-glow);
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.25;
+  text-align: left;
+}
+
+.arrow-fill-button__fill,
+.arrow-fill-button__label-fill {
+  position: absolute;
+  inset: 0;
+  clip-path: var(--arrow-clip);
+  pointer-events: none;
+  transition: clip-path var(--arrow-easing);
+}
+
+.arrow-fill-button__fill {
+  background: var(--arrow-fill);
+}
+
+.arrow-fill-button__label-fill {
+  display: flex;
+  align-items: center;
+  padding-inline: var(--arrow-padding) calc(var(--arrow-circle) + var(--arrow-inset) + 0.75rem);
+  color: var(--arrow-ink);
+}
+
+.arrow-fill-button__icon {
+  position: absolute;
+  top: 50%;
+  right: var(--arrow-inset);
+  width: var(--arrow-circle);
+  height: var(--arrow-circle);
+  overflow: hidden;
+  transform: translateY(-50%);
+  border-radius: 50%;
+  color: var(--arrow-ink);
+  pointer-events: none;
+}
+
+.arrow-fill-button__icon svg {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 1.125rem;
+  height: 1.125rem;
+  transition: transform var(--arrow-easing);
+}
+
+.arrow-fill-button__arrow-in {
+  transform: translate(-170%, -50%) scale(0);
+}
+
+.arrow-fill-button__arrow-out {
+  transform: translate(-50%, -50%);
+}
+
+.arrow-fill-button:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 3px;
+}
+
+.arrow-fill-button:is(:hover, :focus-visible, :active) {
+  --arrow-clip: inset(0 0 0 0 round 999px);
+}
+
+.arrow-fill-button:is(:hover, :focus-visible, :active) .arrow-fill-button__arrow-in {
+  transform: translate(-50%, -50%);
+}
+
+.arrow-fill-button:is(:hover, :focus-visible, :active) .arrow-fill-button__arrow-out {
+  transform: translate(70%, -50%) scale(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .arrow-fill-button * {
+    transition: none;
+  }
+}

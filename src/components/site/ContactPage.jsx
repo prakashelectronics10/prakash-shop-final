@@ -12,6 +12,7 @@ import { FaqSection } from "./FaqSection";
 import { Footer } from "./Footer";
 import { Navbar } from "./Navbar";
 import { SocialChannels } from "./SocialChannels";
+import "./ContactPage.css";
 
 const CONTACT_FAQS = [
   {
