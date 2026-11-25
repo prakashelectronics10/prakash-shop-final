@@ -1,4 +1,5 @@
-import { Bot, MessageCircle } from "lucide-react";
+import { MessageCircle } from "lucide-react";
+import { PulseOrbAnimation } from "./PulseOrbAnimation";
 import { useSiteData } from "../../context/SiteDataContext";
 import { getWhatsappHref } from "../../utils/contactDefaults";
 
@@ -30,7 +31,7 @@ export function CatalogFloatingActions() {
         aria-label="Open Pulse AI"
         className="home-floating-button science-ai-home-button"
       >
-        <Bot className="h-6 w-6" />
+        <PulseOrbAnimation />
         <span>Pulse AI</span>
       </a>
     </div>

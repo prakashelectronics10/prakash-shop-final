@@ -127,9 +127,14 @@ function isCurrentPublicOffer(offer = {}, now = new Date()) {
 }
 
 function buildAllowedLinks(site, catalogProducts) {
-  const links = [...CORE_ROUTES];
+  const homeOgImage = site.webSettings?.ogImage?.url;
+  const links = CORE_ROUTES.map((link) => (
+    homeOgImage && (link.url === "/" || link.url.startsWith("/#"))
+      ? { ...link, imageUrl: homeOgImage }
+      : link
+  ));
   (site.products || []).forEach((service) => {
-    if (service.slug) links.push({ title: service.title || "Service Details", url: `/learn-more?service=${encodeURIComponent(service.slug)}`, description: "Service details" });
+    if (service.slug) links.push({ title: service.title || "Service Details", url: `/learn-more?service=${encodeURIComponent(service.slug)}`, description: "Service details", imageUrl: service.imageUrl });
   });
   const socialLinks = [
     ...(site.contact?.socialLinks || []),
@@ -143,7 +148,7 @@ function buildAllowedLinks(site, catalogProducts) {
   (site.heroSlider || []).forEach((item) => {
     const url = String(item.link || "").trim();
     if ((url.startsWith("/") && !url.startsWith("//")) || /^https?:\/\//i.test(url)) {
-      links.push({ title: item.title || "Featured Link", url, description: "Configured homepage slider link" });
+      links.push({ title: item.title || "Featured Link", url, description: "Configured homepage slider link", imageUrl: item.imageUrl });
     }
   });
   return links.filter((item, index, all) => item.url && all.findIndex((other) => other.url === item.url) === index);

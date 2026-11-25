@@ -1,8 +1,9 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Expand, Images } from "lucide-react";
 import { useSiteData } from "../../context/SiteDataContext";
-import { gallerySizeClass, normalizeGalleryItems } from "../../utils/gallery";
+import { GALLERY_DESKTOP_QUERY, normalizeGalleryItems } from "../../utils/gallery";
 import { Footer } from "./Footer";
+import { GalleryGrid } from "./GalleryGrid";
 import { Lightbox } from "./Lightbox";
 import { Navbar } from "./Navbar";
 import { OptimizedImage } from "./OptimizedImage";
@@ -12,6 +13,15 @@ export function GalleryPage() {
   const section = content.gallery || {};
   const items = useMemo(() => normalizeGalleryItems(content.gallery), [content.gallery]);
   const [active, setActive] = useState(null);
+  const [desktop, setDesktop] = useState(() => window.matchMedia(GALLERY_DESKTOP_QUERY).matches);
+
+  useEffect(() => {
+    const media = window.matchMedia(GALLERY_DESKTOP_QUERY);
+    const update = () => setDesktop(media.matches);
+    media.addEventListener("change", update);
+    update();
+    return () => media.removeEventListener("change", update);
+  }, []);
 
   return (
     <div className="App gallery-page">
@@ -46,25 +56,23 @@ export function GalleryPage() {
               <p>New photos will appear here once they are published.</p>
             </div>
           ) : (
-            <div className="gallery-grid grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-4 md:auto-rows-[200px]">
-              {items.map((it, i) => {
-                const sizeClass = gallerySizeClass(it.size);
-                return (
+            <GalleryGrid
+              items={items}
+              mode={desktop ? "desktop" : "mobile"}
+              renderTile={(it, i) => (
                   <button
                     type="button"
-                    key={`${it.label}-${i}`}
                     onClick={() => setActive(i)}
                     aria-label={`Open ${it.label} in lightbox`}
-                    className={`gallery-tile group relative cursor-zoom-in overflow-hidden rounded-3xl border-glow shadow-card text-left md:glass ${it.span || sizeClass}`}
+                    className="gallery-tile group cursor-zoom-in overflow-hidden rounded-3xl border-glow shadow-card text-left md:glass"
                   >
                     <OptimizedImage
                       src={it.src}
                       alt={it.label}
                       loading={i < 4 ? "eager" : "lazy"}
                       decoding="async"
-                      width={720}
-                      height={720}
-                      sizes="(min-width: 768px) 25vw, 50vw"
+                      width={960}
+                      sizes="(min-width: 1200px) 600px, (min-width: 768px) 50vw, 85vw"
                       className="gallery-tile-image h-full w-full object-cover"
                     />
                     <div className="gallery-tile-expand absolute inset-0 flex items-center justify-center opacity-0 transition-opacity duration-300">
@@ -73,9 +81,8 @@ export function GalleryPage() {
                       </div>
                     </div>
                   </button>
-                );
-              })}
-            </div>
+              )}
+            />
           )}
         </section>
       </main>

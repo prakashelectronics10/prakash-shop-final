@@ -3266,8 +3266,16 @@ a.cart-item-image:focus-visible {
 }
 
 .science-ai-home-button {
-  padding: 0 1rem;
-  background: linear-gradient(135deg, #0367fe, #0394FE);
+  padding: 0 0.8rem 0 0.45rem;
+  border-color: #dbe7f7;
+  color: #184776;
+  background: #fff;
+  box-shadow: 0 12px 32px rgba(35, 72, 138, 0.18);
+}
+
+.science-ai-home-button:hover {
+  background: #fff;
+  box-shadow: 0 16px 38px rgba(35, 72, 138, 0.24);
 }
 
 .whatsapp-home-button {
@@ -3599,18 +3607,6 @@ a.cart-item-image:focus-visible {
   border-color: rgba(15, 23, 42, 0.12);
 }
 
-.science-ai-topbar p,
-.science-ai-topbar h1 {
-  margin: 0;
-}
-
-.science-ai-topbar p {
-  color: #67e8f9;
-  font-size: 0.78rem;
-  font-weight: 800;
-  text-transform: uppercase;
-}
-
 .ai-messages {
   overflow-y: auto;
   min-height: 0;
@@ -3771,28 +3767,6 @@ a.cart-item-image:focus-visible {
   object-fit: cover;
   border-radius: 14px;
   margin-bottom: 0.75rem;
-}
-
-.typing {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-}
-
-.typing span {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: #67e8f9;
-  animation: aiTyping 1s infinite ease-in-out;
-}
-
-.typing span:nth-child(2) { animation-delay: 150ms; }
-.typing span:nth-child(3) { animation-delay: 300ms; }
-
-@keyframes aiTyping {
-  0%, 80%, 100% { transform: translateY(0); opacity: 0.45; }
-  40% { transform: translateY(-6px); opacity: 1; }
 }
 
 .science-ai-composer {
@@ -4124,13 +4098,11 @@ a.cart-item-image:focus-visible {
   -webkit-backdrop-filter: blur(16px);
 }
 
-.science-ai-topbar p,
 .ai-uploading,
 .ai-suggestions-head strong {
   color: #20d0bd;
 }
 
-.light .science-ai-topbar p,
 .light .ai-uploading,
 .light .ai-suggestions-head strong {
   color: #047f73;
@@ -4259,10 +4231,6 @@ a.cart-item-image:focus-visible {
 
 .composer-row textarea::placeholder {
   color: var(--ai-text-soft);
-}
-
-.typing span {
-  background: #20d0bd;
 }
 
 .ai-error {
@@ -4962,12 +4930,12 @@ a.cart-item-image:focus-visible {
   }
 
   .science-ai-home-button {
-    width: 3.25rem;
-    min-height: 3.25rem;
+    width: 3.5rem;
+    min-height: 3.5rem;
     padding: 0;
   }
 
-  .science-ai-home-button span {
+  .science-ai-home-button > span {
     display: none;
   }
 
@@ -5016,10 +4984,6 @@ a.cart-item-image:focus-visible {
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: 1.05rem;
-  }
-
-  .science-ai-topbar p {
-    font-size: 0.66rem;
   }
 
   .ai-messages {
@@ -5571,6 +5535,7 @@ a.cart-item-image:focus-visible {
 }
 
 .ai-title-block {
+  align-self: center;
   width: 100%;
   min-width: 0;
   overflow: hidden;
@@ -5580,21 +5545,14 @@ a.cart-item-image:focus-visible {
   display: block;
   width: 100%;
   max-width: 100%;
+  margin: 0;
   overflow: hidden;
   color: var(--ai-text);
-  font-size: clamp(1.05rem, 2vw, 1.32rem);
-  line-height: 1.1;
+  font-size: clamp(1rem, 2vw, 1.125rem);
+  font-weight: 700;
+  line-height: 1.25;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.science-ai-topbar p {
-  color: #67e8f9;
-  letter-spacing: 0.04em;
-}
-
-.light .science-ai-topbar p {
-  color: #047f73;
 }
 
 .ai-theme-toggle {
@@ -6094,10 +6052,6 @@ a.cart-item-image:focus-visible {
 @media (max-width: 480px) {
   .science-ai-topbar {
     padding: 0.58rem;
-  }
-
-  .science-ai-topbar p {
-    font-size: 0.62rem;
   }
 
   .science-ai-topbar h1 {
@@ -7135,9 +7089,10 @@ footer {
 }
 
 .gallery-marquee-card {
-  flex: 0 0 min(15rem, 72vw);
-  width: min(15rem, 72vw);
-  height: clamp(11.5rem, 42vw, 17rem);
+  --gallery-card-height: clamp(11.5rem, 42vw, 17rem);
+  flex: 0 0 auto;
+  width: calc(var(--gallery-card-height) * var(--gallery-card-ratio, 1));
+  height: var(--gallery-card-height);
   content-visibility: auto;
   contain-intrinsic-size: 240px 280px;
 }
@@ -7170,9 +7125,7 @@ footer {
   }
 
   .gallery-marquee-card {
-    flex-basis: 16.5rem;
-    width: 16.5rem;
-    height: 18rem;
+    --gallery-card-height: 18rem;
     contain-intrinsic-size: 264px 288px;
   }
 }
@@ -9857,186 +9810,94 @@ body.pulse-ai-route-active .science-ai-chat {
   min-height: 0;
 }
 
-/* Pulse AI verified website-link cards */
+/* Pulse AI website link chips */
 .ai-website-links {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 270px), 1fr));
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
-  margin-top: 16px;
+  margin-top: 14px;
 }
 
-.ai-website-link-card {
+.ai-website-link-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   min-width: 0;
-  display: grid;
-  grid-template-columns: 32px minmax(0, 1fr);
-  align-items: start;
-  gap: 10px;
-  padding: 10px;
-  color: #18314f;
+  max-width: min(100%, 16rem);
+  min-height: 36px;
+  padding: 4px 10px 4px 5px;
+  border: 1px solid var(--ai-line);
+  border-radius: 999px;
+  background: var(--ai-surface);
+  color: var(--ai-text);
   text-decoration: none;
-  border: 1px solid rgba(51, 65, 85, 0.13);
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.82);
-  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.055);
   transition: border-color 160ms ease, background-color 160ms ease;
 }
 
-.ai-website-link-card:hover {
-  transform: none;
-  border-color: rgba(37, 99, 235, 0.32);
-  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.055);
-  background: rgba(248, 251, 255, 0.96);
+.ai-website-link-chip:hover {
+  border-color: var(--ai-chip-hover-border, #9ab6e1);
+  background: var(--ai-chip-hover-bg, #f8fbff);
 }
 
-.ai-website-link-card:focus-visible {
+.science-ai-page.dark .ai-website-link-chip {
+  --ai-chip-hover-border: #526d92;
+  --ai-chip-hover-bg: #17283d;
+}
+
+.ai-website-link-chip:focus-visible {
   outline: 2px solid #3b82f6;
-  outline-offset: 3px;
+  outline-offset: 2px;
 }
 
-.ai-website-link-icon {
-  width: 32px;
-  height: 32px;
+.ai-website-link-thumbnail {
   display: grid;
+  flex: 0 0 auto;
   place-items: center;
-  border-radius: 9px;
-  color: #2563eb;
-  background: linear-gradient(145deg, #eff6ff, #e0f2fe);
-  border: 1px solid rgba(59, 130, 246, 0.14);
+  position: relative;
+  width: 26px;
+  height: 26px;
   overflow: hidden;
+  border-radius: 50%;
+  background: var(--ai-line);
+  color: var(--ai-muted);
 }
 
-.ai-website-link-icon.has-favicon {
-  padding: 6px;
-  background: #ffffff;
+.ai-website-link-thumbnail::after {
+  position: absolute;
+  inset: 0;
+  border: 1px solid var(--ai-line);
+  border-radius: inherit;
+  pointer-events: none;
+  content: "";
 }
 
-.ai-website-link-icon img {
+.ai-website-link-thumbnail img {
   display: block;
   width: 100%;
   height: 100%;
+  object-fit: cover;
+}
+
+.ai-website-link-thumbnail .is-favicon {
+  width: 16px;
+  height: 16px;
   object-fit: contain;
-  border-radius: 5px;
 }
 
-.ai-website-link-card.external .ai-website-link-icon {
-  color: #0369a1;
-  background: linear-gradient(145deg, #ecfeff, #e0f2fe);
-  border-color: rgba(14, 165, 233, 0.18);
-}
-
-.ai-website-link-copy {
-  min-width: 0;
-  display: grid;
-  gap: 3px;
-}
-
-.ai-website-link-copy strong,
-.ai-website-link-copy small {
-  display: block;
+.ai-website-link-chip strong {
   min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.ai-website-link-copy > span {
-  display: -webkit-box;
-  overflow: hidden;
-  color: #52677f;
-  font-size: 0.78rem;
-  line-height: 1.4;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 1;
-}
-
-.ai-website-link-copy strong {
-  color: #18314f;
-  font-size: 0.86rem;
-  font-weight: 760;
-}
-
-.ai-website-link-copy small {
-  color: #64748b;
-  font-size: 0.73rem;
-}
-
-.ai-website-link-cta {
-  grid-column: 2;
-  width: fit-content;
-  max-width: 100%;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  overflow: hidden;
-  padding: 2px 0 0;
-  color: #1d4ed8;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  font-size: 0.72rem;
-  font-weight: 760;
-  line-height: 1;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  line-height: 1.25;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .ai-website-link-arrow {
-  color: #64748b;
-  transition: transform 180ms ease, color 180ms ease;
-}
-
-.ai-website-link-card:hover .ai-website-link-arrow {
-  color: #2563eb;
-  transform: translate(2px, -2px);
-}
-
-.science-ai-page.dark .ai-website-link-card {
-  color: #dbeafe;
-  border-color: rgba(148, 163, 184, 0.22);
-  background: rgba(15, 23, 42, 0.84);
-  box-shadow: 0 4px 14px rgba(2, 6, 23, 0.18);
-}
-
-.science-ai-page.dark .ai-website-link-card:hover {
-  border-color: rgba(96, 165, 250, 0.36);
-  background: rgba(20, 31, 50, 0.94);
-  box-shadow: 0 4px 14px rgba(2, 6, 23, 0.18);
-}
-
-.science-ai-page.dark .ai-website-link-copy strong {
-  color: #e2e8f0;
-}
-
-.science-ai-page.dark .ai-website-link-copy > span,
-.science-ai-page.dark .ai-website-link-copy small {
-  color: #94a3b8;
-}
-
-.science-ai-page.dark .ai-website-link-icon,
-.science-ai-page.dark .ai-website-link-card.external .ai-website-link-icon {
-  color: #7dd3fc;
-  border-color: rgba(56, 189, 248, 0.2);
-  background: rgba(14, 165, 233, 0.12);
-}
-
-.science-ai-page.dark .ai-website-link-icon.has-favicon {
-  background: #ffffff;
-}
-
-.science-ai-page.dark .ai-website-link-cta {
-  color: #bfdbfe;
-  border-color: rgba(96, 165, 250, 0.22);
-  background: rgba(37, 99, 235, 0.13);
-}
-
-@media (max-width: 560px) {
-  .ai-website-links {
-    grid-template-columns: 1fr;
-  }
-
-  .ai-website-link-card {
-    padding: 11px;
-  }
+  flex: 0 0 auto;
+  color: var(--ai-muted);
 }
 
 .shop-highlight-card {
@@ -11994,21 +11855,58 @@ body.pulse-ai-route-active .science-ai-chat {
 }
 
 .science-ai-page .ai-message.ai .ai-avatar {
-  width: 26px;
-  height: 26px;
+  width: 40px;
+  height: 40px;
   border: 0;
   background: transparent;
   color: var(--ai-muted);
+}
+
+.science-ai-page .ai-brand > .ai-brand-mark,
+.science-ai-page .ai-message.ai .ai-avatar.ai-avatar--pulse {
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--ai-line);
+  background: rgba(255, 255, 255, 0.1);
+  box-shadow: 0 8px 22px rgba(4, 12, 34, 0.12);
+  backdrop-filter: blur(12px) saturate(145%);
+  -webkit-backdrop-filter: blur(12px) saturate(145%);
+}
+
+.science-ai-page.light .ai-brand > .ai-brand-mark,
+.science-ai-page.light .ai-message.ai .ai-avatar.ai-avatar--pulse {
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.science-ai-page .ai-brand > .ai-brand-mark {
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+}
+
+.science-ai-page .ai-message.ai .ai-avatar.ai-avatar--pulse {
+  border-radius: 13px;
+}
+
+.science-ai-page .ai-brand-mark .pulse-orb-animation {
+  width: 44px;
+  height: 44px;
+}
+
+.science-ai-page .ai-avatar--pulse .pulse-orb-animation {
+  width: 38px;
+  height: 38px;
+}
+
+.science-ai-page .ai-empty-badge .pulse-orb-animation--badge {
+  width: 20px;
+  height: 20px;
 }
 
 .science-ai-page .ai-reply {
   width: 100%;
   min-width: 0;
   color: var(--ai-text);
-}
-
-.science-ai-page .ai-reply.typing {
-  min-height: 1.5rem;
 }
 
 .science-ai-page .ai-bubble-user {
@@ -12063,16 +11961,6 @@ body.pulse-ai-route-active .science-ai-chat {
   box-shadow: 0 4px 14px rgba(2, 6, 23, 0.13);
 }
 
-.science-ai-page .ai-stream-cursor-pro {
-  display: inline-block;
-  width: 13px;
-  height: 21px;
-  margin-left: 5px;
-  border-radius: 3px;
-  background: linear-gradient(135deg, #60a5fa, #22d3ee);
-  animation: blinker 1s steps(2, start) infinite;
-}
-
 .science-ai-page .ai-response-warning-pro {
   display: block;
   max-width: 420px;
@@ -12098,10 +11986,7 @@ body.pulse-ai-route-active .science-ai-chat {
 }
 
 .science-ai-page .ai-response-link {
-  display: inline-flex;
-  max-width: 100%;
-  align-items: baseline;
-  gap: 0.18em;
+  display: inline;
   color: #60a5fa;
   font-weight: 760;
   text-decoration: underline;
@@ -12130,7 +12015,9 @@ body.pulse-ai-route-active .science-ai-chat {
 }
 
 .science-ai-page .ai-response-link svg {
-  flex: 0 0 auto;
+  display: inline-block;
+  margin-inline-start: 0.18em;
+  vertical-align: -0.1em;
   transform: rotate(15deg);
   transition: transform 160ms ease;
 }
@@ -12138,35 +12025,6 @@ body.pulse-ai-route-active .science-ai-chat {
 .science-ai-page .ai-response-link:hover svg,
 .science-ai-page .ai-response-link:focus-visible svg {
   transform: rotate(15deg) translate(2px, -2px);
-}
-
-.science-ai-page.dark .ai-website-link-card {
-  border-color: var(--ai-line);
-  color: var(--ai-text);
-  background: var(--ai-surface);
-}
-
-.science-ai-page.light .ai-website-link-card {
-  border-color: var(--ai-line);
-  color: var(--ai-text);
-  background: rgba(255, 255, 255, 0.84);
-}
-
-.science-ai-page.light .ai-website-link-card:hover {
-  border-color: rgba(37, 99, 235, 0.3);
-  background: #f8fbff;
-}
-
-.science-ai-page.dark .ai-website-link-copy strong,
-.science-ai-page.light .ai-website-link-copy strong {
-  color: var(--ai-text);
-}
-
-.science-ai-page.dark .ai-website-link-copy > span,
-.science-ai-page.dark .ai-website-link-copy small,
-.science-ai-page.light .ai-website-link-copy > span,
-.science-ai-page.light .ai-website-link-copy small {
-  color: var(--ai-muted);
 }
 
 .science-ai-page .ai-sidebar-card {

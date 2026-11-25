@@ -5,6 +5,7 @@ const ProjectPart = require("../models/ProjectPart");
 const ShopProduct = require("../models/ShopProduct");
 const { availableStockQuantity } = require("../utils/inventory");
 const { resolveProductPricing } = require("../utils/productPricing");
+const { logger } = require("../utils/logger");
 const { listPublicCouponsForProducts } = require("../services/couponService");
 const { getPulseAIKnowledge } = require("../services/pulseAIKnowledgeService");
 const {
@@ -15,7 +16,7 @@ const {
   sanitizeConversationMemory,
   stripConversationMemoryMetadata,
 } = require("../services/pulseAIConversationMemoryService");
-const { isRetryableGeminiError, requestGeminiWithRetry } = require("../services/geminiClient");
+const { requestGeminiWithRetry } = require("../services/geminiClient");
 const { fetchSafeFavicon } = require("../services/faviconService");
 const {
   extractChatTitleMetadata,
@@ -40,7 +41,7 @@ const {
 const { buildOrderQuote } = require("./orderController");
 
 const GEMINI_COOLDOWN_MS = 65 * 1000;
-let geminiCooldownUntil = 0;
+const geminiModelCooldowns = new Map();
 const FALLBACK_MODELS = ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-2.5-flash"];
 const RETIRED_MODELS = new Set(["gemini-2.0-flash", "gemini-2.0-flash-001", "gemini-2.0-flash-lite", "gemini-2.0-flash-lite-001"]);
 const SITE_HOSTS = [
@@ -136,11 +137,14 @@ function formatCatalogForGemini(products, deepSearch = false) {
 
 function canonicalLink(value) {
   const raw = String(value || "").trim();
-  if (!raw) return "";
-  if (raw.startsWith("/") && !raw.startsWith("//")) return raw;
+  if (!/^(?:\/(?!\/)|https?:\/\/)/i.test(raw) || raw.includes("\\")) return "";
   try {
-    const url = new URL(raw);
-    return ["http:", "https:"].includes(url.protocol) ? url.toString() : "";
+    const url = new URL(raw, "https://prakashshop.in");
+    if (url.username || url.password) return "";
+    if (raw.startsWith("/") || SITE_HOSTS.includes(url.hostname) || /^(?:www\.)?prakashshop\.in$/i.test(url.hostname)) {
+      return (url.pathname.replace(/\/+$/, "") || "/") + url.search + url.hash;
+    }
+    return url.href;
   } catch (_error) {
     return "";
   }
@@ -156,13 +160,15 @@ function isProductDetailLink(value) {
   }
 }
 
+const WEBSITE_LINKS_FIELD = /(?:^|\n)[ \t]*(?:\*\*)?WEBSITE_LINKS(?:\*\*)?[ \t]*:(?:\*\*)?[ \t]*(?:\r?\n[ \t]*)?(?:\x60{3}(?:json)?[ \t]*\r?\n[ \t]*)?(\[(?:[^\]"]|"(?:[^"\\]|\\.)*")*\]|[^\r\n]*)(?:[ \t]*\r?\n[ \t]*\x60{3})?/i;
+
 function stripResponseMetadata(text) {
   return stripChatTitleMetadata(
     stripConversationMemoryMetadata(
       stripUnavailableDemandMetadata(
         stripLinkActionMetadata(
           stripCatalogMatchLine(text)
-            .replace(/\n?\s*WEBSITE_LINKS\s*:.*$/gim, ""),
+            .replace(WEBSITE_LINKS_FIELD, ""),
         ),
       ),
     ),
@@ -176,6 +182,7 @@ function genericLinkCard(item) {
     id: `website:${url}`,
     title: String(item?.title || "Open link").trim().slice(0, 120),
     description: String(item?.description || "").trim().slice(0, 240),
+    ...(item?.imageUrl && { imageUrl: item.imageUrl }),
     url,
     type,
     ctaLabel: type === "internal" ? "View Page" : "Open Link",
@@ -191,10 +198,16 @@ function inferRelevantLinks(promptText, allowedLinks) {
     if (item && !wants.some((link) => link.url === item.url)) wants.push(item);
   };
   if (/\bprivacy|data policy\b/.test(normalized)) add("/privacy-policy");
-  if (/\bterms|condition|refund|return|cancel/.test(normalized)) add("/terms-and-conditions");
+  if (/\b(?:refund|return|cancel)\w*\b/.test(normalized)) add("/return-refund-policy");
+  if (/\b(?:terms|conditions?)\b/.test(normalized)) add("/terms-and-conditions");
+  if (/\bshipping policy\b/.test(normalized)) add("/shipping-policy");
+  if (/\b(?:track (?:my |an? )?order|order (?:tracking|status))\b/.test(normalized)) add("/orders");
+  if (/\bcheckout\b/.test(normalized)) add("/checkout");
+  if (/\b(?:home page|homepage)\b/.test(normalized)) add("/");
   if (/\bcontact|phone|call|whatsapp|email|address|location|map\b/.test(normalized)) add("/contact");
   if (/\babout|story|history|shop ke bare/.test(normalized)) add("/about");
   if (/\bbook|booking|repair|service\b/.test(normalized)) add("/booking");
+  if (/\b(products?|catalog(?:ue)?|shop items)\b/.test(normalized)) add("/products");
   if (/\bwiring|wire|mcb|switch|socket|plug\b/.test(normalized)) add("/wiring-parts");
   if (/\boffer|discount|update|recent\b/.test(normalized)) add("/#offers");
   if (/\btestimonial|review\b/.test(normalized)) add("/#testimonials");
@@ -205,8 +218,18 @@ function inferRelevantLinks(promptText, allowedLinks) {
   return wants.slice(0, 4).map(genericLinkCard);
 }
 
+function linkRequestContext(message, history) {
+  const prompt = normalize(message);
+  if (!/^(?:(?:please |send |share |give |show |open |can you (?:send|share|give) )(?:me )?(?:the )?)?(?:link|links)(?: (?:please|pls|bhejo|bhej do|do|dedo|de do|chahiye))?$/.test(prompt)) {
+    return message;
+  }
+  const previousPrompt = history.findLast((entry) => entry?.role === "user" && entry.text)?.text;
+  return previousPrompt || message;
+}
+
 function extractWebsiteLinkCards(rawText, allowedLinks, promptText) {
-  const match = String(rawText || "").match(/WEBSITE_LINKS\s*:\s*(.+)$/im);
+  const source = String(rawText || "");
+  const match = source.match(WEBSITE_LINKS_FIELD);
   let requested = [];
   if (match) {
     try {
@@ -220,9 +243,16 @@ function extractWebsiteLinkCards(rawText, allowedLinks, promptText) {
     }
   }
 
+  if (requested.length < 4) {
+    const prose = source.replace(WEBSITE_LINKS_FIELD, "");
+    for (const link of prose.matchAll(/\[([^\]\n]+)\]\(((?:https?:\/\/|\/(?!\/))[^\s)]+)\)|(?:^|[\s(])((?:https?:\/\/|\/(?!\/))[^\s<]+)(?=$|\s)/gi)) {
+      requested.push({ title: link[1], url: link[2] || link[3].replace(/[\])},.!?;:]+$/, "") });
+    }
+  }
+
   const verified = requested.reduce((cards, item) => {
     const url = canonicalLink(item?.url);
-    const allowed = allowedLinks.find((link) => canonicalLink(link.url) === url);
+    const allowed = url && allowedLinks.find((link) => canonicalLink(link.url) === url);
     if (!allowed || isProductDetailLink(allowed.url) || cards.some((card) => card.url === allowed.url)) return cards;
     cards.push(genericLinkCard({
       ...allowed,
@@ -230,7 +260,14 @@ function extractWebsiteLinkCards(rawText, allowedLinks, promptText) {
     }));
     return cards;
   }, []);
-  return (verified.length ? verified : inferRelevantLinks(promptText, allowedLinks)).slice(0, 4);
+  if (verified.length) return verified.slice(0, 4);
+  const inferred = inferRelevantLinks(promptText, allowedLinks);
+  if (inferred.length) return inferred;
+  const prose = " " + normalize(source.replace(WEBSITE_LINKS_FIELD, "")) + " ";
+  return allowedLinks.filter((link) => {
+    const title = normalize(link.title);
+    return title.includes(" ") && !isProductDetailLink(link.url) && prose.includes(" " + title + " ");
+  }).slice(0, 4).map(genericLinkCard);
 }
 
 function combineLinkCards(actionCards = [], websiteCards = [], maxCards = 4) {
@@ -382,10 +419,6 @@ function formatCartContextForModel(cartContext) {
   ].join("\n");
 }
 
-function getCooldownSeconds() {
-  return Math.max(1, Math.ceil((geminiCooldownUntil - Date.now()) / 1000));
-}
-
 function asksForFirstQuestionRecall(value) {
   return /\b(first question|first message|pehla sawal|pehla question|sabse pehle (?:kya|kya pucha|kya poocha))\b/.test(String(value || "").toLowerCase());
 }
@@ -469,19 +502,11 @@ function buildLocalResponse(
     return "The live assistant connection is temporarily unavailable, so I cannot safely inspect the uploaded image or claim a product match. Please reconnect and send it again. If possible, include the visible brand/model, product type, color and the issue or feature you want checked.";
   }
 
-  return `The live assistant connection is temporarily unavailable, and I could not verify an exact catalog match for this request. Please share the product or appliance type, intended use, budget and any required size/model. After reconnecting, Pulse AI will check only current stock, prices, offers and relevant repair options.${offerContext}`;
-}
+  if (/^(?:(?:show|browse|view)(?: me)? (?:the )?)?(?:shop )?(?:products?|catalog(?:ue)?|shop items)$/.test(normalize(promptText))) {
+    return "You can browse the shop catalog using the Shop Products link below. Share a product name, category, or budget if you want help narrowing it down.";
+  }
 
-function shouldUseLocalFallback(error) {
-  const message = String(error?.message || error || "").toLowerCase();
-  return (
-    message.includes("ssl") ||
-    message.includes("tls") ||
-    message.includes("fetch failed") ||
-    message.includes("econnreset") ||
-    message.includes("etimedout") ||
-    message.includes("network")
-  );
+  return `The live assistant connection is temporarily unavailable, and I could not verify an exact catalog match for this request. Please share the product or appliance type, intended use, budget and any required size/model. After reconnecting, Pulse AI will check only current stock, prices, offers and relevant repair options.${offerContext}`;
 }
 
 function getRetryAfterMs(error) {
@@ -490,10 +515,6 @@ function getRetryAfterMs(error) {
   return Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
     ? retryAfterSeconds * 1000
     : GEMINI_COOLDOWN_MS;
-}
-
-function isRateLimitError(error) {
-  return Number(error?.status || error?.statusCode) === 429 || Number(error?.status) === 429;
 }
 
 function buildGeminiInlineImage(image) {
@@ -506,10 +527,10 @@ function buildGeminiInlineImage(image) {
 }
 
 function extractGeminiText(data) {
-  if (data.candidates?.length && data.candidates[0].content) {
-    return data.candidates[0].content.parts.map((part) => part.text).filter(Boolean).join("\n\n");
-  }
-  return "I could not generate a response. Please try again.";
+  const parts = data?.candidates?.[0]?.content?.parts;
+  if (!Array.isArray(parts)) return "";
+  return parts.filter((part) => !part?.thought && typeof part?.text === "string")
+    .map((part) => part.text).join("\n\n").trim();
 }
 
 async function buildProductSuggestions(promptText, aiText, availableProducts, deepSearch = false, options = {}) {
@@ -527,19 +548,53 @@ async function buildProductSuggestions(promptText, aiText, availableProducts, de
   }).map((item) => suggestionFromProduct(item.product, item.component));
 }
 
+const PROGRESS_CONTENT_TYPE = "application/x-ndjson";
+
 exports.chatWithScienceAI = catchAsync(async (req, res) => {
+  const wantsProgress = req.get("accept") === PROGRESS_CONTENT_TYPE;
+  const sendProgress = (stage) => {
+    if (!wantsProgress || res.destroyed) return;
+    if (!res.headersSent) {
+      res.set({
+        "Content-Type": PROGRESS_CONTENT_TYPE,
+        "Cache-Control": "no-store, no-transform",
+        "X-Accel-Buffering": "no",
+      });
+    }
+    res.write(`${JSON.stringify({ type: "progress", stage })}\n`);
+  };
+  const sendResult = (payload) => {
+    if (res.destroyed) return;
+    if (!res.headersSent) return res.json(payload);
+    return res.end(`${JSON.stringify({ type: "result", payload })}\n`);
+  };
+
+  try {
+    await runScienceAIChat(req, sendProgress, sendResult);
+  } catch (error) {
+    if (!res.headersSent) throw error;
+    logger.error("pulse-ai.stream.error", { statusCode: error.statusCode || 500, errorName: error.name });
+    if (!res.destroyed) {
+      res.end(`${JSON.stringify({ type: "error", message: "Pulse AI could not complete this request." })}\n`);
+    }
+  }
+});
+
+async function runScienceAIChat(req, sendProgress, sendResult) {
   const {
     message,
     imageBase64,
     imageMimeType = "image/jpeg",
     images = [],
-    conversationHistory = [],
+    conversationHistory: history,
     conversationMemory = {},
     cart = {},
     thinkMode = false,
     deepSearch = false,
     generateTitle = false,
   } = req.body;
+  const conversationHistory = Array.isArray(history) ? history : [];
+  const linkPrompt = linkRequestContext(message, conversationHistory);
   const imageInputs = Array.isArray(images) && images.length
     ? images.slice(0, 5)
     : imageBase64
@@ -554,21 +609,20 @@ exports.chatWithScienceAI = catchAsync(async (req, res) => {
     throw new AppError("Message or image is required", 400);
   }
 
-  let catalogProducts = [];
-  try {
-    catalogProducts = await fetchCatalogProducts();
-  } catch (_error) {
-    catalogProducts = [];
-  }
+  sendProgress("searching");
+  const [catalogProducts, cartContext] = await Promise.all([
+    fetchCatalogProducts().catch(() => []),
+    buildPulseCartContext(cart),
+  ]);
   const availableCatalogProducts = catalogProducts.filter(isProductAvailable);
-  const cartContext = await buildPulseCartContext(cart);
+  sendProgress("working");
   const safeConversationMemory = sanitizeConversationMemory(conversationMemory);
   const knowledgeContext = await getPulseAIKnowledge(catalogProducts);
 
   if (asksForFirstQuestionRecall(message) && safeConversationMemory.firstUserQuestion) {
     const aiResponse = `Your first question in this chat was: “${safeConversationMemory.firstUserQuestion}”`;
     const memory = fallbackConversationMemory(safeConversationMemory, message, aiResponse);
-    return res.json({
+    return sendResult({
       success: true,
       data: {
         response: aiResponse,
@@ -586,15 +640,17 @@ exports.chatWithScienceAI = catchAsync(async (req, res) => {
     });
   }
 
-  const apiKey = env.geminiApiKey;
-  if (!apiKey) {
-    const aiResponse = buildLocalResponse(message, imageInputs.length, "Gemini API key is not configured.", availableCatalogProducts, cartContext, safeConversationMemory);
+  const sendLocalReply = async (warning) => {
+    sendProgress("products");
+    const linkCards = localLinkCards(linkPrompt, knowledgeContext);
+    const aiResponse = linkPrompt !== message && linkCards.length
+      ? "Here are the links for your previous request."
+      : buildLocalResponse(message, imageInputs.length, "", availableCatalogProducts, cartContext, safeConversationMemory);
     const memory = fallbackConversationMemory(safeConversationMemory, message, aiResponse);
     const suggestions = await buildProductSuggestions(message, aiResponse, availableCatalogProducts, Boolean(deepSearch), {
       hasImages: Boolean(imageInputs.length),
     });
-    const linkCards = localLinkCards(message, knowledgeContext);
-    return res.json({
+    return sendResult({
       success: true,
       data: {
         response: aiResponse,
@@ -602,7 +658,7 @@ exports.chatWithScienceAI = catchAsync(async (req, res) => {
         suggestions,
         linkCards,
         model: "local-fallback",
-        warning: "Pulse AI is using verified shop guidance right now. Prices, stock and offers are shown only when available in the current catalog.",
+        warning,
         memory,
         conversationHistory: [
           ...conversationHistory,
@@ -611,34 +667,14 @@ exports.chatWithScienceAI = catchAsync(async (req, res) => {
         ],
       },
     });
-  }
+  };
 
-  if (Date.now() < geminiCooldownUntil) {
-    const seconds = getCooldownSeconds();
-    const aiResponse = buildLocalResponse(message, imageInputs.length, `Gemini rate limit cooldown active for ${seconds} seconds.`, availableCatalogProducts, cartContext, safeConversationMemory);
-    const memory = fallbackConversationMemory(safeConversationMemory, message, aiResponse);
-    const suggestions = await buildProductSuggestions(message, aiResponse, availableCatalogProducts, Boolean(deepSearch), {
-      hasImages: Boolean(imageInputs.length),
-    });
-    const linkCards = localLinkCards(message, knowledgeContext);
-    return res.json({
-      success: true,
-      data: {
-        response: aiResponse,
-        chatTitle: localChatTitle,
-        suggestions,
-        linkCards,
-        model: "local-fallback",
-        warning: `Pulse AI is temporarily using verified shop guidance. Live assistance will be retried automatically after ${seconds} seconds.`,
-        memory,
-        conversationHistory: [
-          ...conversationHistory,
-          { role: "user", text: message, images: imageInputs },
-          { role: "ai", text: aiResponse, suggestions, linkCards },
-        ],
-      },
-    });
-  }
+  const apiKey = env.geminiApiKey;
+  const now = Date.now();
+  const modelCandidates = Array.from(new Set([env.geminiModel, ...FALLBACK_MODELS].filter(Boolean)))
+    .filter((model) => !RETIRED_MODELS.has(model) && (geminiModelCooldowns.get(model) || 0) <= now);
+  const fallbackNotice = "This reply uses verified shop information while live assistance is unavailable.";
+  if (!apiKey || !modelCandidates.length) return sendLocalReply(fallbackNotice);
 
   const modeNotes = [
     thinkMode
@@ -753,19 +789,22 @@ ${formatCatalogForGemini(catalogProducts, Boolean(deepSearch))}`;
   const contents = [];
   if (conversationHistory.length > 0) {
     conversationHistory.slice(-18).forEach((msg) => {
+      if (!msg || !["user", "ai", "model"].includes(msg.role)) return;
       const historyImages = Array.isArray(msg.images)
         ? msg.images
         : msg.imageBase64
           ? [{ base64: msg.imageBase64, mimeType: msg.imageMimeType }]
           : [];
-      const parts = [{ text: String(msg.text || "").slice(0, 5000) }];
+      const text = String(msg.text || "").trim().slice(0, 5000);
+      const parts = text ? [{ text }] : [];
 
       if (msg.role === "user") {
         historyImages.slice(0, 2).forEach((image) => {
-          if (image.base64) parts.push(buildGeminiInlineImage(image));
+          if (image?.base64) parts.push(buildGeminiInlineImage(image));
         });
       }
 
+      if (!parts.length) return;
       contents.push({
         role: msg.role === "user" ? "user" : "model",
         parts,
@@ -793,66 +832,36 @@ ${formatCatalogForGemini(catalogProducts, Boolean(deepSearch))}`;
       parts: [{ text: systemContext }],
     },
   });
-  const modelCandidates = Array.from(new Set([env.geminiModel, ...FALLBACK_MODELS].filter(Boolean)))
-    .filter((model) => !RETIRED_MODELS.has(model));
-  const geminiResult = await requestGeminiWithRetry({
+  sendProgress("thinking");
+  const { response, data, error, usedModel, attempts } = await requestGeminiWithRetry({
     apiKey,
     models: modelCandidates,
     requestBody,
+    attemptsPerModel: 1,
+    attemptTimeoutMs: thinkMode || deepSearch ? 18000 : 10000,
+    totalTimeoutMs: thinkMode || deepSearch ? 35000 : 22000,
+    readResponseBody: true,
+    onRateLimit: (failure, model) => {
+      geminiModelCooldowns.set(model, Date.now() + getRetryAfterMs(failure));
+    },
   });
-  const geminiResponse = geminiResult.response;
-  const geminiError = geminiResult.error;
-  const usedModel = geminiResult.usedModel;
-
-  if (!geminiResponse?.ok && isRateLimitError(geminiError)) {
-    geminiCooldownUntil = Date.now() + getRetryAfterMs(geminiError);
-  }
-
-  if (!geminiResponse?.ok && geminiError && (shouldUseLocalFallback(geminiError) || isRateLimitError(geminiError) || isRetryableGeminiError(geminiError))) {
-    const aiResponse = buildLocalResponse(message, imageInputs.length, geminiError.message, availableCatalogProducts, cartContext, safeConversationMemory);
-    const memory = fallbackConversationMemory(safeConversationMemory, message, aiResponse);
-    const suggestions = await buildProductSuggestions(message, aiResponse, availableCatalogProducts, Boolean(deepSearch), {
-      hasImages: Boolean(imageInputs.length),
+  const rawAiResponse = response?.ok ? extractGeminiText(data) : "";
+  const aiResponse = stripResponseMetadata(rawAiResponse);
+  if (!aiResponse) {
+    logger.warn("pulse-ai.provider.fallback", {
+      statusCode: error?.status || response?.status || 0,
+      providerCode: error?.code || "",
+      model: usedModel,
+      attempts,
     });
-    const warning = isRateLimitError(geminiError)
-      ? `Pulse AI is temporarily using verified shop guidance and will retry live assistance after ${getCooldownSeconds()} seconds.`
-      : Number(geminiError.status) >= 500
-        ? "Live assistance is temporarily busy. This reply uses verified shop information where available."
-        : "The live connection is temporarily unavailable. This reply uses verified shop information where available.";
-    const linkCards = localLinkCards(message, knowledgeContext);
-    return res.json({
-      success: true,
-      data: {
-        response: aiResponse,
-        chatTitle: localChatTitle,
-        suggestions,
-        linkCards,
-        model: "local-fallback",
-        warning,
-        memory,
-        conversationHistory: [
-          ...conversationHistory,
-          { role: "user", text: message, images: imageInputs },
-          { role: "ai", text: aiResponse, suggestions, linkCards },
-        ],
-      }
-    });
+    return sendLocalReply(fallbackNotice);
   }
 
-  if (!geminiResponse?.ok) {
-    throw new AppError(
-      geminiError?.message || `Gemini model is not available. Tried: ${modelCandidates.join(", ")}`,
-      geminiError?.status || 500,
-      { triedModels: modelCandidates },
-    );
-  }
-
-  const data = await geminiResponse.json();
-  const rawAiResponse = extractGeminiText(data);
   const chatTitle = shouldGenerateChatTitle
     ? (extractChatTitleMetadata(rawAiResponse) || localChatTitle)
     : "";
   const extractedMemory = extractConversationMemoryMetadata(rawAiResponse).memory;
+  sendProgress("products");
   const suggestions = await buildProductSuggestions(message, rawAiResponse, availableCatalogProducts, Boolean(deepSearch), {
     hasImages: Boolean(imageInputs.length),
   });
@@ -863,9 +872,8 @@ ${formatCatalogForGemini(catalogProducts, Boolean(deepSearch))}`;
     maxCards: 3,
     siteHosts: SITE_HOSTS,
   });
-  const websiteCards = extractWebsiteLinkCards(rawAiResponse, knowledgeContext.allowedLinks, message);
+  const websiteCards = extractWebsiteLinkCards(rawAiResponse, knowledgeContext.allowedLinks, linkPrompt);
   const linkCards = combineLinkCards(actionCards, websiteCards);
-  const aiResponse = stripResponseMetadata(rawAiResponse);
   const memory = extractedMemory
     ? mergeModelMemory(safeConversationMemory, extractedMemory)
     : fallbackConversationMemory(safeConversationMemory, message, aiResponse);
@@ -892,7 +900,7 @@ ${formatCatalogForGemini(catalogProducts, Boolean(deepSearch))}`;
     });
   }
 
-  res.json({
+  return sendResult({
     success: true,
     data: {
       response: aiResponse,
@@ -908,7 +916,7 @@ ${formatCatalogForGemini(catalogProducts, Boolean(deepSearch))}`;
       ],
     },
   });
-});
+}
 
 exports.scienceAIHealth = catchAsync(async (_req, res) => {
   res.json({

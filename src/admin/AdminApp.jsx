@@ -25,12 +25,14 @@ import {
 } from "lucide-react";
 import { applyDynamicWebSettings } from "../context/SiteDataContext";
 import { getIcon } from "../components/site/iconMap";
+import { galleryItemsForSave, moveGalleryItem } from "../utils/gallery";
 import { buildPricingPayload, formatINR, resolveProductPricing } from "../utils/productPricing";
 import InvoiceModule from "./InvoiceModule";
 import ManageWhatsAppModule from "./ManageWhatsAppModule";
 import OrdersModule from "./OrdersModule";
 import AdminToggle from "./AdminToggle";
 import ProductVariantsManager from "./ProductVariantsManager";
+import { GalleryPreview, GalleryRatioSelect } from "./GalleryPreview";
 import "./AdminApp.css";
 
 const API_BASE = process.env.REACT_APP_API_URL || process.env.VITE_API_URL || "/api";
@@ -2437,6 +2439,18 @@ function ContactManager({ contact, runAction, busy }) {
   );
 }
 
+let galleryDraftSequence = 0;
+
+function ensureGalleryItemIds(items) {
+  const seen = new Set();
+  return items.map((item) => {
+    let id = String(item.id || item._id || "");
+    if (!id || seen.has(id)) id = `gallery-${Date.now()}-${++galleryDraftSequence}`;
+    seen.add(id);
+    return item.id === id ? item : { ...item, id };
+  });
+}
+
 function GalleryManager({ content, runAction, busy }) {
   const contentMap = useMemo(
     () => Object.fromEntries(content.map((doc) => [doc.key, doc.value])),
@@ -2463,10 +2477,10 @@ function GalleryManager({ content, runAction, busy }) {
         imagePublicId: image.publicId || "",
         label: image.originalName ? image.originalName.replace(/\.[^.]+$/, "") : "Gallery image",
         caption: "",
-        span: "",
+        aspectRatio: "1:1",
       }));
     if (!uploadedItems.length) return;
-    setForm((current) => ({ ...current, items: [...(current.items || []), ...uploadedItems] }));
+    setForm((current) => ({ ...current, items: ensureGalleryItemIds([...current.items, ...uploadedItems]) }));
   };
 
   return (
@@ -2480,30 +2494,31 @@ function GalleryManager({ content, runAction, busy }) {
         multiple
         onMultipleUpload={addUploadedImages}
       />
+      <GalleryPreview
+        items={form.items}
+        busy={busy}
+        onRatioChange={(id, aspectRatio) => setForm((current) => ({
+          ...current,
+          items: current.items.map((item) => item.id === id ? { ...item, aspectRatio } : item),
+        }))}
+        onMove={(id, targetId) => setForm((current) => ({
+          ...current,
+          items: moveGalleryItem(current.items, id, targetId),
+        }))}
+      />
       <RepeatableRows
         title="Gallery Items"
         items={form.items}
-        emptyItem={{ imageUrl: "", label: "", caption: "", span: "" }}
-        onChange={(items) => setForm({ ...form, items })}
+        emptyItem={{ imageUrl: "", label: "", caption: "", aspectRatio: "1:1" }}
+        onChange={(items) => setForm((current) => ({ ...current, items: ensureGalleryItemIds(items) }))}
         enableBatchDelete
         renderItem={(item, update) => (
           <>
             <div className="two-col">
               <Input label="Label" value={item.label} onChange={(label) => update({ label })} />
-              <Select
-                label="Layout size"
-                value={item.span}
-                onChange={(span) => update({ span })}
-                options={[
-                  { value: "", label: "Normal" },
-                  { value: "md:col-span-2", label: "Wide" },
-                  { value: "md:row-span-2", label: "Tall" },
-                  { value: "md:col-span-2 md:row-span-2", label: "Large" },
-                  { value: "md:col-span-3", label: "Extra wide" },
-                ]}
-              />
+              <GalleryRatioSelect item={item} disabled={busy} onChange={(aspectRatio) => update({ aspectRatio })} />
             </div>
-            <ImageField value={item.imageUrl || item.src} onChange={(imageUrl) => update({ imageUrl })} />
+            <ImageField value={item.imageUrl || item.src || item.url} onChange={(imageUrl) => update({ imageUrl, src: imageUrl, url: imageUrl })} />
             <Textarea label="Caption" value={item.caption} onChange={(caption) => update({ caption })} />
           </>
         )}
@@ -5168,6 +5183,11 @@ function SectionHeadingFields({ form, setForm, includeDescription = true }) {
 }
 
 function contentToForm(key, value = {}) {
+  if (key === "gallery") {
+    const items = (value.items || []).filter(Boolean).map((item, index) => ({ item, order: Number(item.displayOrder ?? index) }));
+    items.sort((a, b) => a.order - b.order);
+    return { ...value, items: ensureGalleryItemIds(items.map(({ item }) => item)) };
+  }
   if (key === "footer") {
     return {
       ...value,
@@ -5290,7 +5310,7 @@ function formToContent(key, form) {
       eyebrow: form.eyebrow || "",
       title: form.title || "",
       highlight: form.highlight || "",
-      items: (form.items || []).filter((item) => item.imageUrl || item.src || item.label),
+      items: galleryItemsForSave(form.items || []),
     };
   }
 

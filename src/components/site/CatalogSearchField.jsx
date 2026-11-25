@@ -39,7 +39,7 @@ export function CatalogSearchField({ id, label, placeholder, value, onChange }) 
         </button>
       )}
       {value.trim() && (
-        <button className="catalog-ask-ai" type="button" onClick={() => openPulseAIWithSearchPrompt(value)}>
+        <button className="catalog-ask-ai" type="button" aria-label="Ask Pulse AI about this search" onClick={() => openPulseAIWithSearchPrompt(value)}>
           <Sparkles size={15} aria-hidden="true" />
           <span>Ask AI</span>
         </button>

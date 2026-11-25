@@ -3,7 +3,7 @@ import { ArrowRight, Expand } from "lucide-react";
 import { useSiteData } from "../../context/SiteDataContext";
 import { Lightbox } from "./Lightbox";
 import { OptimizedImage } from "./OptimizedImage";
-import { normalizeGalleryItems } from "../../utils/gallery";
+import { galleryAspectRatio, galleryRatioValue, normalizeGalleryItems } from "../../utils/gallery";
 
 function GalleryMarqueeCard({ item, index, onOpen, eager = false }) {
   return (
@@ -12,15 +12,15 @@ function GalleryMarqueeCard({ item, index, onOpen, eager = false }) {
       onClick={() => onOpen(index)}
       aria-label={`Open ${item.label} in lightbox`}
       className="gallery-marquee-card gallery-tile group relative cursor-zoom-in overflow-hidden rounded-3xl border-glow shadow-card text-left"
+      style={{ "--gallery-card-ratio": galleryRatioValue(galleryAspectRatio(item)) }}
     >
       <OptimizedImage
         src={item.src}
         alt={item.label}
         loading={eager ? "eager" : "lazy"}
         decoding="async"
-        width={480}
-        height={560}
-        sizes="(min-width: 768px) 240px, 70vw"
+        width={720}
+        sizes="(min-width: 640px) 70vw, 85vw"
         className="gallery-tile-image h-full w-full object-cover"
       />
       <div className="gallery-tile-expand absolute inset-0 flex items-center justify-center opacity-0 transition-opacity duration-300">

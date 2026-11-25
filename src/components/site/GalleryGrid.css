@@ -1,0 +1,38 @@
+.gallery-grid {
+  --gallery-grid-gap: 12px;
+  display: grid;
+  gap: var(--gallery-grid-gap);
+}
+
+.gallery-grid--desktop {
+  --gallery-grid-gap: 16px;
+}
+
+.gallery-grid-row {
+  display: grid;
+  align-items: start;
+  gap: var(--gallery-grid-gap);
+}
+
+.gallery-grid-cell {
+  position: relative;
+  min-width: 0;
+}
+
+.gallery-grid-cell > .gallery-tile {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.gallery-grid-cell picture,
+.gallery-grid-cell img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.gallery-grid-cell img {
+  object-fit: cover;
+}

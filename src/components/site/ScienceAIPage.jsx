@@ -1,14 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowUpRight, Bot, Camera, Check, ChevronLeft, ChevronRight, ImagePlus, Images, Link2, Moon, PackageSearch, PanelLeftClose, PanelLeftOpen, Plus, ShoppingCart, Sun, Trash2, Wrench } from "lucide-react";
+import { ArrowUpRight, Camera, Check, ChevronLeft, ChevronRight, ImagePlus, Images, Link2, Moon, PackageSearch, PanelLeftClose, PanelLeftOpen, Plus, ShoppingCart, Sun, Trash2, Wrench } from "lucide-react";
 import { apiRequest, apiUrl } from "../../api/client";
 import { SCIENCE_PROJECTS_CATEGORY, getCartStockLimit, useCart } from "../../context/CartContext";
 import { notifyCartResult } from "../../utils/cartToast";
 import { couponOrderItems, getAppliedCouponCode } from "../../utils/coupons";
 import { formatINR } from "../../utils/productPricing";
 import { consumePulseAISearchPrompt, readPulseAISearchPrompt } from "../../utils/pulseAISearchPrompt";
+import { getSiteOgImage } from "../../utils/routes";
 import { AIChatInput } from "../ui/AIChatInput";
+import AITextLoading from "../ui/ai-text-loading";
 import { LottieSvgAnimation } from "./LottieSvgAnimation";
+import { PulseOrbAnimation } from "./PulseOrbAnimation";
 import { OptimizedImage } from "./OptimizedImage";
 import cartImage from "../../assets/Cart.webp";
 
@@ -22,6 +25,12 @@ const LEGACY_SCIENCE_AI_SESSION_KEY = "prakash:pulse-ai-session:v1";
 const SCIENCE_AI_CUSTOMER_KEY = "prakash:pulse-ai-customer:v1";
 const MAX_TEMPORARY_CHAT_SESSIONS = 25;
 const MAX_PREVIOUS_CHATS_SUMMARY_LENGTH = 8000;
+const REPLY_STATUS = {
+  searching: "Searching...",
+  working: "Working...",
+  thinking: "Thinking...",
+  products: "Finding products...",
+};
 
 function cleanMemoryText(value, maxLength) {
   return String(value || "").replace(/\s+/g, " ").trim().slice(0, maxLength);
@@ -94,10 +103,11 @@ function getPulseAICustomerId() {
 function normalizeLinkCards(cards) {
   return (Array.isArray(cards) ? cards : []).reduce((safe, card) => {
     const url = String(card?.url || "").trim();
-    const valid = (url.startsWith("/") && !url.startsWith("//")) || /^https?:\/\//i.test(url);
-    let pathname = url;
-    try { pathname = new URL(url, window.location.origin).pathname; } catch (_error) { /* handled by valid */ }
-    if (!valid || /^\/product-detail(?:\/|$)/i.test(pathname) || safe.some((item) => item.url === url)) return safe;
+    let destination;
+    try { destination = new URL(url, window.location.origin); } catch (_error) { return safe; }
+    const valid = /^https?:\/\//i.test(url)
+      || (url.startsWith("/") && !url.startsWith("//") && destination.origin === window.location.origin);
+    if (!valid || /^\/(?:product|product-detail)(?:\/|$)/i.test(destination.pathname) || safe.some((item) => item.url === url)) return safe;
     const type = ["internal", "external"].includes(card?.type)
       ? card.type
       : url.startsWith("/")
@@ -105,11 +115,10 @@ function normalizeLinkCards(cards) {
         : "external";
     safe.push({
       id: String(card?.id || `link:${url}`),
-      title: String(card?.title || "Open link").trim().slice(0, 120),
-      description: String(card?.description || "").trim().slice(0, 240),
+      title: String(card?.title || "").trim().slice(0, 120) || "Open link",
+      imageUrl: String(card?.imageUrl || "").trim(),
       url,
       type,
-      ctaLabel: String(card?.ctaLabel || (type === "internal" ? "View Page" : "Open Link")).trim().slice(0, 40),
       openInNewTab: type === "external" && card?.openInNewTab !== false,
     });
     return safe;
@@ -131,26 +140,34 @@ function faviconUrlForLink(link = {}) {
   }
 }
 
-function WebsiteLinkIcon({ link }) {
-  const faviconUrl = faviconUrlForLink(link);
-  const [failed, setFailed] = useState(!faviconUrl);
+function previewImageForLink(link) {
+  try {
+    const destination = new URL(link.url, window.location.origin);
+    const image = link.imageUrl
+      || (link.type === "internal" && getSiteOgImage(destination.pathname));
+    if (!image) return "";
+    const url = new URL(image, link.imageUrl ? destination : window.location.origin);
+    return /^https?:$/.test(url.protocol) ? url.href : "";
+  } catch (_error) {
+    return "";
+  }
+}
 
-  useEffect(() => {
-    setFailed(!faviconUrl);
-  }, [faviconUrl]);
-
+function WebsiteLinkThumbnail({ imageUrl, faviconUrl }) {
+  const [failedImages, setFailedImages] = useState([]);
+  const source = [imageUrl, faviconUrl].find((url) => url && !failedImages.includes(url));
   return (
-    <span className={`ai-website-link-icon ${!failed ? "has-favicon" : "fallback"}`}>
-      {!failed ? (
+    <span className="ai-website-link-thumbnail" aria-hidden="true">
+      {source ? (
         <img
-          src={faviconUrl}
+          className={source === imageUrl ? undefined : "is-favicon"}
+          src={source}
           alt=""
-          aria-hidden="true"
           loading="lazy"
           referrerPolicy="no-referrer"
-          onError={() => setFailed(true)}
+          onError={() => setFailedImages((current) => [...current, source])}
         />
-      ) : <Link2 size={17} />}
+      ) : <Link2 size={14} />}
     </span>
   );
 }
@@ -222,7 +239,6 @@ function normalizeStoredMessage(message = {}) {
     linkCards: normalizeLinkCards(message.linkCards),
     warning: message.warning || "",
     isError: Boolean(message.isError),
-    isStreaming: false,
   };
 }
 
@@ -324,15 +340,6 @@ function createMessageId(prefix) {
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-function textChunks(text) {
-  const parts = String(text || "").match(/\S+\s*/g) || [String(text || "")];
-  const chunks = [];
-  for (let index = 0; index < parts.length; index += 5) {
-    chunks.push(parts.slice(index, index + 5).join(""));
-  }
-  return chunks;
-}
-
 function inlineMarkdownParts(text) {
   const value = String(text || "");
   const parts = [];
@@ -344,6 +351,18 @@ function inlineMarkdownParts(text) {
 
   while (index < value.length) {
     const rest = value.slice(index);
+    const link = rest.match(/^\[([^\]\n]+)\]\(((?:https?:\/\/|\/(?!\/))[^\s)<>]+)\)|^((?:https?:\/\/|www\.)[^\s<>]+)/i);
+    if (link) {
+      parts.push({ type: "link", content: link[0], label: link[1], url: link[2] || link[3] });
+      index += link[0].length;
+      continue;
+    }
+    const route = (index === 0 || /[\s(]/.test(value[index - 1])) && rest.match(/^\/[a-z#][^\s<>]*/i)?.[0];
+    if (route) {
+      parts.push({ type: "link", content: route, url: route });
+      index += route.length;
+      continue;
+    }
     const marker = rest.startsWith("**") ? "**" : rest.startsWith("__") ? "__" : rest.startsWith("`") ? "`" : "";
 
     if (marker) {
@@ -373,6 +392,10 @@ function inlineMarkdownParts(text) {
       const found = value.indexOf(candidate, index + 1);
       if (found !== -1 && found < nextIndex) nextIndex = found;
     }
+    const nextLink = rest.slice(1).search(/\[|https?:\/\/|www\./i);
+    if (nextLink !== -1) nextIndex = Math.min(nextIndex, index + 1 + nextLink);
+    const nextRoute = /[\s(]\/[a-z#]/i.exec(rest);
+    if (nextRoute) nextIndex = Math.min(nextIndex, index + 1 + nextRoute.index);
     pushText(value.slice(index, nextIndex));
     index = nextIndex;
   }
@@ -386,51 +409,50 @@ function renderInlineMarkdown(text, keyPrefix) {
     if (part.type === "strong") return <strong key={key}>{renderInlineMarkdown(part.content, key)}</strong>;
     if (part.type === "em") return <em key={key}>{renderInlineMarkdown(part.content, key)}</em>;
     if (part.type === "code") return <code key={key}>{part.content}</code>;
-    return <span key={key}>{renderLinkifiedText(part.content, key)}</span>;
+    if (part.type === "link") return renderMessageLink(part, key);
+    return part.content;
   });
 }
 
-function renderLinkifiedText(text, keyPrefix) {
-  const value = String(text || "");
-  const linkPattern = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)|((?:https?:\/\/|www\.)[^\s<]+)/gi;
-  const rendered = [];
-  let cursor = 0;
-  let match;
-  while ((match = linkPattern.exec(value)) !== null) {
-    if (match.index > cursor) rendered.push(value.slice(cursor, match.index));
-    const markdownUrl = match[2] || "";
-    const rawUrl = markdownUrl || match[3] || "";
-    const trailing = markdownUrl ? "" : (rawUrl.match(/[\])},.!?;:]+$/)?.[0] || "");
-    const cleanUrl = rawUrl.slice(0, rawUrl.length - trailing.length);
-    const href = cleanUrl.startsWith("www.") ? `https://${cleanUrl}` : cleanUrl;
-    let external = true;
-    try {
-      const parsed = new URL(href);
-      external = parsed.hostname !== window.location.hostname && !/^(www\.)?prakashshop\.in$/i.test(parsed.hostname);
-    } catch (_error) {
-      external = true;
-    }
-    rendered.push(
+function renderMessageLink({ label, url, content }, key) {
+  const trailing = label ? "" : (url.match(/[\])},.!?;:]+$/)?.[0] || "");
+  const cleanUrl = url.slice(0, url.length - trailing.length);
+  const href = /^www\./i.test(cleanUrl) ? `https://${cleanUrl}` : cleanUrl;
+  let parsed;
+  try {
+    parsed = new URL(href, window.location.origin);
+  } catch (_error) {
+    return content;
+  }
+  if (!/^https?:$/.test(parsed.protocol) || href.includes("\\") || parsed.username || parsed.password) return content;
+
+  const external = parsed.hostname !== window.location.hostname && !/^(www\.)?prakashshop\.in$/i.test(parsed.hostname);
+  return (
+    <span key={key}>
       <a
         className={`ai-response-link ${external ? "external" : "internal"}`}
         href={href}
-        key={`${keyPrefix}-link-${match.index}`}
         target={external ? "_blank" : undefined}
         rel={external ? "noreferrer noopener" : undefined}
       >
-        <span>{match[1] || cleanUrl}</span>
+        <span>{label || cleanUrl}</span>
         {external ? <ArrowUpRight aria-hidden="true" size={14} /> : null}
-      </a>,
-    );
-    if (trailing) rendered.push(trailing);
-    cursor = match.index + match[0].length;
-  }
-  if (cursor < value.length) rendered.push(value.slice(cursor));
-  return rendered.length ? rendered : value;
+      </a>
+      {trailing}
+    </span>
+  );
+}
+
+function repairWrappedMarkdownLinks(text) {
+  // Repair folded destinations before splitting paragraphs, so their link label and URL stay together.
+  return String(text || "").replace(
+    /(\[[^\]\r\n]+\]\()((?:https?:\/\/|\/(?!\/))[^\s()<>]+(?:(?:[ \t]*\r?\n){1,2}[ \t]*[^\s()<>]+)+)(\))/gi,
+    (_match, start, destination, end) => start + destination.replace(/[ \t]*\r?\n[ \t]*/g, "") + end,
+  );
 }
 
 function FormattedMessage({ text }) {
-  const lines = String(text || "").split(/\r?\n/);
+  const lines = repairWrappedMarkdownLinks(text).split(/\r?\n/);
 
   return (
     <div className="ai-formatted-text">
@@ -503,6 +525,8 @@ export function ScienceAIPage() {
   const [input, setInput] = useState("");
   const [images, setImages] = useState([]);
   const [busy, setBusy] = useState(false);
+  const [replyStatus, setReplyStatus] = useState(null);
+  const [replyReveal, setReplyReveal] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [theme, setTheme] = useState(() => {
     const saved = localStorage.getItem("pulse-ai-theme");
@@ -523,9 +547,8 @@ export function ScienceAIPage() {
   const galleryInputRef = useRef(null);
   const cameraInputRef = useRef(null);
   const dragDepth = useRef(0);
-  const streamTimer = useRef(null);
-  const streamResolve = useRef(null);
-  const streamScrollAt = useRef(0);
+  const activeReply = useRef(null);
+  const revealTimer = useRef(null);
   const sessions = chatState.sessions;
   const session = useMemo(
     () => sessions.find((item) => item.id === chatState.activeSessionId) || sessions[0],
@@ -540,27 +563,13 @@ export function ScienceAIPage() {
     [hasStarted, messages],
   );
   const lastMessageId = visibleMessages[visibleMessages.length - 1]?.id || "";
-  const hasStreamingMessage = visibleMessages.some((message) => message.isStreaming);
-  const isStreamingReply = busy || hasStreamingMessage;
-  const streamingTextLength = useMemo(() => {
-    const streaming = visibleMessages.find((message) => message.isStreaming);
-    return streaming ? String(streaming.text || "").length : 0;
-  }, [visibleMessages]);
-
-  // Scroll on send / new message only (not every stream chunk with smooth).
+  const revealEnd = replyReveal?.id === lastMessageId ? replyReveal.end : null;
   useEffect(() => {
     if (!lastMessageId && !busy) return;
-    endRef.current?.scrollIntoView({ behavior: isStreamingReply ? "auto" : "smooth" });
-  }, [lastMessageId, busy, isStreamingReply]);
+    endRef.current?.scrollIntoView({ behavior: busy || revealEnd !== null ? "auto" : "smooth" });
+  }, [lastMessageId, busy, revealEnd]);
 
-  // Throttled auto-scroll while text streams so the reply stays in view.
-  useEffect(() => {
-    if (!streamingTextLength) return;
-    const now = Date.now();
-    if (now - streamScrollAt.current < 220) return;
-    streamScrollAt.current = now;
-    endRef.current?.scrollIntoView({ behavior: "auto" });
-  }, [streamingTextLength]);
+  useEffect(() => () => window.clearInterval(revealTimer.current), []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => saveScienceAIState(chatState), 500);
@@ -642,10 +651,6 @@ export function ScienceAIPage() {
     };
   }, [mediaMenuOpen]);
 
-  useEffect(() => () => {
-    if (streamTimer.current) window.clearInterval(streamTimer.current);
-  }, []);
-
   const updateSessionById = useCallback((sessionId, updater) => {
     setChatState((current) => ({
       ...current,
@@ -658,7 +663,7 @@ export function ScienceAIPage() {
   const conversationHistory = useMemo(
     () => {
       const recentMessages = messages
-        .filter((message) => !(message.role === "ai" && message.text === welcomeMessage.text))
+        .filter((message) => !message.isError && message.text !== welcomeMessage.text)
         .slice(-18);
       const imageMessageIndexes = recentMessages
         .map((message, index) => ((message.images || []).some((image) => image.base64) ? index : -1))
@@ -712,63 +717,40 @@ export function ScienceAIPage() {
     }
   };
 
-  const stopStreaming = useCallback(() => {
-    if (streamTimer.current) {
-      window.clearInterval(streamTimer.current);
-      streamTimer.current = null;
-    }
-    if (streamResolve.current) {
-      streamResolve.current();
-      streamResolve.current = null;
-    }
-  }, []);
-
   const closeNavOnMobile = () => {
     if (typeof window !== "undefined" && window.innerWidth <= 860) setNavOpen(false);
   };
 
-  const revealAssistantMessage = useCallback(({ text, suggestions, linkCards = [], warning, memory, isError = false, targetSessionId }) => new Promise((resolve) => {
-    stopStreaming();
-    streamResolve.current = resolve;
-    const id = createMessageId("ai");
-    const chunks = textChunks(text);
-    let index = 0;
+  const finishReplyReveal = useCallback(() => {
+    window.clearInterval(revealTimer.current);
+    setReplyReveal(null);
+  }, []);
 
+  const addAssistantMessage = useCallback(({ text, suggestions = [], linkCards = [], warning, memory, isError = false, targetSessionId }) => {
+    const replyText = repairWrappedMarkdownLinks(text);
+    const message = { id: createMessageId("ai"), role: "ai", text: replyText, suggestions, linkCards, warning, isError };
     updateSessionById(targetSessionId, (targetSession) => ({
       ...targetSession,
       memory: memory ? normalizeConversationMemory(memory) : targetSession.memory,
-      messages: [...targetSession.messages, { id, role: "ai", text: "", isStreaming: true, isError }],
+      messages: [...targetSession.messages, message],
     }));
 
-    streamTimer.current = window.setInterval(() => {
-      index += 1;
-      const partial = chunks.slice(0, index).join("");
-      const done = index >= chunks.length;
+    if (isError || window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches) return;
+    const wordEnds = Array.from(replyText.matchAll(/\S+\s*/g), (match) => match.index + match[0].length);
+    const wordsPerFrame = Math.max(3, Math.ceil(wordEnds.length / 30));
+    if (wordEnds.length <= wordsPerFrame) return;
 
-      updateSessionById(targetSessionId, (targetSession) => ({
-        ...targetSession,
-        messages: targetSession.messages.map((message) => (
-          message.id === id
-            ? {
-                ...message,
-                text: partial,
-                isStreaming: !done,
-                suggestions: done ? suggestions : [],
-                linkCards: done ? normalizeLinkCards(linkCards) : [],
-                warning: done ? warning : "",
-              }
-            : message
-        )),
-      }));
-
-      if (done) {
-        window.clearInterval(streamTimer.current);
-        streamTimer.current = null;
-        streamResolve.current = null;
-        resolve();
+    let wordsShown = wordsPerFrame;
+    setReplyReveal({ id: message.id, end: wordEnds[wordsShown - 1] });
+    revealTimer.current = window.setInterval(() => {
+      wordsShown += wordsPerFrame;
+      if (wordsShown >= wordEnds.length) {
+        finishReplyReveal();
+        return;
       }
-    }, 45);
-  }), [stopStreaming, updateSessionById]);
+      setReplyReveal({ id: message.id, end: wordEnds[wordsShown - 1] });
+    }, 40);
+  }, [finishReplyReveal, updateSessionById]);
 
   const newChat = () => {
     const nextSession = createSession(buildPreviousChatsSummary(sessions));
@@ -783,8 +765,12 @@ export function ScienceAIPage() {
   };
 
   const deleteChat = () => {
-    stopStreaming();
-    setBusy(false);
+    if (revealEnd !== null) finishReplyReveal();
+    if (activeReply.current?.sessionId === session.id) {
+      activeReply.current = null;
+      setBusy(false);
+      setReplyStatus(null);
+    }
     setChatState((current) => {
       const remaining = current.sessions.filter((item) => item.id !== current.activeSessionId);
       if (remaining.length) return { sessions: remaining, activeSessionId: remaining[0].id };
@@ -808,9 +794,13 @@ export function ScienceAIPage() {
 
   const sendMessage = useCallback(async (overrideText) => {
     const text = String(overrideText ?? input).trim();
-    if ((!text && images.length === 0) || busy) return;
+    if ((!text && images.length === 0) || activeReply.current) return;
+    finishReplyReveal();
 
     const targetSessionId = session.id;
+    const reply = { sessionId: targetSessionId };
+    activeReply.current = reply;
+    setReplyStatus({ ...reply, text: REPLY_STATUS.thinking });
     const userMessage = { id: createMessageId("user"), role: "user", text, images };
     const shouldTitle = session.titleGenerated !== true;
     updateSessionById(targetSessionId, (targetSession) => ({
@@ -826,6 +816,12 @@ export function ScienceAIPage() {
       const response = await apiRequest("/science-ai/chat", {
         method: "POST",
         timeout: 65000,
+        onProgress: (stage) => {
+          const text = REPLY_STATUS[stage];
+          if (activeReply.current === reply && typeof text === "string") {
+            setReplyStatus({ ...reply, text });
+          }
+        },
         body: JSON.stringify({
           message: text,
           images: images.map((image) => ({
@@ -844,6 +840,8 @@ export function ScienceAIPage() {
           generateTitle: shouldTitle,
         }),
       });
+      if (activeReply.current !== reply) return;
+      setReplyStatus(null);
       const answer = response.data?.response || "I could not generate a response. Please try again.";
       const suggestions = response.data?.suggestions || [];
       const linkCards = normalizeLinkCards(response.data?.linkCards);
@@ -857,28 +855,34 @@ export function ScienceAIPage() {
           titleGenerated: true,
         }));
       }
-      await revealAssistantMessage({ text: answer, suggestions, linkCards, warning, memory, targetSessionId });
+      addAssistantMessage({ text: answer, suggestions, linkCards, warning, memory, targetSessionId });
     } catch (err) {
+      if (activeReply.current !== reply) return;
+      setReplyStatus(null);
       const rawMessage = String(err?.message || "");
-      const isConnectionFailure = (
-        typeof navigator !== "undefined" && navigator.onLine === false
-      ) || /network|failed to fetch|load failed|timeout|offline|econn/i.test(rawMessage);
-      const message = isConnectionFailure
+      const isOffline = typeof navigator !== "undefined" && navigator.onLine === false;
+      const isTimeout = /timed?\s*out|timeout/i.test(rawMessage);
+      const message = isOffline
         ? offlinePulseMessage(text, images.length)
-        : "Pulse AI could not complete this request right now. Please try again in a moment; live prices, stock and bookings will only be shown after they are verified.";
+        : isTimeout
+          ? "Pulse AI took too long to reply. Please try again."
+          : "Pulse AI could not reach the chat service. Please try again in a moment.";
       setError(message);
-      await revealAssistantMessage({
+      addAssistantMessage({
         text: message,
         suggestions: [],
         linkCards: [],
-        warning: isConnectionFailure ? "No internet connection. Live shop data could not be checked." : "The live assistant is temporarily unavailable.",
-        isError: false,
+        warning: isOffline ? "No internet connection. Live shop data could not be checked." : "",
+        isError: true,
         targetSessionId,
       });
     } finally {
-      setBusy(false);
+      if (activeReply.current === reply) {
+        activeReply.current = null;
+        setBusy(false);
+      }
     }
-  }, [busy, cartItems, conversationHistory, conversationMemory, images, input, revealAssistantMessage, session.id, session.titleGenerated, updateSessionById]);
+  }, [addAssistantMessage, cartItems, conversationHistory, conversationMemory, finishReplyReveal, images, input, session.id, session.titleGenerated, updateSessionById]);
 
   useEffect(() => {
     const prompt = consumePulseAISearchPrompt();
@@ -958,7 +962,7 @@ export function ScienceAIPage() {
       <aside className="science-ai-sidebar">
         <div className="ai-sidebar-head">
           <a className="ai-brand" href="/pulse-ai">
-            <span><Bot size={22} /></span>
+            <span className="ai-brand-mark"><PulseOrbAnimation className="pulse-orb-animation--brand" /></span>
             <strong>Pulse AI</strong>
           </a>
           <button type="button" className="ai-icon-button" onClick={() => setNavOpen(false)} aria-label="Hide menu">
@@ -1002,7 +1006,6 @@ export function ScienceAIPage() {
             {navOpen ? <PanelLeftClose size={19} /> : <PanelLeftOpen size={19} />}
           </button>
           <div className="ai-title-block">
-            <p>Prakash Electronics assistant</p>
             <h1 title={displayedChatTitle}>{displayedChatTitle}</h1>
           </div>
           <div className="ai-topbar-actions">
@@ -1025,9 +1028,12 @@ export function ScienceAIPage() {
             <article
               className={`ai-message ${message.role}`}
               aria-label={message.role === "user" ? "Your message" : "Pulse AI response"}
+              aria-busy={message.id === replyReveal?.id || undefined}
               key={message.id || `${message.role}-${index}`}
             >
-              <div className="ai-avatar" aria-hidden="true">{message.role === "user" ? "You" : <Bot size={18} />}</div>
+              <div className={`ai-avatar${message.role === "user" ? "" : " ai-avatar--pulse"}`} aria-hidden="true">
+                {message.role === "user" ? "You" : <PulseOrbAnimation className="pulse-orb-animation--avatar" deferUntilVisible />}
+              </div>
               <div
                 className={message.role === "user" ? "ai-bubble-user" : "ai-reply"}
               >
@@ -1046,32 +1052,30 @@ export function ScienceAIPage() {
                   </div>
                 )}
                 <div className="ai-message-body">
-                  <FormattedMessage text={message.text} />
+                  <FormattedMessage text={message.id === replyReveal?.id ? message.text.slice(0, replyReveal.end) : message.text} />
+                  {message.id === replyReveal?.id && <span className="ai-stream-cursor" aria-hidden="true" />}
                 </div>
-                {message.isStreaming && (
-                  <span className="ai-stream-cursor-pro" aria-hidden="true" />
-                )}
-                {message.warning && (
+                {message.id !== replyReveal?.id && message.warning && (
                   <small className="ai-response-warning-pro">
                     {message.warning}
                   </small>
                 )}
-                {!message.isStreaming && message.suggestions?.length > 0 && (
+                {message.id !== replyReveal?.id && message.suggestions?.length > 0 && (
                   <div className="ai-suggestion-block">
                     <SuggestionCards suggestions={message.suggestions} theme={theme} />
                   </div>
                 )}
-                {!message.isStreaming && message.linkCards?.length > 0 && (
-                  <WebsiteLinkCards links={message.linkCards} />
+                {message.id !== replyReveal?.id && message.linkCards?.length > 0 && (
+                  <WebsiteLinkChips links={message.linkCards} />
                 )}
               </div>
        
             </article>
           ))}
-          {busy && !hasStreamingMessage && (
-            <article className="ai-message ai" aria-label="Pulse AI is responding">
-              <div className="ai-avatar" aria-hidden="true"><Bot size={18} /></div>
-              <div className="ai-reply typing" aria-hidden="true"><span /><span /><span /></div>
+          {replyStatus?.sessionId === session.id && (
+            <article className="ai-message ai" aria-label="Pulse AI">
+              <div className="ai-avatar ai-avatar--pulse" aria-hidden="true"><PulseOrbAnimation className="pulse-orb-animation--avatar" deferUntilVisible /></div>
+              <div className="ai-reply"><AITextLoading text={replyStatus.text} /></div>
             </article>
           )}
           <div ref={endRef} />
@@ -1159,7 +1163,7 @@ function EmptyState({ animationData }) {
           )}
         </div>
         <div className="ai-empty-badge ai-empty-badge-top">
-          <Bot size={16} />
+          <PulseOrbAnimation className="pulse-orb-animation--badge" />
           <span>Shop & Repair Guide</span>
         </div>
         <div className="ai-empty-badge ai-empty-badge-bottom">
@@ -1401,33 +1405,25 @@ function SuggestionCards({ suggestions, theme }) {
   );
 }
 
-function WebsiteLinkCards({ links }) {
-  const safeLinks = normalizeLinkCards(links);
-  if (!safeLinks.length) return null;
-
+function WebsiteLinkChips({ links }) {
   return (
-    <div className="ai-website-links" aria-label="Helpful website links">
-      {safeLinks.map((link) => {
-        const external = link.type === "external";
+    <div className="ai-website-links" role="group" aria-label="Helpful website links">
+      {links.map((link) => {
         return (
           <a
-            className={`ai-website-link-card ${link.type}`}
+            className="ai-website-link-chip"
             href={link.url}
-            key={link.id || link.url}
-            target={external && link.openInNewTab ? "_blank" : undefined}
-            rel={external && link.openInNewTab ? "noreferrer noopener" : undefined}
-            title={link.url}
+            key={link.url}
+            target={link.openInNewTab ? "_blank" : undefined}
+            rel={link.openInNewTab ? "noreferrer noopener" : undefined}
+            title={link.title}
           >
-            <WebsiteLinkIcon link={link} />
-            <span className="ai-website-link-copy">
-              <strong>{link.title}</strong>
-              {link.description ? <span>{link.description}</span> : null}
-              <small title={link.url}>{link.url}</small>
-            </span>
-            <span className="ai-website-link-cta">
-              {link.ctaLabel}
-              <ArrowUpRight className="ai-website-link-arrow" size={15} />
-            </span>
+            <WebsiteLinkThumbnail
+              imageUrl={previewImageForLink(link)}
+              faviconUrl={faviconUrlForLink(link)}
+            />
+            <strong>{link.title}</strong>
+            <ArrowUpRight className="ai-website-link-arrow" size={14} aria-hidden="true" />
           </a>
         );
       })}

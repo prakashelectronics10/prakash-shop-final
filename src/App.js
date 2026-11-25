@@ -5,7 +5,7 @@ import { Navbar } from './components/site/Navbar';
 import { Hero } from './components/site/Hero';
 import { SectionFallback } from './components/site/SectionFallback';
 import { CartFloatingButton } from './components/site/CartFloatingButton';
-import { CANONICAL_WIRING_PARTS_PATH, getWiringPartsPath, isLegacyWiringPartsPath } from './utils/routes';
+import { CANONICAL_WIRING_PARTS_PATH, getSiteOgImage, getWiringPartsPath, isLegacyWiringPartsPath } from './utils/routes';
 
 const LearnMore = lazy(() => import('./components/site/LearnMore').then((module) => ({ default: module.LearnMore })));
 const Booking = lazy(() => import('./components/site/Booking').then((module) => ({ default: module.Booking })));
@@ -61,7 +61,6 @@ const routeMeta = [
     title: 'Pulse AI by Prakash Electronics | Prakash Electronics and Electricals',
     description: 'Pulse AI helps you find suitable electronics products, wiring accessories, repair guidance, offers, and service-booking options from Prakash Electronics.',
     keywords: 'Pulse AI, electronics shop, home appliances repairing, cooler repairing, AC repairing, wiring accessories, RGB lights, repair assistant, Prakash Electronics',
-    ogImage: `${SITE_URL}/og-image-pulse-ai.jpg`,
     ogImageAlt: 'Pulse AI by Prakash Electronics',
   },
   {
@@ -69,7 +68,6 @@ const routeMeta = [
     title: 'Electronics Shop Products in Chitarpur | Prakash Electronics',
     description: 'Browse electronics shop products, wiring accessories, RGB lights, electrical parts, and accessories from Prakash Electronics and Electricals in Chitarpur.',
     keywords: 'electronics shop, wiring accessories, RGB lights, electrical accessories, electronics parts, shop products Chitarpur',
-    ogImage: `${SITE_URL}/og-image-shop-products.jpg?v=20260910-mobile`,
     ogImageAlt: 'Prakash Electronics shop products',
     ogImageType: 'image/jpeg',
     ogImageWidth: 1200,
@@ -80,7 +78,6 @@ const routeMeta = [
     title: 'Wiring Accessories in Chitarpur | Prakash Electronics',
     description: 'Buy wiring accessories, switches, sockets, wires, MCBs, and electrical fittings by category and brand from Prakash Electronics in Chitarpur.',
     keywords: 'wiring accessories, switches, sockets, electrical fittings, MCB, wiring products Chitarpur',
-    ogImage: `${SITE_URL}/og-image-wiring.jpg`,
     ogImageAlt: 'Prakash Electronics wiring accessories',
   },
   {
@@ -228,7 +225,7 @@ function updateRouteMeta(pathname, search = '') {
   const service = canonicalPath === '/learn-more' ? String(searchParams.get('service') || '').trim() : '';
   const canonicalUrl = `${SITE_URL}${canonicalPath}${service ? `?service=${encodeURIComponent(service)}` : ''}`;
   const keywords = meta.keywords || defaultMeta.keywords;
-  const ogImage = meta.ogImage || `${SITE_URL}/og-image.jpg`;
+  const ogImage = meta.ogImage || `${SITE_URL}${getSiteOgImage(canonicalPath)}`;
   const ogImageAlt = meta.ogImageAlt || meta.title;
   let canonical = document.head.querySelector('link[rel="canonical"]');
   if (!canonical) {
