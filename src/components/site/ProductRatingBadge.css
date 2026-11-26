@@ -1,0 +1,23 @@
+.product-rating-badge {
+  position: absolute;
+  z-index: 1;
+  inset-inline-start: 0.55rem;
+  inset-block-end: 0.55rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-height: 1.45rem;
+  padding: 0.2rem 0.45rem;
+  border-radius: 0.4rem;
+  background: #258452;
+  color: #fff;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 22%);
+  font-size: 0.78rem;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.product-rating-badge svg { flex: 0 0 auto; }

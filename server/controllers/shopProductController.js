@@ -9,6 +9,7 @@ const { applyPricingFields } = require("../utils/productPricing");
 const { collectPublicIdsFromSources, deleteImagesStrict } = require("../services/cloudinaryService");
 const { enqueueProductDelete, enqueueProductSync } = require("../services/metaCatalogService");
 const { searchCatalog } = require("../services/catalogSearch");
+const { attachPublicProductRatings } = require("../services/productRatingService");
 const { logger } = require("../utils/logger");
 const {
   collectVariantImagePublicIds,
@@ -383,8 +384,8 @@ exports.getShopProducts = catchAsync(async (req, res) => {
     };
   };
   const { items: matches, total, maxPrice, searchMode, canAnalyze } = await searchCatalog(req.query, loadResults);
-  const items = matches.map((item) =>
-    item.sourceType === "project-part" ? normalizeProjectPart(item) : normalizeShopProduct(item));
+  const items = await attachPublicProductRatings(matches.map((item) =>
+    item.sourceType === "project-part" ? normalizeProjectPart(item) : normalizeShopProduct(item)));
 
   res.set("Cache-Control", req.query.smartSearch === "analyze" && !total
     ? "no-store"
@@ -445,7 +446,7 @@ exports.getTrendingProducts = catchAsync(async (req, res) => {
     .slice(0, limit);
 
   res.set("Cache-Control", "public, max-age=120, stale-while-revalidate=600");
-  res.json({ success: true, data: { items } });
+  res.json({ success: true, data: { items: await attachPublicProductRatings(items) } });
 });
 
 exports.getTopProducts = catchAsync(async (req, res) => {
@@ -479,7 +480,7 @@ exports.getTopProducts = catchAsync(async (req, res) => {
     .slice(0, limit);
 
   res.set("Cache-Control", "public, max-age=120, stale-while-revalidate=600");
-  res.json({ success: true, data: { items } });
+  res.json({ success: true, data: { items: await attachPublicProductRatings(items) } });
 });
 
 exports.trackProductView = catchAsync(async (req, res) => {

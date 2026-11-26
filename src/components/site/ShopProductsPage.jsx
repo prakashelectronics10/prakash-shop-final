@@ -11,6 +11,7 @@ import { Footer } from "./Footer";
 import { OptimizedImage } from "./OptimizedImage";
 import { ProductShareButton } from "./ProductShareButton";
 import { ProductPriceDisplay } from "./ProductPriceDisplay";
+import { ProductRatingBadge } from "./ProductRatingBadge";
 import { ProductVariantSelector } from "./ProductVariantSelector";
 import { CatalogInfiniteLoader } from "./CatalogInfiniteLoader";
 import { CatalogSearchField, CatalogSearchStatus } from "./CatalogSearchField";
@@ -98,7 +99,7 @@ const ProductCard = memo(function ProductCard({ product, onAddToCart, eager = fa
               sizes="(min-width: 1024px) 25vw, (min-width: 760px) 50vw, 46vw"
             />
           ) : <PackageSearch size={48} />}
-          
+          <ProductRatingBadge summary={product.ratingSummary} />
         </div>
         <div className="part-card-body">
           <span className="part-category">{category}</span>

@@ -7,6 +7,7 @@ const { applyPricingFields } = require("../utils/productPricing");
 const { collectPublicIdsFromSources, deleteImagesStrict } = require("../services/cloudinaryService");
 const { enqueueProductDelete, enqueueProductSync } = require("../services/metaCatalogService");
 const { searchCatalog } = require("../services/catalogSearch");
+const { attachPublicProductRatings } = require("../services/productRatingService");
 const { logger } = require("../utils/logger");
 const {
   collectVariantImagePublicIds,
@@ -114,7 +115,7 @@ exports.getProjectParts = catchAsync(async (req, res) => {
   res.json({
     success: true,
     data: {
-      items,
+      items: await attachPublicProductRatings(items, { defaultSourceType: "project-part" }),
       total,
       page,
       pages: Math.ceil(total / limit),

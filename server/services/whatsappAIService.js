@@ -14,6 +14,7 @@ const {
 const { recordMessage } = require("./whatsappConversationService");
 const { markdownToWhatsApp, formatCopyCodeMessage } = require("./whatsappFormatService");
 const { productPath, toHttpsUrl } = require("./metaCatalogMapper");
+const { attachPublicProductRatings, formatPublicReviewDataForModel, PUBLIC_REVIEW_MODEL_GUIDANCE } = require("./productRatingService");
 const { logger } = require("../utils/logger");
 
 const { downloadInboundMedia, transcribeAudio } = require("./whatsappMediaService");
@@ -86,13 +87,11 @@ async function loadImageCatalog() {
     ShopProduct.find({ isActive: { $ne: false } })
       .select("name slug imageUrl images price colors tags hasVariants variantGroups variantCombinations quantity stock")
       .sort({ updatedAt: -1 })
-      .limit(80)
       .lean()
       .catch(() => []),
     ProjectPart.find({ isActive: { $ne: false } })
       .select("name slug imageUrl images price colors tags hasVariants variantGroups variantCombinations quantity stock")
       .sort({ updatedAt: -1 })
-      .limit(80)
       .lean()
       .catch(() => []),
   ]);
@@ -103,7 +102,9 @@ async function loadImageCatalog() {
     return Boolean(offer.imageUrl);
   });
 
-  const products = [...shopProducts, ...projectParts]
+  const recentShopProducts = shopProducts.slice(0, 80);
+  const recentProjectParts = projectParts.slice(0, 80);
+  const products = [...recentShopProducts, ...recentProjectParts]
     .map((product) => {
       const imageUrl = product.imageUrl
         || (Array.isArray(product.images) && product.images[0]?.url)
@@ -132,11 +133,15 @@ async function loadImageCatalog() {
   }));
 
   const checkoutProducts = [
-    ...shopProducts.map((p) => ({ ...p, sourceType: "shop-product" })),
-    ...projectParts.map((p) => ({ ...p, sourceType: "project-part" })),
+    ...recentShopProducts.map((p) => ({ ...p, sourceType: "shop-product" })),
+    ...recentProjectParts.map((p) => ({ ...p, sourceType: "project-part" })),
   ].map((p) => ({ id: String(p._id), sourceType: p.sourceType, name: p.name,
     variants: p.hasVariants ? { groups: p.variantGroups, combinations: p.variantCombinations } : null }));
-  return { products, offers: offerItems, checkoutProducts };
+  const ratedProducts = await attachPublicProductRatings([
+    ...shopProducts.map(({ _id, name }) => ({ _id, name, sourceType: "shop-product" })),
+    ...projectParts.map(({ _id, name }) => ({ _id, name, sourceType: "project-part" })),
+  ], { includeReviews: true });
+  return { products, offers: offerItems, checkoutProducts, reviewData: formatPublicReviewDataForModel(ratedProducts) };
 }
 
 function formatImageCatalogForPrompt(catalog) {
@@ -215,6 +220,9 @@ CHANNEL AWARENESS (critical):
 Reply in clear, polite WhatsApp style. Keep answers concise (usually under 900 characters) unless the customer needs steps.
 Use shop knowledge, offers, and catalog truth. Never invent prices or stock.
 
+PUBLIC RATINGS AND REVIEWS:
+${PUBLIC_REVIEW_MODEL_GUIDANCE}
+
 WHATSAPP TEXT FORMATTING (critical):
 - WhatsApp does NOT support Markdown. Never use **double asterisks**, __underscores__, # headings, or [links](url).
 - For bold use single asterisks: *Product Name*
@@ -263,7 +271,8 @@ CONVERSATION_MEMORY: {"summary":"...","importantFacts":[],"openTopics":[]}
     role: item.role,
     parts: [{ text: String(item.text || "").slice(0, 4000) }],
   }));
-  contents.push({ role: "user", parts: [{ text: String(customerMessage || "").slice(0, 8000) }, ...(mediaPart ? [mediaPart] : [])] });
+  const reviewParts = imageCatalog.reviewData ? [{ text: imageCatalog.reviewData }] : [];
+  contents.push({ role: "user", parts: [...reviewParts, { text: String(customerMessage || "").slice(0, 8000) }, ...(mediaPart ? [mediaPart] : [])] });
 
   const requestBody = JSON.stringify({
     contents,

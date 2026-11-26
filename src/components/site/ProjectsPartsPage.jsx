@@ -10,6 +10,7 @@ import { Footer } from "./Footer";
 import { OptimizedImage } from "./OptimizedImage";
 import { ProductShareButton } from "./ProductShareButton";
 import { ProductPriceDisplay } from "./ProductPriceDisplay";
+import { ProductRatingBadge } from "./ProductRatingBadge";
 import { CatalogInfiniteLoader } from "./CatalogInfiniteLoader";
 import { CatalogSearchField, CatalogSearchStatus } from "./CatalogSearchField";
 import { ProgressSliderDots } from "./ProgressSliderDots";
@@ -88,6 +89,7 @@ const WiringPartCard = memo(function WiringPartCard({ part, onAddToCart, eager =
               sizes="(min-width: 1024px) 25vw, (min-width: 760px) 50vw, 46vw"
             />
           ) : <PackageSearch size={48} />}
+          <ProductRatingBadge summary={part.ratingSummary} />
           <span className={`part-status ${String(part.availability || "").toLowerCase().replace(/\s+/g, "-")}`}>
             {part.availability || "Available"}
           </span>

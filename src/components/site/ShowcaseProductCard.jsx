@@ -3,6 +3,7 @@ import { PackageSearch } from "lucide-react";
 import { getProductSharePath } from "../../utils/productShare";
 import { OptimizedImage } from "./OptimizedImage";
 import { ProductPriceDisplay } from "./ProductPriceDisplay";
+import { ProductRatingBadge } from "./ProductRatingBadge";
 
 /**
  * Homepage showcase card: image + name + selling price + ↓% discount.
@@ -44,6 +45,7 @@ export const ShowcaseProductCard = memo(function ShowcaseProductCard({
         {rank != null ? (
           <span className="showcase-product-rank">#{rank}</span>
         ) : null}
+        <ProductRatingBadge summary={product.ratingSummary} />
       </div>
 
       <div className="showcase-product-body">

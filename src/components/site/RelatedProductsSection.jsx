@@ -5,6 +5,7 @@ import { getProductSharePath } from "../../utils/productShare";
 import { getRelatedProducts } from "../../utils/productSearch";
 import { OptimizedImage } from "./OptimizedImage";
 import { ProductPriceDisplay } from "./ProductPriceDisplay";
+import { ProductRatingBadge } from "./ProductRatingBadge";
 
 function RelatedProductCard({ product }) {
   const href = getProductSharePath(product);
@@ -29,6 +30,7 @@ function RelatedProductCard({ product }) {
             <PackageSearch className="h-7 w-7" />
           </div>
         )}
+        <ProductRatingBadge summary={product.ratingSummary} />
       </div>
       <div className="related-product-body">
         <span className="related-product-category">{product.category || product.originalCategory || "Product"}</span>

@@ -7,6 +7,7 @@ const { availableStockQuantity } = require("../utils/inventory");
 const { resolveProductPricing } = require("../utils/productPricing");
 const { logger } = require("../utils/logger");
 const { listPublicCouponsForProducts } = require("../services/couponService");
+const { attachPublicProductRatings, formatPublicReviewDataForModel, PUBLIC_REVIEW_MODEL_GUIDANCE } = require("../services/productRatingService");
 const { getPulseAIKnowledge } = require("../services/pulseAIKnowledgeService");
 const {
   extractConversationMemoryMetadata,
@@ -96,7 +97,7 @@ async function fetchCatalogProducts() {
   }));
   const couponMap = await listPublicCouponsForProducts(normalizedShopProducts).catch(() => new Map());
 
-  return [
+  return attachPublicProductRatings([
     ...normalizedShopProducts.map((product) => {
       const publicCoupons = couponMap.get(String(product._id)) || [];
       const bestPublicCoupon = publicCoupons[0] || null;
@@ -118,7 +119,7 @@ async function fetchCatalogProducts() {
         effectivePrice: normalized.price,
       };
     }),
-  ];
+  ], { includeReviews: true });
 }
 
 function formatCatalogForGemini(products, deepSearch = false) {
@@ -722,6 +723,9 @@ PUBLIC COUPONS AND OFFERS:
 - Homepage offersAndRecentUpdates are general public updates. Do not treat one as a product/cart discount unless the same verified coupon is attached to that product.
 - If a product has no publicCoupons entry, do not claim that a public coupon is available for it.
 
+PUBLIC RATINGS AND REVIEWS:
+${PUBLIC_REVIEW_MODEL_GUIDANCE}
+
 CART AWARENESS AND ORDER SUMMARY:
 - Before composing every answer, silently inspect the temporary verified cart snapshot below, even if the customer does not explicitly mention the cart.
 - Use it when the current question relates to cart contents, quantities, coupons, pricing, additional charges, estimated total, checkout or whether a suggested product is already in the cart.
@@ -812,7 +816,8 @@ ${formatCatalogForGemini(catalogProducts, Boolean(deepSearch))}`;
     });
   }
 
-  const currentParts = [];
+  const reviewData = formatPublicReviewDataForModel(catalogProducts);
+  const currentParts = reviewData ? [{ text: reviewData }] : [];
   imageInputs.forEach((image) => {
     if (image.base64) currentParts.push(buildGeminiInlineImage(image));
   });
