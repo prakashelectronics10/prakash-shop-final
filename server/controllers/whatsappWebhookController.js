@@ -19,6 +19,7 @@ const {
 } = require("../services/whatsappTransactionalService");
 const { logger } = require("../utils/logger");
 const { recordDeliveryReceipts } = require("../services/whatsappDeliveryService");
+const { isReviewAction, handleReviewAction } = require("../services/reviewWhatsAppService");
 
 function requestsOrderHistory(text = "") {
   const message = text.toLowerCase().trim().replace(/[.!?]+$/, "");
@@ -142,6 +143,11 @@ exports.handleWhatsAppWebhook = catchAsync(async (req, res) => {
       const account = await resolveAccountByPhoneNumberId(event.phoneNumberId);
       if (!account) {
         logger.warn("whatsapp.webhook.unknown_phone", { phoneNumberId: event.phoneNumberId });
+        continue;
+      }
+
+      if (isReviewAction(event.buttonReplyId)) {
+        if (env.metaApp.appSecret) await handleReviewAction({ account, event });
         continue;
       }
 

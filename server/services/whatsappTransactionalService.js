@@ -658,62 +658,37 @@ async function sendOrderShipmentWhatsApp({ order }) {
   return { ok: true };
 }
 
-async function sendCustomerReviewWhatsApp({ order }) {
+async function sendCustomerProductReviewWhatsApp({ order, product }) {
+  const whatsappNumber = order.customer?.whatsappNumber;
+  if (!/^91[6-9]\d{9}$/.test(toWhatsAppE164(whatsappNumber))) return { ok: false, reason: "whatsapp_number_missing" };
   const account = await withAccount(order);
   if (!account) return { ok: false, reason: "whatsapp_disabled" };
 
-  const whatsappNumber = order.customer?.whatsappNumber || order.customer?.phone;
-  const name = String(order.customer?.name || "Customer").trim().slice(0, 60) || "Customer";
-  const { conversation, customerWaId } = await prepareConversation(
-    account,
-    whatsappNumber,
-    name,
-  );
-
-  const bodyText = `Hi 👋 *${name}*, humare sath judne ke liye shukriya! Apna feedback zaroor share karein.`;
+  const customerWaId = toWhatsAppE164(whatsappNumber);
+  const name = String(order.customer?.name || "there").trim().split(/\s+/)[0].slice(0, 60) || "there";
+  const productName = String(product.productName || "purchase").trim().replace(/\s+/g, " ").slice(0, 120);
+  const suffix = encodeURIComponent(String(product.productId));
+  const reviewUrl = new URL(`/product/${suffix}`, env.productionUrl).href;
+  const bodyText = `Hi ${name}, how was your ${productName} from Prakash Electronics? Please rate the product and share your experience. Your feedback helps other shoppers.`;
   const templates = env.whatsapp.templates || {};
 
-  const { result } = await tryTemplateThenFallback({
-    account,
-    customerWaId,
-    templateName: templates.customerReview,
-    languageCode: templates.customerReviewLanguage || "en",
+  const result = await sendTemplateMessage({
+    phoneNumberId: account.phoneNumberId, accessToken: account.accessToken, to: customerWaId,
+    templateName: templates.customerProductReview,
+    languageCode: templates.customerProductReviewLanguage,
     components: [
-      {
-        type: "body",
-        parameters: [{ type: "text", text: name }],
-      },
-      {
-        type: "button",
-        sub_type: "flow",
-        index: "0",
-        parameters: [
-          {
-            type: "action",
-            action: {
-              flow_token: `customer_review_${order.orderId || Date.now()}`,
-            },
-          },
-        ],
-      },
+      { type: "body", parameters: [name, productName].map((text) => ({ type: "text", text })) },
+      { type: "button", sub_type: "url", index: "0", parameters: [{ type: "text", text: suffix }] },
     ],
-    fallback: async () => sendTextMessage({
-      phoneNumberId: account.phoneNumberId,
-      accessToken: account.accessToken,
-      to: customerWaId,
-      text: `${bodyText}\n\nFeedback ke liye humse WhatsApp pe reply kar sakte ho.`,
-    }),
   });
+  const messageId = result?.messages?.[0]?.id;
+  if (!messageId) throw new Error("WhatsApp did not acknowledge the review request");
 
-  await recordOutbound({
-    account,
-    conversation,
-    customerWaId,
-    type: "text",
-    text: bodyText,
-    waMessageId: result?.messages?.[0]?.id || "",
-    meta: { kind: "customer_review", orderId: order.orderId },
-  });
+  void prepareConversation(account, whatsappNumber, name).then(({ conversation }) => recordOutbound({
+    account, conversation, customerWaId, type: "text", text: bodyText,
+    buttons: [{ type: "url", label: "Review product", url: reviewUrl }], waMessageId: messageId,
+    meta: { kind: "customer_product_review", orderId: order.orderId },
+  })).catch((error) => logger.warn("whatsapp.customer_review_history_failed", { code: error.code }));
 
   return { ok: true };
 }
@@ -957,7 +932,7 @@ module.exports = {
   sendPaymentUnsuccessfulWhatsApp,
   sendPaymentReceivedWhatsApp,
   sendOrderShipmentWhatsApp,
-  sendCustomerReviewWhatsApp,
+  sendCustomerProductReviewWhatsApp,
   handlePaymentIssueFlow,
   resolveCopyCodeFromConversation,
   sendCopyCodeReply,

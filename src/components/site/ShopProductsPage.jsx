@@ -15,6 +15,7 @@ import { ProductVariantSelector } from "./ProductVariantSelector";
 import { CatalogInfiniteLoader } from "./CatalogInfiniteLoader";
 import { CatalogSearchField, CatalogSearchStatus } from "./CatalogSearchField";
 import { RelatedProductsSection } from "./RelatedProductsSection";
+import { ProductReviewsSection } from "./ProductReviewsSection";
 import { Lightbox } from "./Lightbox";
 import { SuccessCelebrationOverlay } from "./BookingSuccessOverlay";
 import { CatalogGridSkeleton, EmptyProductsState, ProductDetailSkeleton } from "./StateLottie";
@@ -351,8 +352,12 @@ function ProductGallery({ product, featuredImageUrl = "" }) {
 }
 
 function DetailFact({ label, value }) {
-  if (value === "" || value === null || value === undefined) return null;
-  return <div><span>{label}</span><strong>{value}</strong></div>;
+  return (
+    <div>
+      <dt>{label}</dt>
+      <dd>{value}</dd>
+    </div>
+  );
 }
 
 function ProductInformation({ product }) {
@@ -373,14 +378,36 @@ function ProductInformation({ product }) {
     ["Delivery estimate", product.shipping?.deliveryEstimate],
     ["Delivery charges", product.shipping?.chargeNote],
   ].filter(([, value]) => value);
-  const specifications = Array.isArray(product.specifications) ? product.specifications.filter((item) => item?.label || item?.value) : [];
+  const specifications = Array.isArray(product.specifications)
+    ? product.specifications.filter((item) => item?.value != null && item.value !== "")
+    : [];
   if (!merchantFacts.length && !shippingFacts.length && !specifications.length) return null;
   return (
     <section className="product-information-panel" aria-labelledby="product-information-title">
-      <header><p className="parts-kicker">Complete information</p><h2 id="product-information-title">Product details</h2></header>
-      {specifications.length > 0 && <div className="product-information-grid">{specifications.map((item) => <DetailFact label={item.label || "Specification"} value={item.value} key={`${item.label}-${item.value}`} />)}</div>}
-      {merchantFacts.length > 0 && <><h3>Identification &amp; specifications</h3><div className="product-information-grid">{merchantFacts.map(([label, value]) => <DetailFact label={label} value={value} key={label} />)}</div></>}
-      {shippingFacts.length > 0 && <><h3>Shipping information</h3><div className="product-information-grid">{shippingFacts.map(([label, value]) => <DetailFact label={label} value={value} key={label} />)}</div></>}
+      <h2 id="product-information-title">Complete information</h2>
+      {specifications.length > 0 && (
+        <dl className="product-information-grid">
+          {specifications.map((item) => (
+            <DetailFact key={`${item.label}-${item.value}`} label={item.label || "Specification"} value={item.value} />
+          ))}
+        </dl>
+      )}
+      {merchantFacts.length > 0 && (
+        <div className="product-information-group">
+          <h3>Identification &amp; specifications</h3>
+          <dl className="product-information-grid">
+            {merchantFacts.map(([label, value]) => <DetailFact key={label} label={label} value={value} />)}
+          </dl>
+        </div>
+      )}
+      {shippingFacts.length > 0 && (
+        <div className="product-information-group">
+          <h3>Shipping information</h3>
+          <dl className="product-information-grid">
+            {shippingFacts.map(([label, value]) => <DetailFact key={label} label={label} value={value} />)}
+          </dl>
+        </div>
+      )}
     </section>
   );
 }
@@ -1076,7 +1103,7 @@ export function ProductDetailPage() {
         subtitle={appliedCoupon ? `You saved ${formatINR(appliedCoupon.discountAmount)} with ${appliedCoupon.code}.` : "Your discount is ready."}
         ariaLabel="Coupon applied successfully"
       />
-      <main className="part-detail-wrap">
+      <main className="part-detail-wrap product-detail-page-layout">
         <div className="detail-header-row">
           <a
             className="detail-back-link catalog-page-back"
@@ -1207,28 +1234,30 @@ export function ProductDetailPage() {
           </section>
         )}
 
-        {product && !loading && source === "shop" ? (
-          <ProductCouponOffers
-            offers={publicOffers}
-            appliedCoupon={appliedCoupon}
-            onApply={applyPublicOffer}
-            privateCode={privateCode}
-            onPrivateCodeChange={changePrivateCouponCode}
-            onApplyPrivate={applyPrivateCoupon}
-            applying={couponApplying}
-            error={couponError}
-          />
-        ) : null}
-
-        {product && !loading ? <ProductInformation product={displayedProduct || product} /> : null}
-
-        {product && !loading ? (
-          <RelatedProductsSection
-            product={product}
-            sourceType={source === "project-part" || product.sourceType === "project-part" ? "project-part" : "shop"}
-            limit={8}
-          />
-        ) : null}
+        {product && !loading && (
+          <div className="product-detail-sections">
+            {source === "shop" && (
+              <ProductCouponOffers
+                offers={publicOffers}
+                appliedCoupon={appliedCoupon}
+                onApply={applyPublicOffer}
+                privateCode={privateCode}
+                onPrivateCodeChange={changePrivateCouponCode}
+                onApplyPrivate={applyPrivateCoupon}
+                applying={couponApplying}
+                error={couponError}
+              />
+            )}
+            <ProductInformation product={displayedProduct || product} />
+            <ProductReviewsSection key={product._id || product.sourceId} product={product}
+              sourceType={source === "project-part" ? "project-part" : "shop-product"} />
+            <RelatedProductsSection
+              product={product}
+              sourceType={source === "project-part" || product.sourceType === "project-part" ? "project-part" : "shop"}
+              limit={8}
+            />
+          </div>
+        )}
       </main>
       <Footer />
     </div>

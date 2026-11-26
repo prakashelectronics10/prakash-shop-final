@@ -14,6 +14,7 @@ import { CatalogInfiniteLoader } from "./CatalogInfiniteLoader";
 import { CatalogSearchField, CatalogSearchStatus } from "./CatalogSearchField";
 import { ProgressSliderDots } from "./ProgressSliderDots";
 import { RelatedProductsSection } from "./RelatedProductsSection";
+import { ProductReviewsSection } from "./ProductReviewsSection";
 import { CatalogGridSkeleton, EmptyProductsState, ProductDetailSkeleton } from "./StateLottie";
 import { applyProductPageMeta, getProductSharePath } from "../../utils/productShare";
 import { trackProductPageView } from "../../utils/productViews";
@@ -691,7 +692,7 @@ export function ProjectPartDetailPage() {
   return (
     <div className="App project-parts-page wiring-accessories-page">
       <Navbar />
-      <main className="part-detail-wrap">
+      <main className="part-detail-wrap product-detail-page-layout">
         <div className="detail-header-row">
           <a className="detail-back-link catalog-page-back" href={CANONICAL_WIRING_PARTS_PATH}>
             <ArrowLeft size={18} aria-hidden="true" />
@@ -777,9 +778,12 @@ export function ProjectPartDetailPage() {
           </section>
         )}
 
-        {part && !loading ? (
-          <RelatedProductsSection product={part} sourceType="project-part" limit={8} />
-        ) : null}
+        {part && !loading && (
+          <div className="product-detail-sections">
+            <ProductReviewsSection key={part._id || part.sourceId} product={part} sourceType="project-part" />
+            <RelatedProductsSection product={part} sourceType="project-part" limit={8} />
+          </div>
+        )}
       </main>
       <Footer />
     </div>

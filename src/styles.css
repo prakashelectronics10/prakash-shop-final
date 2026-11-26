@@ -11822,28 +11822,102 @@ body.pulse-ai-route-active .science-ai-chat {
 .product-breadcrumbs { display: flex; max-width: 1240px; align-items: center; gap: .55rem; margin: .8rem auto; overflow: hidden; color: #64748b; font-size: .82rem; }
 .product-breadcrumbs a { color: #2563eb; text-decoration: none; }
 .product-breadcrumbs strong { overflow: hidden; color: #334155; text-overflow: ellipsis; white-space: nowrap; }
-.product-information-panel { width: 100%; max-width: 1240px; box-sizing: border-box; margin: 2rem auto 0; border: 0; border-top: 1px solid #dbe5f0; border-radius: 0; padding: clamp(1.5rem,3vw,2.2rem) 0 0; color: #0f172a; background: transparent; box-shadow: none; }
-.product-information-panel header { margin-bottom: 1.1rem; }
-.product-information-panel h2 { margin: .25rem 0 0; font-size: clamp(1.5rem,3vw,2rem); }
-.product-information-panel h3 { margin: 1.55rem 0 .4rem; font-size: 1rem; font-weight: 750; color: #334155; }
-.product-information-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); column-gap: clamp(2rem,5vw,4.5rem); border: 0; border-radius: 0; overflow: visible; }
-.product-information-grid > div { display: grid; grid-template-columns: minmax(118px,.72fr) minmax(0,1.28fr); align-items: baseline; gap: 1rem; min-width: 0; padding: .85rem 0; border: 0; border-bottom: 1px solid #e2e8f0; }
-.product-information-grid > div:nth-child(odd),
-.product-information-grid > div:nth-last-child(-n+2) { border-right: 0; border-bottom: 1px solid #e2e8f0; }
-.product-information-grid span { color: #64748b; font-size: .8rem; font-weight: 750; line-height: 1.45; }
-.product-information-grid strong { min-width: 0; overflow-wrap: anywhere; color: #1e293b; font-size: .9rem; font-weight: 750; line-height: 1.5; }
+.product-detail-page-layout.part-detail-wrap {
+  --product-detail-gutter: max(1rem, (100% - 1240px) / 2);
+  padding-inline: 0;
+}
+
+.product-detail-page-layout > :not(.product-detail-sections) {
+  width: auto;
+  margin-inline: var(--product-detail-gutter);
+}
+
+.product-detail-page-layout > .product-breadcrumbs {
+  align-self: center;
+}
+
+.product-detail-page-layout:has(> .product-detail-sections > section) {
+  padding-block-end: 0;
+}
+
+.product-detail-sections:not(:empty) {
+  margin-block-start: clamp(1.75rem, 4vw, 3.25rem);
+}
+
+.product-detail-sections > section {
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  padding: clamp(1.75rem, 4vw, 3.5rem) var(--product-detail-gutter);
+  border-block-start: 8px solid #fff;
+}
+
+.product-information-panel {
+  display: grid;
+  gap: clamp(0.9rem, 1.6vw, 1.35rem);
+  color: var(--foreground);
+  text-align: start;
+}
+
+.product-information-panel h2 {
+  margin: 0;
+  font-size: clamp(1.5rem, 2.7vw, 2rem);
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+.product-information-group h3 {
+  margin: 0 0 0.35rem;
+  font-size: 1rem;
+  font-weight: 750;
+  line-height: 1.4;
+}
+
+.product-information-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: clamp(1.5rem, 4vw, 3rem);
+  margin: 0;
+}
+
+.product-information-grid > div {
+  display: grid;
+  grid-template-columns: minmax(0, 8.5rem) minmax(0, 1fr);
+  align-items: baseline;
+  gap: 0.75rem;
+  padding-block: 0.7rem;
+  border-block-end: 1px solid var(--border);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.product-information-grid dt {
+  color: var(--muted-foreground);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.product-information-grid dd {
+  margin: 0;
+  font-weight: 650;
+}
+
+@media (max-width: 760px) {
+  .product-detail-page-layout.part-detail-wrap { --product-detail-gutter: 0.75rem; }
+}
 
 @media (max-width: 700px) {
   .product-gallery-stage-shell { aspect-ratio: 4 / 3; border-radius: 12px; }
   .product-gallery-thumbnails { gap: .42rem; }
   .product-gallery-thumbnails button { width: 64px; flex-basis: 64px; border-radius: 9px; }
-  .product-information-panel { margin-top: 1.35rem; padding-top: 1.35rem; }
-  .product-information-panel header { margin-bottom: .85rem; }
-  .product-information-panel h2 { font-size: clamp(1.45rem,7vw,1.8rem); }
-  .product-information-panel h3 { margin-top: 1.35rem; }
-  .product-information-grid { grid-template-columns: 1fr; }
-  .product-information-grid > div, .product-information-grid > div:nth-child(odd), .product-information-grid > div:nth-last-child(-n+2) { grid-template-columns: minmax(92px,.72fr) minmax(0,1.28fr); gap: .8rem; padding: .78rem 0; border-right: 0; border-bottom: 1px solid #e2e8f0; }
+  .product-information-grid { grid-template-columns: minmax(0, 1fr); }
+  .product-information-grid > div { grid-template-columns: minmax(0, min(36%, 8.5rem)) minmax(0, 1fr); }
   .product-breadcrumbs { margin-inline: .35rem; }
+  .product-detail-page-layout > .product-breadcrumbs {
+    align-self: stretch;
+    margin-inline: calc(var(--product-detail-gutter) + 0.35rem);
+  }
 }
 
 /* Pulse AI messages and inline links. */
@@ -12075,7 +12149,7 @@ body.pulse-ai-route-active .science-ai-chat {
 }
 
 /* Product-level public offers and private coupons. */
-.product-coupon-area { width: min(100%,700px); display: grid; gap: .75rem; margin: 1.2rem auto 2rem max(0px,calc((100% - 1240px) / 2)); box-sizing: border-box; color: var(--site-text,#0f172a); }
+.product-coupon-area { display: grid; grid-template-columns: minmax(0, 700px); gap: .75rem; color: var(--site-text,#0f172a); }
 .product-coupon-heading { display: flex; align-items: center; gap: .75rem; }
 .product-coupon-heading > span { flex: 0 0 auto; display: grid; place-items: center; width: 42px; height: 42px; border-radius: 13px; color: #fff; background: linear-gradient(145deg,#22c55e,#059669); box-shadow: 0 10px 24px rgba(5,150,105,.18); }
 .product-coupon-heading p,.product-coupon-heading h2 { margin: 0; }
@@ -12121,7 +12195,6 @@ body.pulse-ai-route-active .science-ai-chat {
 @keyframes coupon-price-highlight { 0% { transform: scale(.96); opacity: .65; } 55% { transform: scale(1.045); } 100% { transform: scale(1); opacity: 1; } }
 @media (max-width: 900px) { .public-offer-grid { grid-template-columns: 1fr; } }
 @media (max-width: 620px) {
-  .product-coupon-area { margin-block: 1.1rem 1.65rem; }
   .offer-layout-thumbnail .public-offer-content { grid-template-columns: 64px minmax(0,1fr); }
   .offer-layout-thumbnail .public-offer-banner-frame { width: 64px; }
   .public-offer-content { grid-template-columns: auto minmax(0,1fr); padding: .85rem; }

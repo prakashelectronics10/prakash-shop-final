@@ -1,8 +1,12 @@
 const env = require("../config/env");
 const Order = require("../models/Order");
+const ProductReview = require("../models/ProductReview");
 const { logger } = require("../utils/logger");
 const { createOrderInvoice } = require("./orderInvoiceService");
-const { sendOrderInvoiceWhatsApp, sendPaidOrderCardStatus } = require("./whatsappTransactionalService");
+const transactionalWhatsApp = require("./whatsappTransactionalService");
+const { sendOrderInvoiceWhatsApp, sendPaidOrderCardStatus } = transactionalWhatsApp;
+const { REVIEW_PAYMENT_STATES } = require("./orderProductReviewService");
+const { isWhatsAppTemplateTemporarilyUnavailable } = require("./whatsappCloudApiService");
 
 const POLL_MS = 30000;
 const REVIEW_RETRY_MS = 5 * 60 * 1000;
@@ -89,6 +93,49 @@ async function deliverNextOrderCardStatus(now = new Date()) {
   return true;
 }
 
+async function deliverNextCustomerReview(now = new Date()) {
+  const lease = new Date(now.getTime() + Math.max(LEASE_MS, env.whatsapp.requestTimeoutMs + 30_000));
+  const order = await Order.findOneAndUpdate({
+    paymentStatus: { $in: REVIEW_PAYMENT_STATES }, orderStatus: "delivered",
+    customerReviewNextAttemptAt: { $lte: now }, "customerReviewQueue.0": { $exists: true },
+  }, {
+    $set: { customerReviewNextAttemptAt: lease }, $inc: { customerReviewAttempts: 1 },
+  }, { new: true, sort: { customerReviewNextAttemptAt: 1 }, timestamps: false });
+  if (!order) return false;
+
+  const product = order.customerReviewQueue[0];
+  let completed = false;
+  let waitingForTemplate = false;
+  try {
+    const reviewed = await ProductReview.exists({ order: order._id, productId: product.productId, sourceType: product.sourceType });
+    if (reviewed) completed = true;
+    else if (order.customerReviewAttempts <= 5) {
+      const result = await transactionalWhatsApp.sendCustomerProductReviewWhatsApp({ order, product });
+      completed = result.ok || result.reason === "whatsapp_number_missing";
+    }
+  } catch (error) {
+    waitingForTemplate = isWhatsAppTemplateTemporarilyUnavailable(error);
+    logger.warn("whatsapp.customer_product_review_retry", {
+      orderId: order.orderId, productId: String(product.productId), status: error.status, metaCode: error.payload?.error?.code, waitingForTemplate,
+    });
+  }
+  const filter = { _id: order._id, customerReviewNextAttemptAt: lease };
+  if (waitingForTemplate) {
+    await Order.updateOne(filter, {
+      $set: { customerReviewNextAttemptAt: new Date(Date.now() + REVIEW_RETRY_MS) },
+      $inc: { customerReviewAttempts: -1 },
+    }, { timestamps: false });
+  } else if (completed || order.customerReviewAttempts >= 5) {
+    const update = { $pop: { customerReviewQueue: -1 }, $unset: { customerReviewAttempts: 1 } };
+    if (order.customerReviewQueue.length === 1) update.$unset.customerReviewNextAttemptAt = 1;
+    else update.$set = { customerReviewNextAttemptAt: new Date() };
+    await Order.updateOne(filter, update, { timestamps: false });
+  } else {
+    await Order.updateOne(filter, { $set: { customerReviewNextAttemptAt: new Date(Date.now() + FAILURE_RETRY_MS) } }, { timestamps: false });
+  }
+  return true;
+}
+
 async function tick() {
   if (running) return;
   running = true;
@@ -101,7 +148,7 @@ async function tick() {
       missingInvoicesQueued = true;
     }
     for (let count = 0; count < BATCH_SIZE; count += 1) {
-      const tasks = await Promise.all([deliverNextOrderInvoice(), deliverNextOrderCardStatus()]);
+      const tasks = await Promise.all([deliverNextOrderInvoice(), deliverNextOrderCardStatus(), deliverNextCustomerReview()]);
       if (!tasks.some(Boolean)) break;
     }
   } catch (error) {
@@ -118,4 +165,4 @@ function startOrderInvoiceWhatsAppWorker() {
   void tick();
 }
 
-module.exports = { deliverNextOrderInvoice, deliverNextOrderCardStatus, startOrderInvoiceWhatsAppWorker };
+module.exports = { deliverNextOrderInvoice, deliverNextOrderCardStatus, deliverNextCustomerReview, startOrderInvoiceWhatsAppWorker };

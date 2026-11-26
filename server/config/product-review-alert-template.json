@@ -1,0 +1,28 @@
+{
+  "name": "product_review_alert",
+  "language": "en",
+  "category": "UTILITY",
+  "parameter_format": "POSITIONAL",
+  "components": [
+    {
+      "type": "HEADER",
+      "format": "TEXT",
+      "text": "New review received"
+    },
+    {
+      "type": "BODY",
+      "text": "Rating: {{1}}\nReview: {{2}}\nProduct: {{3}}\n\nChoose an action below to moderate the review.",
+      "example": {
+        "body_text": [["5/5", "Clear sound and easy to set up.", "Bluetooth speaker with Mic"]]
+      }
+    },
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        { "type": "QUICK_REPLY", "text": "Approve" },
+        { "type": "QUICK_REPLY", "text": "Decline" },
+        { "type": "QUICK_REPLY", "text": "Manage Later" }
+      ]
+    }
+  ]
+}

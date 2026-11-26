@@ -97,11 +97,12 @@ async function trySend(label, payload) {
     ],
   });
 
-  await trySend("customer_review", {
-    templateName: "customer_review",
-    languageCode: "en",
+  await trySend("customer_product_review", {
+    templateName: env.whatsapp.templates.customerProductReview,
+    languageCode: env.whatsapp.templates.customerProductReviewLanguage,
     components: [
-      { type: "body", parameters: [{ type: "text", text: "Test User" }] },
+      { type: "body", parameters: [{ type: "text", text: "Test User" }, { type: "text", text: "Bluetooth speaker" }] },
+      { type: "button", sub_type: "url", index: "0", parameters: [{ type: "text", text: "66b000000000000000000001" }] },
     ],
   });
 })();

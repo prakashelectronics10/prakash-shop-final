@@ -32,6 +32,7 @@ const allPermissions = [
   "notificationEmails",
   "invoices",
   "orders",
+  "productReviews",
   "pulseAI",
   "manageWhatsApp",
 ];

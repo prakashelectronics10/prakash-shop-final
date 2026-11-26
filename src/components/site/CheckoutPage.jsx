@@ -6,6 +6,7 @@ import { useCart } from "../../context/CartContext";
 import { Navbar } from "./Navbar";
 import { Footer } from "./Footer";
 import { OptimizedImage } from "./OptimizedImage";
+import { OrderReviewLauncher } from "./OrderReviewLauncher";
 import { clearAppliedCouponCode } from "../../utils/coupons";
 import { useOrderQuote } from "../../hooks/useOrderQuote";
 import { formatINR } from "../../utils/productPricing";
@@ -65,6 +66,7 @@ function OrderSuccess({ order }) {
           <a href={`/orders?id=${encodeURIComponent(order.orderId)}`}>Track this order</a>
           <a href="/products" className="secondary">Continue shopping</a>
         </div>
+        <OrderReviewLauncher key={order.orderId} order={order} autoOpen />
         <small>Your Order ID has also been copied automatically. Keep it safe for tracking.</small>
       </section>
     </main>

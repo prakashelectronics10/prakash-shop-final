@@ -1,5 +1,11 @@
 const mongoose = require("mongoose");
 
+const customerReviewProductSchema = new mongoose.Schema({
+  sourceType: { type: String, enum: ["shop-product", "project-part"], required: true },
+  productId: { type: mongoose.Schema.Types.ObjectId, required: true },
+  productName: { type: String, required: true },
+}, { _id: false });
+
 const orderItemVariantSelectionSchema = new mongoose.Schema(
   {
     groupId: { type: String, trim: true, default: "" },
@@ -103,6 +109,9 @@ const orderSchema = new mongoose.Schema(
     invoiceWhatsAppClaimUntil: Date,
     invoiceWhatsAppSentAt: Date,
     invoiceWhatsAppMessageId: String,
+    customerReviewQueue: { type: [customerReviewProductSchema], default: undefined },
+    customerReviewNextAttemptAt: { type: Date, index: { sparse: true } },
+    customerReviewAttempts: Number,
     whatsappCardStatusSentAt: Date,
     whatsappCardStatusNextAttemptAt: Date,
     notifiedAt: { type: Date, default: null },

@@ -21,7 +21,6 @@ import {
   ShieldCheck,
   Trash2,
   UploadCloud,
-  X,
 } from "lucide-react";
 import { applyDynamicWebSettings } from "../context/SiteDataContext";
 import { getIcon } from "../components/site/iconMap";
@@ -30,7 +29,9 @@ import { buildPricingPayload, formatINR, resolveProductPricing } from "../utils/
 import InvoiceModule from "./InvoiceModule";
 import ManageWhatsAppModule from "./ManageWhatsAppModule";
 import OrdersModule from "./OrdersModule";
+import ProductReviewsModule from "./ProductReviewsModule";
 import AdminToggle from "./AdminToggle";
+import AdminFormModal from "./AdminFormModal";
 import ProductVariantsManager from "./ProductVariantsManager";
 import { GalleryPreview, GalleryRatioSelect } from "./GalleryPreview";
 import "./AdminApp.css";
@@ -95,37 +96,6 @@ function formatAdminPriceDetail(product = {}) {
   return formatINR(pricing.price ?? pricing.mrp);
 }
 
-function AdminFormModal({ open, title, subtitle, onClose, children, footer, wide }) {
-  useEffect(() => {
-    if (!open) return undefined;
-    const onKey = (event) => { if (event.key === "Escape") onClose?.(); };
-    document.addEventListener("keydown", onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prev;
-    };
-  }, [open, onClose]);
-  if (!open) return null;
-  return (
-    <div className="admin-form-modal-layer" role="dialog" aria-modal="true" aria-label={title}>
-      <button type="button" className="admin-form-modal-backdrop" aria-label="Close dialog" onClick={onClose} />
-      <div className={`admin-form-modal ${wide ? "wide" : ""}`}>
-        <header className="admin-form-modal-header">
-          <div>
-            <h2>{title}</h2>
-            {subtitle ? <p>{subtitle}</p> : null}
-          </div>
-          <button type="button" className="admin-form-modal-close" aria-label="Close" onClick={onClose}><X size={18} /></button>
-        </header>
-        <div className="admin-form-modal-body">{children}</div>
-        {footer ? <footer className="admin-form-modal-footer">{footer}</footer> : null}
-      </div>
-    </div>
-  );
-}
-
 const sectionCards = [
   { key: "admins", label: "Admins", note: "Manage admin accounts", superOnly: true },
   { key: "pulseAI", label: "Pulse AI Instructions", note: "Train live responses with editable behavior rules" },
@@ -133,6 +103,7 @@ const sectionCards = [
   { key: "notificationEmails", label: "Email Notifications", note: "Booking and Pulse AI demand-alert recipients", superOnly: true },
   { key: "bookings", label: "Bookings", note: "Repair requests and status" },
   { key: "orders", label: "Orders", note: "Paid orders, delivery details and status" },
+  { key: "productReviews", label: "Ratings and reviews", note: "Moderate verified product reviews" },
   { key: "invoice", permission: "invoices", label: "Invoice", note: "Create invoices, PDFs, and billing history" },
   { key: "offers", label: "Offers", note: "Image and short offer cards" },
   { key: "coupons", label: "Coupons & offers", note: "Public offers and private checkout coupons" },
@@ -807,6 +778,9 @@ function App() {
         )}
         {active === "orders" && (
           <OrdersModule apiFetch={apiFetch} />
+        )}
+        {active === "productReviews" && (
+          <ProductReviewsModule apiFetch={apiFetch} />
         )}
         {active === "invoice" && (
           <InvoiceModule apiFetch={apiFetch} />

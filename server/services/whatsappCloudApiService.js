@@ -119,6 +119,10 @@ async function getMessageTemplateStatus({ businessAccountId, accessToken, templa
   return result.data?.find((template) => template.name === templateName && template.language === languageCode)?.status || "NOT_FOUND";
 }
 
+function isWhatsAppTemplateTemporarilyUnavailable(error) {
+  return [132001, 132015].includes(Number(error?.payload?.error?.code));
+}
+
 const billingChecks = new Map();
 
 async function hasWhatsAppBillingBlock({ businessAccountId, accessToken }) {
@@ -297,6 +301,7 @@ module.exports = {
   sendInteractiveMessage,
   sendTemplateMessage,
   getMessageTemplateStatus,
+  isWhatsAppTemplateTemporarilyUnavailable,
   hasWhatsAppBillingBlock,
   configureConversationalAutomation,
   parseInboundWebhook,

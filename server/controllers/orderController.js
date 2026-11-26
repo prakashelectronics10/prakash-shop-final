@@ -25,12 +25,12 @@ const { enqueueOrderPaidNotification } = require("../services/orderNotificationS
 const {
   sendPaymentUnsuccessfulWhatsApp,
   sendOrderShipmentWhatsApp,
-  sendCustomerReviewWhatsApp,
 } = require("../services/whatsappTransactionalService");
 const { logger } = require("../utils/logger");
 const Invoice = require("../models/Invoice");
 const { createOrderInvoice, getOrderInvoicePdf, orderInvoicePath } = require("../services/orderInvoiceService");
 const { verifiedOrderHistoryNumber } = require("../services/customerWhatsAppOtpService");
+const { orderReviewProducts, remainingOrderReviewProducts, REVIEW_PAYMENT_STATES } = require("../services/orderProductReviewService");
 
 const ORDER_STATUSES = ["confirmed", "shipped", "out_for_delivery", "delivered"];
 
@@ -266,11 +266,16 @@ async function findCheckoutPayment(body) {
   return order;
 }
 
-function paymentState(res, order, processing = false) {
+async function publicOrderWithReviews(order) {
+  const products = await remainingOrderReviewProducts([order]);
+  return { ...publicOrder(order), reviewItems: products.get(order.orderId) || [] };
+}
+
+async function paymentState(res, order, processing = false) {
   res.set("Cache-Control", "no-store");
   return res.json({ success: true, data: {
     orderId: order.orderId, paymentStatus: order.paymentStatus, processing,
-    order: ["paid", "refunded"].includes(order.paymentStatus) ? publicOrder(order) : undefined,
+    order: ["paid", "refunded"].includes(order.paymentStatus) ? await publicOrderWithReviews(order) : undefined,
   } });
 }
 
@@ -296,6 +301,7 @@ exports.getCustomerOrders = asyncHandler(async (req, res) => {
   const limit = 20;
   const orders = await Order.find(filter).sort({ _id: -1 }).limit(limit + 1).lean();
   const page = orders.slice(0, limit);
+  const reviewItems = await remainingOrderReviewProducts(page);
   const invoices = await Invoice.find({ orderId: { $in: page.map((order) => order.orderId) } }).select("orderId invoiceNumber").lean();
   const invoiceNumbers = new Map(invoices.map((invoice) => [invoice.orderId, invoice.invoiceNumber]));
   await Promise.all(page.filter((order) => order.paymentStatus === "paid" && !invoiceNumbers.has(order.orderId)).map(async (order) => {
@@ -310,6 +316,7 @@ exports.getCustomerOrders = asyncHandler(async (req, res) => {
   res.json({ success: true, data: {
     orders: page.map((order) => ({
       ...publicOrder(order),
+      reviewItems: reviewItems.get(order.orderId) || [],
       placedAt: order.createdAt,
       invoiceNumber: invoiceNumbers.get(order.orderId) || "",
       canPay: order.paymentMethod !== "cod" && RETRYABLE_PAYMENT_STATES.includes(order.paymentStatus) && order.orderStatus === "awaiting_payment",
@@ -460,14 +467,14 @@ exports.verifyPayment = asyncHandler(async (req, res) => {
     throw new AppError("Payment signature could not be verified", 400);
   }
   if (["paid", "refunded"].includes(order.paymentStatus)) {
-    return res.json({ success: true, data: publicOrder(order) });
+    return res.set("Cache-Control", "no-store").json({ success: true, data: await publicOrderWithReviews(order) });
   }
   const payment = await getRazorpayPayment(razorpayPaymentId);
   if (!paymentMatches(order, payment) || payment.id !== razorpayPaymentId) throw new AppError("Payment details do not match this order", 400);
   if (payment.status !== "captured") throw new AppError("Your payment is still being verified.", 409);
   const confirmed = await confirmCapturedOrder(order, payment);
   if (!["paid", "refunded"].includes(confirmed?.paymentStatus)) throw new AppError("Your payment is still being verified.", 409);
-  res.json({ success: true, data: publicOrder(confirmed) });
+  res.set("Cache-Control", "no-store").json({ success: true, data: await publicOrderWithReviews(confirmed) });
 });
 
 exports.handleRazorpayWebhook = asyncHandler(async (req, res) => {
@@ -526,7 +533,7 @@ exports.getPublicOrder = asyncHandler(async (req, res) => {
   const order = await Order.findOne({ orderId, paymentStatus: { $in: ["paid", "refunded", "cod"] } }).lean();
   if (!order) throw new AppError("No confirmed order was found with this Order ID", 404);
   res.set("Cache-Control", "no-store");
-  res.json({ success: true, data: publicOrder(order) });
+  res.json({ success: true, data: await publicOrderWithReviews(order) });
 });
 
 exports.downloadPublicOrderInvoice = asyncHandler(async (req, res) => {
@@ -572,15 +579,21 @@ exports.listOrders = asyncHandler(async (req, res) => {
 exports.updateOrderStatus = asyncHandler(async (req, res) => {
   const orderStatus = String(req.body.orderStatus || "").trim();
   if (!ORDER_STATUSES.includes(orderStatus)) throw new AppError("Invalid order status", 400);
-  const previous = await Order.findById(req.params.id).select("orderStatus paymentStatus").lean();
+  const previous = await Order.findById(req.params.id).select("orderStatus paymentStatus items").lean();
   if (!previous) throw new AppError("Order not found", 404);
 
   if (!["paid", "refunded", "cod"].includes(previous.paymentStatus)) throw new AppError("Unpaid orders cannot be confirmed or shipped", 409);
   const update = { orderStatus, statusUpdatedAt: new Date() };
-  const order = await Order.findByIdAndUpdate(
+  const reviewProducts = orderStatus === "delivered" && REVIEW_PAYMENT_STATES.includes(previous.paymentStatus)
+    ? orderReviewProducts(previous) : [];
+  const options = { new: true, runValidators: true };
+  const queuedOrder = reviewProducts.length ? await Order.findOneAndUpdate({
+    _id: req.params.id, paymentStatus: { $in: REVIEW_PAYMENT_STATES }, customerReviewQueue: { $exists: false },
+  }, { $set: { ...update, customerReviewQueue: reviewProducts, customerReviewNextAttemptAt: update.statusUpdatedAt } }, options) : null;
+  const order = queuedOrder || await Order.findByIdAndUpdate(
     req.params.id,
     update,
-    { new: true, runValidators: true },
+    options,
   );
   if (!order) throw new AppError("Order not found", 404);
 
@@ -595,17 +608,6 @@ exports.updateOrderStatus = asyncHandler(async (req, res) => {
       });
     });
   }
-  if (statusChanged && orderStatus === "delivered") {
-    setImmediate(() => {
-      sendCustomerReviewWhatsApp({ order }).catch((error) => {
-        logger.error("whatsapp.customer_review_failed", {
-          orderId: order.orderId,
-          message: error.message,
-        });
-      });
-    });
-  }
-
   res.json({ success: true, data: order });
 });
 

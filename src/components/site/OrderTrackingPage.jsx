@@ -4,6 +4,7 @@ import { apiRequest, apiUrl } from "../../api/client";
 import { invoiceThemePresets } from "../../admin/invoiceUtils";
 import { formatINR } from "../../utils/productPricing";
 import trackOrderHero from "../../assets/track-order-hero.webp";
+import { OrderReviewLauncher } from "./OrderReviewLauncher";
 import { Navbar } from "./Navbar";
 import { Footer } from "./Footer";
 import { OptimizedImage } from "./OptimizedImage";
@@ -95,7 +96,7 @@ function OrderResult({ order, invoiceTheme, onInvoiceThemeChange, inSheet = fals
       <CustomerDetails customer={customer} />
 
       <div className="tracking-products">
-        <h3>Items in your order</h3>
+        <div className="tracking-products-heading"><h3>Items in your order</h3><OrderReviewLauncher key={order.orderId} order={order} /></div>
         {order.items.map((item) => (
           <a
             href={`/product/${encodeURIComponent(item.productSlug || item.productId)}${item.variantCombinationId ? `?v=${encodeURIComponent(item.variantCombinationId)}` : ""}`}

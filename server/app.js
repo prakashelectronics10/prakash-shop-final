@@ -28,6 +28,7 @@ const scienceAIRoutes = require("./routes/scienceAIRoutes");
 const shopProductRoutes = require("./routes/shopProductRoutes");
 const brandSliderRoutes = require("./routes/brandSliderRoutes");
 const orderRoutes = require("./routes/orderRoutes");
+const productReviewRoutes = require("./routes/productReviewRoutes");
 const { getAppSettings, updateAppLogo, updateProfileImage } = require("./controllers/mobileController");
 const { upload } = require("./controllers/uploadController");
 const { getSitePayload, getHtmlShellSiteMeta } = require("./services/siteService");
@@ -166,6 +167,7 @@ app.use("/api/project-parts", projectPartRoutes);
 app.use("/api/shop-products", shopProductRoutes);
 app.use("/api/brand-sliders", brandSliderRoutes);
 app.use("/api/orders", orderRoutes);
+app.use("/api/product-reviews", productReviewRoutes);
 app.use("/api/science-ai", scienceAIRoutes);
 app.use("/api/whatsapp/admin", whatsappAdminRoutes);
 

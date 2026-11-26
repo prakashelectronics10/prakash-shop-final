@@ -1,0 +1,22 @@
+{
+  "name": "customer_product_review",
+  "language": "en",
+  "category": "UTILITY",
+  "parameter_format": "POSITIONAL",
+  "components": [
+    {
+      "type": "BODY",
+      "text": "Hi {{1}}, how was your {{2}} from Prakash Electronics? Please rate the product and share your experience. Your feedback helps other shoppers.",
+      "example": { "body_text": [["Aarav", "Bluetooth speaker with Mic"]] }
+    },
+    {
+      "type": "BUTTONS",
+      "buttons": [{
+        "type": "URL",
+        "text": "Review product",
+        "url": "https://prakashshop.in/product/{{1}}",
+        "example": ["https://prakashshop.in/product/66b000000000000000000001"]
+      }]
+    }
+  ]
+}

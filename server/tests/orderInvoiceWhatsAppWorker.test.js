@@ -1,6 +1,7 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 const Order = require("../models/Order");
+const ProductReview = require("../models/ProductReview");
 
 test("a paid invoice waits for template approval and is sent once across concurrent workers", async (t) => {
   const initialTime = new Date();
@@ -93,4 +94,44 @@ test("a verified paid order card status is claimed and delivered once", async (t
   assert.deepEqual(await Promise.all([deliverNextOrderCardStatus(), deliverNextOrderCardStatus()]), [true, false]);
   assert.ok(order.whatsappCardStatusSentAt);
   assert.equal(sent.mock.callCount(), 1);
+});
+
+test("customer review reminders claim one product at a time and skip submitted reviews", async (t) => {
+  const { deliverNextCustomerReview } = require("../services/orderInvoiceWhatsAppWorker");
+  const now = new Date();
+  const products = ["product-one", "already-reviewed", "product-three"].map((productId) => ({ productId, sourceType: "shop-product" }));
+  const order = { _id: "review-order", customerReviewQueue: [...products], customerReviewNextAttemptAt: now };
+  t.mock.method(Order, "findOneAndUpdate", async (filter, update) => {
+    assert.equal(filter.orderStatus, "delivered");
+    if (!order.customerReviewQueue.length || order.customerReviewNextAttemptAt > filter.customerReviewNextAttemptAt.$lte) return null;
+    Object.assign(order, update.$set);
+    order.customerReviewAttempts = (order.customerReviewAttempts || 0) + 1;
+    return { ...order, customerReviewQueue: [...order.customerReviewQueue] };
+  });
+  t.mock.method(Order, "updateOne", async (filter, update) => {
+    assert.equal(filter.customerReviewNextAttemptAt, order.customerReviewNextAttemptAt);
+    if (update.$pop) order.customerReviewQueue.shift();
+    Object.assign(order, update.$set);
+    if (update.$inc) order.customerReviewAttempts += update.$inc.customerReviewAttempts;
+    for (const key of Object.keys(update.$unset || {})) delete order[key];
+  });
+  t.mock.method(ProductReview, "exists", async (filter) => filter.productId === "already-reviewed");
+  let approved = false;
+  const send = t.mock.method(require("../services/whatsappTransactionalService"), "sendCustomerProductReviewWhatsApp", async () => {
+    if (!approved) throw Object.assign(new Error("Template not approved"), { payload: { error: { code: 132001 } } });
+    return { ok: true };
+  });
+  assert.equal(await deliverNextCustomerReview(now), true);
+  assert.equal(order.customerReviewAttempts, 0);
+  assert.deepEqual(order.customerReviewQueue, products);
+  const retry = order.customerReviewNextAttemptAt;
+  assert.ok(retry > now);
+  assert.equal(await deliverNextCustomerReview(now), false);
+  approved = true;
+  assert.deepEqual(await Promise.all([deliverNextCustomerReview(retry), deliverNextCustomerReview(retry)]), [true, false]);
+  assert.equal(await deliverNextCustomerReview(retry), true);
+  assert.equal(await deliverNextCustomerReview(retry), true);
+  assert.equal(await deliverNextCustomerReview(retry), false);
+  assert.deepEqual(send.mock.calls.map(({ arguments: [input] }) => input.product.productId), ["product-one", "product-one", "product-three"]);
+  assert.equal(order.customerReviewNextAttemptAt, undefined);
 });

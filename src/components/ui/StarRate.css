@@ -1,0 +1,78 @@
+.rating-stars {
+  --rating-star-size: 1rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  line-height: 1;
+}
+
+.rating-stars-icon {
+  position: relative;
+  display: block;
+  width: var(--rating-star-size);
+  height: var(--rating-star-size);
+  color: #9aaac0;
+}
+
+.rating-stars-icon > span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  overflow: hidden;
+  color: #a95309;
+}
+
+.rating-stars-icon svg {
+  display: block;
+  width: var(--rating-star-size);
+  height: var(--rating-star-size);
+}
+
+.rating-stars-icon > span svg { fill: #ffc34d; }
+
+.star-rate { display: grid; justify-items: center; gap: 0.5rem; text-align: center; }
+.star-rate-controls { display: flex; gap: clamp(0.18rem, 1vw, 0.42rem); }
+
+.star-rate-button {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border: 1px solid #d5e0ec;
+  border-radius: 0.75rem;
+  color: #65758c;
+  background: #fff;
+  cursor: pointer;
+}
+
+.star-rate-button:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
+.star-rate-button > svg { width: 1.5rem; height: 1.5rem; transition: fill 160ms ease, color 160ms ease; }
+.star-rate-button[data-filled] { border-color: #e7be76; background: #fff8e9; color: #a95309; }
+.star-rate-button[data-filled] > svg { fill: #ffc34d; }
+.star-rate-button[data-pop="a"] > svg { animation: star-rate-pop-a 390ms ease var(--star-delay) both; }
+.star-rate-button[data-pop="b"] > svg { animation: star-rate-pop-b 390ms ease var(--star-delay) both; }
+.star-rate-word { margin: 0; color: #55657a; font-size: 0.875rem; font-weight: 600; }
+
+.star-rate-sparks { position: absolute; inset: 0; pointer-events: none; }
+.star-rate-sparks i {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 3px;
+  height: 5px;
+  border-radius: 2px;
+  background: #db830a;
+  opacity: 0;
+  animation: star-rate-spark 430ms ease-out var(--star-delay) both;
+}
+
+@keyframes star-rate-pop-a { 45% { transform: scale(1.24) rotate(-8deg); } }
+@keyframes star-rate-pop-b { 45% { transform: scale(1.24) rotate(-8deg); } }
+@keyframes star-rate-spark {
+  from { transform: rotate(var(--spark-angle)) translateY(-10px); opacity: 1; }
+  to { transform: rotate(var(--spark-angle)) translateY(-30px); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .star-rate-button > svg, .star-rate-sparks i { animation: none !important; transition: none; }
+}

@@ -8,6 +8,7 @@ const { startDiscussionRetentionCleanup } = require("./services/discussionRetent
 const { startMetaCatalogWorker } = require("./services/metaCatalogWorker");
 const { ensureMetaCatalogIndexes } = require("./services/metaCatalogService");
 const { startOrderInvoiceWhatsAppWorker } = require("./services/orderInvoiceWhatsAppWorker");
+const { startReviewWhatsAppWorker } = require("./services/reviewWhatsAppService");
 
 let server;
 
@@ -26,6 +27,7 @@ async function startServer() {
 
   connectDB().then(async () => {
     startOrderInvoiceWhatsAppWorker();
+    startReviewWhatsAppWorker();
     await ensureMetaCatalogIndexes();
     logger.info("mongodb.meta_catalog_indexes_ready");
     startMetaCatalogWorker();

@@ -1,0 +1,56 @@
+.admin-product-reviews { display: grid; gap: 1rem; }
+.admin-product-reviews-head, .admin-review-card-heading { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 0.75rem; }
+.admin-product-reviews h2, .admin-product-reviews h3, .admin-product-reviews p { margin: 0; }
+.admin-product-reviews-head h2 { font-size: clamp(1.45rem, 3vw, 2rem); font-weight: 800; }
+.admin-product-reviews-head p { margin-top: 0.3rem; }
+
+.admin-review-filters {
+  --review-filter-surface: #1e2b3d;
+  color-scheme: dark;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
+  align-items: end;
+  gap: 0.8rem;
+  padding: 1rem;
+}
+
+.admin-shell.light .admin-review-filters { --review-filter-surface: #fff; color-scheme: light; }
+.admin-review-filters label { display: grid; gap: 0.35rem; min-width: 0; font-size: 0.875rem; font-weight: 700; }
+.admin-review-filters :is(input, select) {
+  width: 100%;
+  min-width: 0;
+  min-height: 2.65rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  color: var(--text);
+  background-color: var(--review-filter-surface);
+  font: inherit;
+  font-weight: 500;
+}
+.admin-review-filters option { color: var(--text); background-color: var(--review-filter-surface); }
+.admin-review-filters :is(input, select):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.admin-review-list { display: grid; gap: 0.75rem; }
+.admin-review-empty, .admin-review-card { padding: 1rem; }
+.admin-review-card { display: grid; justify-items: start; gap: 0.65rem; }
+.admin-review-card-heading { width: 100%; }
+.admin-review-card-heading h3 { font-size: 1.1rem; font-weight: 750; overflow-wrap: anywhere; }
+.admin-review-card-heading p { display: flex; flex-wrap: wrap; gap: 0.2rem 0.65rem; margin-top: 0.2rem; font-size: 0.85rem; }
+.admin-review-badges { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.admin-review-badges span { padding: 0.25rem 0.55rem; border-radius: 2rem; font-size: 0.78rem; font-weight: 750; text-transform: capitalize; }
+.admin-review-badges [data-status="pending"] { color: #77520e; background: #fff1c7; }
+.admin-review-badges [data-status="approved"] { color: #096443; background: #ddf7eb; }
+.admin-review-badges [data-status="declined"] { color: #9b2e30; background: #ffebeb; }
+.admin-review-badges [data-status="unread"] { color: #1d4ed8; background: #e5eeff; }
+.admin-review-text { max-width: 68ch; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+.admin-review-actions, .admin-review-pages { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
+.admin-review-pages { justify-content: center; margin-block-start: 0.35rem; }
+.admin-product-reviews button { display: inline-flex; align-items: center; gap: 0.4rem; }
+.admin-product-reviews .admin-review-decline { color: #b3242b; }
+.admin-product-reviews button:disabled { opacity: 0.6; cursor: not-allowed; }
+.admin-review-whatsapp { display: grid; gap: 0.75rem; padding: 1rem; }
+.admin-review-whatsapp-recipients { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0; padding: 0; list-style: none; }
+.admin-review-whatsapp-recipients li { display: flex; align-items: center; gap: 0.4rem; padding: 0.15rem 0.2rem 0.15rem 0.6rem; border: 1px solid #dce6f0; border-radius: 0.65rem; }
+.admin-review-whatsapp-recipients li span { display: inline-flex; align-items: center; gap: 0.3rem; }
+.admin-review-whatsapp-recipients li span svg { color: #08764e; }
+.admin-review-whatsapp-form { display: grid; gap: 0.7rem; }

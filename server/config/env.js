@@ -142,8 +142,10 @@ const env = {
       paymentReceivedLanguage: process.env.WHATSAPP_TEMPLATE_PAYMENT_RECEIVED_LANG || "en_US",
       orderShipment: process.env.WHATSAPP_TEMPLATE_ORDER_SHIPMENT || "order_shipment",
       orderShipmentLanguage: process.env.WHATSAPP_TEMPLATE_ORDER_SHIPMENT_LANG || "en",
-      customerReview: process.env.WHATSAPP_TEMPLATE_CUSTOMER_REVIEW || "customer_review",
-      customerReviewLanguage: process.env.WHATSAPP_TEMPLATE_CUSTOMER_REVIEW_LANG || "en",
+      customerProductReview: process.env.WHATSAPP_TEMPLATE_CUSTOMER_PRODUCT_REVIEW || "customer_product_review",
+      customerProductReviewLanguage: process.env.WHATSAPP_TEMPLATE_CUSTOMER_PRODUCT_REVIEW_LANG || "en",
+      productReviewAlert: process.env.WHATSAPP_TEMPLATE_PRODUCT_REVIEW_ALERT || "product_review_alert",
+      productReviewAlertLanguage: process.env.WHATSAPP_TEMPLATE_PRODUCT_REVIEW_ALERT_LANG || "en",
     },
   },
 };
