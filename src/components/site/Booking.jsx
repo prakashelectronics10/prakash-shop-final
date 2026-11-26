@@ -1,6 +1,8 @@
 import { useState, useRef, useCallback, useEffect, useId } from "react";
 import toast from "react-hot-toast";
-import { CalendarClock, ShoppingBag, Trash2, UploadCloud, X, AlertTriangle } from "lucide-react";
+import { CalendarClock, MessageCircle, ShoppingBag, Trash2, UploadCloud, X, AlertTriangle } from "lucide-react";
+import { useSiteData } from "../../context/SiteDataContext";
+import { getWhatsappHref } from "../../utils/contactDefaults";
 import { apiRequest } from "../../api/client";
 import { cartItemToBookingProduct, cartStockMessage, getCartStockLimit, useCart } from "../../context/CartContext";
 import { Navbar } from "./Navbar";
@@ -71,6 +73,8 @@ function selectedProductsSummary(products) {
 }
 
 export function Booking() {
+  const { contact } = useSiteData("contact");
+  const repairChatUrl = getWhatsappHref({ ...contact, whatsappMessage: "REPAIR" });
   const { items: cartItems, clearCart } = useCart();
   const [form, setForm] = useState(initialForm);
   const [images, setImages] = useState([]);
@@ -377,6 +381,12 @@ export function Booking() {
             <p className="mt-4 text-muted-foreground">
               Share your contact details, location, repair type and a photo. The booking time is recorded automatically.
             </p>
+            {repairChatUrl && (
+              <a className="mt-4 inline-flex items-center gap-2 rounded-xl border px-4 py-2 font-semibold"
+                href={repairChatUrl} target="_blank" rel="noreferrer">
+                <MessageCircle size={18} aria-hidden="true" /> Book a repair on WhatsApp
+              </a>
+            )}
             <div className="mt-5 flex items-start gap-3 rounded-2xl border p-4 text-sm" style={{ backgroundColor: "rgba(250, 31, 31, 0.51)", borderColor: "rgb(251, 57, 36)", color: "#92400e" }}>
               <span className="inline-flex w-8 items-center justify-center rounded-full text-amber-900" style={{ backgroundColor: "rgba(255, 0, 0, 0.95)", color: "#fff", padding: "6px" }}>
                 <AlertTriangle className="h-4 w-4" />

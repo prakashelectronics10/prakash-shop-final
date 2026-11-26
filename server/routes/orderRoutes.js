@@ -1,4 +1,5 @@
 const express = require("express");
+const rateLimit = require("express-rate-limit");
 const {
   createPaymentOrder,
   getOrderQuote,
@@ -8,6 +9,10 @@ const {
   listOrders,
   updateOrderStatus,
   downloadPublicOrderInvoice,
+  getCheckoutPaymentStatus,
+  getCustomerOrders,
+  exchangeCustomerOrderLink,
+  retryCustomerOrderPayment,
 } = require("../controllers/orderController");
 const { requireAdmin, requirePermission } = require("../middleware/auth");
 const {
@@ -19,11 +24,16 @@ const {
 } = require("../controllers/additionalChargeController");
 
 const router = express.Router();
+const customerOrderLimiter = rateLimit({ windowMs: 60 * 1000, limit: 30, standardHeaders: "draft-7", legacyHeaders: false });
 
 router.post("/payment", createPaymentOrder);
 router.post("/quote", getOrderQuote);
-router.post("/payment/verify", verifyPayment);
-router.post("/payment/failed", markPaymentFailed);
+router.post("/payment/verify", customerOrderLimiter, verifyPayment);
+router.post("/payment/failed", customerOrderLimiter, markPaymentFailed);
+router.post("/payment/status", customerOrderLimiter, getCheckoutPaymentStatus);
+router.post("/history", customerOrderLimiter, getCustomerOrders);
+router.post("/history/link", customerOrderLimiter, exchangeCustomerOrderLink);
+router.post("/history/:orderId/pay", customerOrderLimiter, retryCustomerOrderPayment);
 router.get("/track/:orderId/invoice.pdf", downloadPublicOrderInvoice);
 router.get("/charges", getPublicCharges);
 router.get("/track/:orderId", getPublicOrder);

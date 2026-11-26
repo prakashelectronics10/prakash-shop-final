@@ -47,7 +47,8 @@ export default function OrdersModule({ apiFetch }) {
   const [chargesLoading, setChargesLoading] = useState(false);
   const [chargeError, setChargeError] = useState("");
   const [chargeEditor, setChargeEditor] = useState(null);
-  const [chargeForm, setChargeForm] = useState({ name: "", amount: "", isActive: true });
+  const [chargeForm, setChargeForm] = useState({ name: "", amount: "", ratePercent: "", isActive: true });
+  const editingPercentage = chargeEditor?.charge?.ratePercent != null;
   const [chargeSaving, setChargeSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const requestId = useRef(0);
@@ -150,6 +151,7 @@ export default function OrdersModule({ apiFetch }) {
     setChargeForm({
       name: charge?.name || "",
       amount: Number.isFinite(charge?.amount) ? String(charge.amount) : "",
+      ratePercent: Number.isFinite(charge?.ratePercent) ? String(charge.ratePercent) : "",
       isActive: charge?.isActive !== false,
     });
     setChargeError("");
@@ -163,13 +165,14 @@ export default function OrdersModule({ apiFetch }) {
     try {
       const editing = chargeEditor?.mode === "edit";
       const systemCharge = Boolean(chargeEditor?.charge?.isSystem);
+      let payload = { name: chargeForm.name.trim(), amount: chargeForm.amount, isActive: chargeForm.isActive };
+      if (editingPercentage) payload = { ratePercent: chargeForm.ratePercent };
+      else if (systemCharge) payload = { amount: chargeForm.amount };
       const response = await apiFetch(
         editing ? `/orders/admin/charges/${chargeEditor.charge._id}` : "/orders/admin/charges",
         {
           method: editing ? "PATCH" : "POST",
-          body: JSON.stringify(systemCharge
-            ? { amount: chargeForm.amount }
-            : { name: chargeForm.name.trim(), amount: chargeForm.amount, isActive: chargeForm.isActive }),
+          body: JSON.stringify(payload),
         },
       );
       setCharges((current) => editing
@@ -316,13 +319,17 @@ export default function OrdersModule({ apiFetch }) {
               {chargesLoading ? (
                 <div className="charges-admin-state"><LoaderCircle className="orders-spinner" /> Loading charges…</div>
               ) : charges.map((charge) => (
-                <article className="charge-admin-card" key={charge._id}>
+                <article className="charge-admin-card" key={charge.slug}>
                   <span className="charge-admin-icon"><ReceiptIndianRupee size={20} /></span>
                   <div>
                     <span className="charge-admin-name"><strong>{charge.name}</strong>{charge.isSystem && <em>Protected</em>}</span>
-                    <small>{charge.isActive ? "Shown in checkout" : "Hidden from checkout"}</small>
+                    <small>{charge.ratePercent != null
+                      ? "Applied to the product subtotal before discounts"
+                      : charge.isActive ? "Shown in checkout" : "Hidden from checkout"}</small>
                   </div>
-                  <strong className={Number(charge.amount || 0) === 0 ? "charge-free" : ""}>{Number(charge.amount || 0) === 0 ? "Free" : money(charge.amount)}</strong>
+                  <strong className={charge.ratePercent == null && !charge.amount ? "charge-free" : ""}>
+                    {charge.ratePercent != null ? `${charge.ratePercent}%` : charge.amount ? money(charge.amount) : "Free"}
+                  </strong>
                   <div className="charge-admin-actions">
                     <button type="button" onClick={() => openChargeEditor(charge)} aria-label={`Edit ${charge.name}`}><Edit3 size={16} /></button>
                     {!charge.isSystem && <button className="danger" type="button" onClick={() => setDeleteTarget(charge)} aria-label={`Delete ${charge.name}`}><Trash2 size={16} /></button>}
@@ -338,11 +345,15 @@ export default function OrdersModule({ apiFetch }) {
         <div className="charge-modal-layer" role="presentation">
           <button className="charge-modal-backdrop" type="button" aria-label="Close charge editor" onClick={() => setChargeEditor(null)} />
           <form className="charge-modal" onSubmit={saveCharge} role="dialog" aria-modal="true" aria-label={chargeEditor.mode === "edit" ? "Edit additional charge" : "Add additional charge"}>
-            <header><div><p className="eyebrow">{chargeEditor.mode === "edit" ? "Update charge" : "New charge"}</p><h3>{chargeEditor.charge?.isSystem ? "Delivery charge" : chargeEditor.mode === "edit" ? "Edit additional charge" : "Add additional charge"}</h3></div><button type="button" onClick={() => setChargeEditor(null)} aria-label="Close"><X size={19} /></button></header>
+            <header><div><p className="eyebrow">{chargeEditor.mode === "edit" ? "Update charge" : "New charge"}</p><h3>{chargeEditor.charge?.isSystem ? chargeEditor.charge.name : chargeEditor.mode === "edit" ? "Edit additional charge" : "Add additional charge"}</h3></div><button type="button" onClick={() => setChargeEditor(null)} aria-label="Close"><X size={19} /></button></header>
             <div className="charge-modal-body">
-              {chargeEditor.charge?.isSystem && <p className="system-charge-note">Delivery charge is protected. Its name cannot be changed and it cannot be deleted. Leave the amount blank to offer free delivery.</p>}
+              {chargeEditor.charge?.isSystem && !editingPercentage && <p className="system-charge-note">Leave the amount blank to offer free delivery.</p>}
               <label><span>Charge name</span><input value={chargeForm.name} disabled={Boolean(chargeEditor.charge?.isSystem)} onChange={(e) => setChargeForm({ ...chargeForm, name: e.target.value })} placeholder="e.g. Handling charge" required /></label>
-              <label><span>Charge amount (₹) <em>Blank means Free</em></span><input type="number" min="0" max="1000000" step="0.01" inputMode="decimal" value={chargeForm.amount} onChange={(e) => setChargeForm({ ...chargeForm, amount: e.target.value })} placeholder="Free" /></label>
+              {editingPercentage ? (
+                <label><span>Platform fee (%) <em>Enter 0 for no fee</em></span><input type="number" min="0" max="100" step="0.01" inputMode="decimal" value={chargeForm.ratePercent} onChange={(e) => setChargeForm({ ...chargeForm, ratePercent: e.target.value })} required /></label>
+              ) : (
+                <label><span>Charge amount (₹) <em>Blank means Free</em></span><input type="number" min="0" max="1000000" step="0.01" inputMode="decimal" value={chargeForm.amount} onChange={(e) => setChargeForm({ ...chargeForm, amount: e.target.value })} placeholder="Free" /></label>
+              )}
               {!chargeEditor.charge?.isSystem && (
                 <AdminToggle
                   className="charge-active-toggle"

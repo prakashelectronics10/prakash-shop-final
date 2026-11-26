@@ -220,6 +220,20 @@
 .order-success-actions { display: flex; justify-content: center; gap: .75rem; margin: 1.5rem 0 1rem; }
 .order-success-actions a { padding: 0 1.2rem; }
 .order-success-actions a.secondary { color: #1d4ed8; border: 1px solid #bfdbfe; background: white; box-shadow: none; }
+.order-recovery-actions { flex-wrap: wrap; }
+.order-recovery-actions button {
+  min-height: 44px;
+  padding: 0.6rem 0.95rem;
+  border: 1px solid #cbdcf4;
+  border-radius: 13px;
+  background: #fff;
+  color: #1d4ed8;
+  font-weight: 750;
+  cursor: pointer;
+}
+.order-recovery-actions button:hover { background: #eff6ff; }
+.order-recovery-actions button:focus-visible { outline: 2px solid #2563eb; outline-offset: 3px; }
+.order-recovery-actions button:disabled { opacity: .65; cursor: wait; }
 .order-success-card > small { color: #64748b; }
 
 .tracking-hero { width: min(780px,100%); margin: 0 auto 2rem; text-align: center; }

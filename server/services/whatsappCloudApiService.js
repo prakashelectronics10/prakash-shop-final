@@ -29,10 +29,10 @@ function verifyWebhookChallenge({ mode, token, challenge }) {
   return String(challenge || "");
 }
 
-async function graphRequest({ phoneNumberId, businessAccountId, accessToken, path = "messages", method = "POST", body, query }) {
+async function graphRequest({ phoneNumberId, businessAccountId, accessToken, path = "messages", method = "POST", body, query, timeoutMs }) {
   const formBody = body instanceof FormData;
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), env.whatsapp.requestTimeoutMs || 15000);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs || env.whatsapp.requestTimeoutMs || 15000);
   try {
     const qs = query
       ? `?${new URLSearchParams(
@@ -43,7 +43,7 @@ async function graphRequest({ phoneNumberId, businessAccountId, accessToken, pat
         }, {}),
       ).toString()}`
       : "";
-    const response = await fetch(`${graphBase()}/${businessAccountId || phoneNumberId}/${path}${qs}`, {
+    const response = await fetch(`${graphBase()}/${businessAccountId || phoneNumberId}${path ? `/${path}` : ""}${qs}`, {
       method,
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -117,6 +117,26 @@ async function getMessageTemplateStatus({ businessAccountId, accessToken, templa
     query: { name: templateName, fields: "name,language,status" },
   });
   return result.data?.find((template) => template.name === templateName && template.language === languageCode)?.status || "NOT_FOUND";
+}
+
+const billingChecks = new Map();
+
+async function hasWhatsAppBillingBlock({ businessAccountId, accessToken }) {
+  if (!businessAccountId) return false;
+  const cached = billingChecks.get(businessAccountId);
+  if (cached?.expiresAt > Date.now()) return cached.blocked;
+  try {
+    const data = await graphRequest({
+      businessAccountId, accessToken, path: "", method: "GET", query: { fields: "health_status" }, timeoutMs: 2200,
+    });
+    const blocked = data.health_status?.entities?.some((entity) => entity.entity_type === "WABA"
+      && entity.can_send_message === "BLOCKED"
+      && entity.errors?.some((error) => error.error_code === 141006)) === true;
+    if (data.health_status) billingChecks.set(businessAccountId, { blocked, expiresAt: Date.now() + 15000 });
+    return blocked;
+  } catch (_error) {
+    return false;
+  }
 }
 
 async function sendDocumentMessage({ phoneNumberId, accessToken, to, documentUrl, filename = "file", caption = "" }) {
@@ -277,6 +297,7 @@ module.exports = {
   sendInteractiveMessage,
   sendTemplateMessage,
   getMessageTemplateStatus,
+  hasWhatsAppBillingBlock,
   configureConversationalAutomation,
   parseInboundWebhook,
   graphRequest,

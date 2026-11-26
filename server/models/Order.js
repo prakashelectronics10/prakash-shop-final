@@ -26,6 +26,7 @@ const orderItemSchema = new mongoose.Schema(
     discountedUnitPrice: { type: Number, required: true, min: 0, default: 0 },
     discountedLineTotal: { type: Number, required: true, min: 0, default: 0 },
     variantCombinationId: { type: String, trim: true, default: "" },
+    retailerId: { type: String, trim: true, default: "" },
     variantSku: { type: String, trim: true, uppercase: true, default: "" },
     variantSummary: { type: String, trim: true, default: "" },
     variantSelections: { type: [orderItemVariantSelectionSchema], default: [] },

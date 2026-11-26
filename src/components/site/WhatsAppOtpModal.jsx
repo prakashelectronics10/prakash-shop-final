@@ -21,6 +21,7 @@ export function WhatsAppOtpModal({
   const [resendIn, setResendIn] = useState(0);
   const [masked, setMasked] = useState("");
   const [error, setError] = useState("");
+  const [delivery, setDelivery] = useState("");
   const inputsRef = useRef([]);
   const sentForOpenRef = useRef(false);
 
@@ -30,6 +31,7 @@ export function WhatsAppOtpModal({
       setDigits(Array(OTP_LENGTH).fill(""));
       setChallengeId("");
       setError("");
+      setDelivery("");
       setVerifying(false);
       setSending(false);
       setResendIn(0);
@@ -57,9 +59,39 @@ export function WhatsAppOtpModal({
     return () => window.removeEventListener("keydown", onKey);
   }, [open, verifying, sending, onClose]);
 
+  useEffect(() => {
+    if (!open || !challengeId || sending) return undefined;
+    let active = true;
+    let timer;
+    let attempts = 0;
+    const check = async () => {
+      attempts += 1;
+      try {
+        const response = await apiRequest("/public/whatsapp-otp/status", {
+          method: "POST", cache: "no-store", timeout: 5000,
+          body: JSON.stringify({ challengeId, purpose, whatsappNumber }),
+        });
+        if (!active) return;
+        const status = response.data?.status;
+        if (["delivered", "failed", "expired"].includes(status)) {
+          setDelivery(status);
+          return;
+        }
+      } catch (_error) {
+        // Verification is still available if the delivery lookup is temporarily unavailable.
+      }
+      if (!active) return;
+      if (attempts >= 4) setDelivery("waiting");
+      if (attempts < 12) timer = setTimeout(check, 4000);
+    };
+    timer = setTimeout(check, 2000);
+    return () => { active = false; clearTimeout(timer); };
+  }, [open, challengeId, sending, purpose, whatsappNumber]);
+
   const requestOtp = async (isResend = false) => {
     setSending(true);
     setError("");
+    setDelivery("");
     try {
       const response = await apiRequest("/public/whatsapp-otp/send", {
         method: "POST",
@@ -74,11 +106,12 @@ export function WhatsAppOtpModal({
       const data = response.data || {};
       setChallengeId(data.challengeId || "");
       setMasked(data.maskedWhatsApp || whatsappNumber);
+      setDelivery("pending");
       setResendIn(Math.ceil((data.resendAvailableInMs || 45000) / 1000));
       setDigits(Array(OTP_LENGTH).fill(""));
       setTimeout(() => inputsRef.current[0]?.focus(), 50);
-      toast.success("Verification code WhatsApp par bhej diya gaya hai", { id: "wa-otp-send" });
     } catch (err) {
+      setChallengeId("");
       setError(err.message || "OTP bhej nahi paye");
       toast.error(err.message || "OTP bhej nahi paye", { id: "wa-otp-send" });
     } finally {
@@ -139,6 +172,7 @@ export function WhatsAppOtpModal({
         challengeId: data.challengeId,
         verifiedToken: data.verifiedToken,
         whatsappNumber: data.whatsappNumber || whatsappNumber,
+        expiresInMs: data.expiresInMs,
       });
     } catch (err) {
       setError(err.message || "Galat code");
@@ -167,8 +201,17 @@ export function WhatsAppOtpModal({
         <p className="wa-otp-subtitle">
           {sending && !challengeId
             ? "WhatsApp par 6-digit code bhej rahe hain…"
-            : <>Humne <strong>{masked || whatsappNumber}</strong> par 6-digit code bheja hai. Neeche daalein.</>}
+            : error && !challengeId
+              ? "Code send confirm nahi hua. Dobara try karein."
+              : <>6-digit code <strong>{masked || whatsappNumber}</strong> ke WhatsApp chat mein dekhein.</>}
         </p>
+        {delivery && <p className="wa-otp-subtitle" role="status">{{
+          pending: "WhatsApp ne code request accept ki hai.",
+          delivered: "WhatsApp par code deliver ho gaya.",
+          waiting: "WhatsApp se delivery confirmation abhi pending hai.",
+          failed: "WhatsApp par code deliver nahi hua. Number check karein ya code phir se mangayein.",
+          expired: "Code expire ho gaya. Naya code mangayein.",
+        }[delivery]}</p>}
 
         <form onSubmit={verify} className="wa-otp-form">
           <div className="wa-otp-inputs" role="group" aria-label="6 digit OTP">
@@ -203,8 +246,8 @@ export function WhatsAppOtpModal({
           <button
             type="button"
             className="wa-otp-resend"
-            disabled={sending || verifying || resendIn > 0 || !challengeId}
-            onClick={() => requestOtp(true)}
+            disabled={sending || verifying || resendIn > 0}
+            onClick={() => requestOtp(Boolean(challengeId))}
           >
             {sending ? "Sending…" : resendIn > 0 ? `Resend in ${resendIn}s` : "Resend code"}
           </button>

@@ -1,6 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 process.env.GEMINI_API_KEY = "unit-test-key";
+process.env.GEMINI_MODEL = "gemini-3.5-flash";
 
 function query(value) {
   return { select() { return this; }, sort() { return this; }, limit() { return this; }, lean: async () => value };
@@ -26,6 +27,9 @@ test("captionless images reach vision, voice transcripts reach chat/history, and
   });
   const sends = [];
   t.mock.method(require("../services/whatsappCloudApiService"), "sendTextMessage", async (args) => { sends.push(args.text); return { messages: [{ id: "outbound" }] }; });
+  const interactive = t.mock.method(require("../services/whatsappCloudApiService"), "sendInteractiveMessage", async () => {
+    throw Object.assign(new Error("Meta rejected parameters"), { status: 400, payload: { error: { code: 131009 } } });
+  });
   t.mock.method(require("../services/whatsappConversationService"), "recordMessage", async (args) => args);
   t.mock.method(require("../services/whatsappRealtimeService"), "publishConversationUpsert", () => {});
   let mode = "image";
@@ -69,4 +73,23 @@ test("captionless images reach vision, voice transcripts reach chat/history, and
   assert.equal(result.checkoutPatch.customer.name, "Test");
   assert.equal(result.checkoutPatch.items[0].quantity, 2);
   assert.equal(result.text, "Details mil gayi.");
+
+  const models = [];
+  t.mock.method(global, "fetch", async (url) => {
+    const model = new URL(url).pathname.split("/").at(-1).split(":")[0];
+    models.push(model);
+    if (model === "gemini-3.5-flash") {
+      return Response.json({ error: { status: "RESOURCE_EXHAUSTED" } }, { status: 429 });
+    }
+    return Response.json({ candidates: [{ content: { parts: [
+      { text: "Here are the products.\nWHATSAPP_BUTTONS: [{\"type\":\"url\",\"label\":\"Shop\",\"url\":\"https://prakashshop.in/products\"}]" },
+    ] } }] });
+  });
+  await maybeReplyWithAI({ account, conversation, customerMessage: "products" });
+  assert.deepEqual(models, ["gemini-3.5-flash", "gemini-3.5-flash-lite"]);
+  assert.equal(interactive.mock.callCount(), 1);
+  assert.deepEqual(sends.slice(-2), ["Here are the products.", "Shop: https://prakashshop.in/products"]);
+
+  await generateWhatsAppAIReply({ account, conversation, customerMessage: "products", settings: {} });
+  assert.deepEqual(models, ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.5-flash-lite"]);
 });

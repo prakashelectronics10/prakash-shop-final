@@ -85,12 +85,7 @@ function buildVariantAttributes(product, combination) {
   };
 }
 
-function mapSingleProductToMeta(product, {
-  sourceType = "shop-product",
-  origin = DEFAULT_ORIGIN,
-  combination = null,
-  itemGroupId = "",
-} = {}) {
+function catalogRetailerId(product, combination) {
   const parentSku = String(product.sku || "").trim().toUpperCase();
   let retailerId = parentSku;
   if (combination) {
@@ -99,6 +94,16 @@ function mapSingleProductToMeta(product, {
       ? combinationSku
       : `${parentSku || "PE"}-${String(combination.id || "").slice(-6).toUpperCase()}`;
   }
+  return retailerId;
+}
+
+function mapSingleProductToMeta(product, {
+  sourceType = "shop-product",
+  origin = DEFAULT_ORIGIN,
+  combination = null,
+  itemGroupId = "",
+} = {}) {
+  const retailerId = catalogRetailerId(product, combination);
   const summary = combination ? formatVariantSummary(product, combination.optionIds) : "";
   const name = cleanText(
     summary ? `${product.name} — ${summary}` : product.name,
@@ -210,6 +215,7 @@ function listVariantRetailerIds(product = {}) {
 }
 
 module.exports = {
+  catalogRetailerId,
   MetaProductValidationError,
   mapProductToMeta,
   mapSingleProductToMeta,

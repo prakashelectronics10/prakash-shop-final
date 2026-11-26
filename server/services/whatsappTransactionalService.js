@@ -5,6 +5,7 @@ const {
   sendInteractiveMessage,
   sendTemplateMessage,
   getMessageTemplateStatus,
+  hasWhatsAppBillingBlock,
   uploadPdfMedia,
 } = require("./whatsappCloudApiService");
 const { getOrderInvoicePdf } = require("./orderInvoiceService");
@@ -125,68 +126,45 @@ function formatPaymentDate(value = new Date()) {
   }).format(value instanceof Date ? value : new Date(value));
 }
 
-/** Send 6-digit OTP via AUTH template (Copy code) or plain text fallback. */
+/** Send the approved WhatsApp Authentication template for a website verification. */
 async function sendOtpWhatsApp({ whatsappNumber, otp, customerName = "" }) {
   const account = await withAccount();
   if (!account) {
-    const err = new Error("WhatsApp is not configured. OTP cannot be sent.");
-    err.status = 503;
-    throw err;
+    const error = new Error("WhatsApp is not configured. OTP cannot be sent.");
+    error.status = 503;
+    throw error;
+  }
+  if (await hasWhatsAppBillingBlock(account)) {
+    throw Object.assign(new Error("Meta WhatsApp billing blocks business-initiated messages."), { status: 503, code: 141006 });
   }
 
-  const { conversation, customerWaId } = await prepareConversation(account, whatsappNumber, customerName);
+  const customerWaId = toWhatsAppE164(whatsappNumber);
   const otpText = String(otp);
-  const templates = env.whatsapp.templates || {};
-
-  // pulse_otp_verify is AUTH Copy-code: language en_GB, button sub_type url with OTP text.
-  const { result } = await tryTemplateThenFallback({
-    account,
-    customerWaId,
+  const templates = env.whatsapp.templates;
+  const result = await sendTemplateMessage({
+    phoneNumberId: account.phoneNumberId,
+    accessToken: account.accessToken,
+    to: customerWaId,
     templateName: templates.otp,
-    languageCode: templates.otpLanguage || "en_GB",
+    languageCode: templates.otpLanguage,
     components: [
-      {
-        type: "body",
-        parameters: [{ type: "text", text: otpText }],
-      },
-      {
-        type: "button",
-        sub_type: "url",
-        index: "0",
-        parameters: [{ type: "text", text: otpText }],
-      },
+      { type: "body", parameters: [{ type: "text", text: otpText }] },
+      { type: "button", sub_type: "url", index: "0", parameters: [{ type: "text", text: otpText }] },
     ],
-    fallback: async () => {
-      const text = [
-        "Prakash Electronics verification code:",
-        "",
-        `*${otpText}*`,
-        "",
-        "Ye 6-digit code website par daalein. Kisi ke sath share mat karna.",
-        "Code 5 minute ke liye valid hai.",
-      ].join("\n");
-      return sendTextMessage({
-        phoneNumberId: account.phoneNumberId,
-        accessToken: account.accessToken,
-        to: customerWaId,
-        text,
-      });
-    },
   });
+  const messageId = result?.messages?.[0]?.id;
+  if (!messageId) throw new Error("WhatsApp did not acknowledge the verification code");
 
-  await recordOutbound({
-    account,
-    conversation,
-    customerWaId,
-    type: "text",
-    text: `OTP sent for verification (${otpText.length} digits)`,
-    waMessageId: result?.messages?.[0]?.id || "",
-    meta: { kind: "otp" },
-  });
+  // The code can arrive before the admin inbox entry is written.
+  void prepareConversation(account, whatsappNumber, customerName)
+    .then(({ conversation }) => recordOutbound({
+      account, conversation, customerWaId, type: "text",
+      text: "OTP requested for verification", waMessageId: messageId, meta: { kind: "otp" },
+    }))
+    .catch((error) => logger.warn("customer_whatsapp_otp.history_failed", { code: error.code }));
 
-  return { ok: true, customerWaId };
+  return { phoneNumberId: account.phoneNumberId, messageId };
 }
-
 async function sendBookingConfirmationWhatsApp({ booking }) {
   const account = await withAccount();
   if (!account) return { ok: false, reason: "whatsapp_disabled" };
@@ -538,7 +516,9 @@ async function sendPaymentReceivedWhatsApp({ order }) {
   );
 
   const templates = env.whatsapp.templates || {};
+  const receiptUrl = trackOrderUrl(order.orderId);
   const bodyText = `Hi ${name}, your Order bill payment of ${amount} has been successfully received. Your payment date was ${paidOn}. Thank you!`;
+  const credentials = { phoneNumberId: account.phoneNumberId, accessToken: account.accessToken, to: customerWaId };
 
   const { result } = await tryTemplateThenFallback({
     account,
@@ -555,13 +535,22 @@ async function sendPaymentReceivedWhatsApp({ order }) {
           { type: "text", text: paidOn },
         ],
       },
+      { type: "button", sub_type: "url", index: "0", parameters: [{ type: "text", text: encodeURIComponent(order.orderId) }] },
     ],
-    fallback: async () => sendTextMessage({
-      phoneNumberId: account.phoneNumberId,
-      accessToken: account.accessToken,
-      to: customerWaId,
-      text: bodyText,
-    }),
+    fallback: async () => {
+      try {
+        return await sendInteractiveMessage({
+          ...credentials,
+          interactive: {
+            type: "cta_url",
+            body: { text: bodyText },
+            action: { name: "cta_url", parameters: { display_text: "Receipt", url: receiptUrl } },
+          },
+        });
+      } catch (_error) {
+        return sendTextMessage({ ...credentials, text: `${bodyText}\n\nReceipt: ${receiptUrl}` });
+      }
+    },
   });
 
   await recordOutbound({
@@ -571,7 +560,7 @@ async function sendPaymentReceivedWhatsApp({ order }) {
     type: "text",
     text: bodyText,
     waMessageId: result?.messages?.[0]?.id || "",
-    meta: { kind: "payment_received", orderId: order.orderId },
+    meta: { kind: "payment_received", orderId: order.orderId, receiptUrl },
   });
 
   return { ok: true };

@@ -990,7 +990,7 @@ export default function ManageWhatsAppModule({ apiFetch }) {
                 />
               </div>
               <h3>WhatsApp payment card</h3>
-              <p>Activate Enhanced Payment Links for this WhatsApp account with Meta or your provider, then approve a Utility template with no header and exactly one dynamic Razorpay URL button.</p>
+              <p>Online orders use the approved order_details_with_product_list template with a product image and Review and Pay button.</p>
               <AdminToggle
                 className="wa-toggle-row"
                 label={<strong>Enhanced Payment Links activated</strong>}
@@ -998,15 +998,6 @@ export default function ManageWhatsAppModule({ apiFetch }) {
                 checked={aiSettings.enhancedPaymentsEnabled}
                 onChange={(enhancedPaymentsEnabled) => setAISettings((current) => ({ ...current, enhancedPaymentsEnabled }))}
               />
-              <div className="wa-grid-2">
-                <Field label="Payment template name">
-                  <input value={aiSettings.paymentTemplateName} onChange={(event) => setAISettings((current) => ({ ...current, paymentTemplateName: event.target.value }))} placeholder="pulse_order_payment" />
-                </Field>
-                <Field label="Template language code">
-                  <input value={aiSettings.paymentTemplateLanguage} onChange={(event) => setAISettings((current) => ({ ...current, paymentTemplateLanguage: event.target.value }))} placeholder="en" />
-                </Field>
-              </div>
-              <p>Template body variables: 1 = customer name, 2 = order ID, 3 = amount in INR. Button: Pay now, dynamic URL <code>{"https://rzp.io/rzp/{{1}}"}</code> (or <code>{"https://rzp.io/i/{{1}}"}</code> if your Razorpay links use /i/). Save AI settings after setup.</p>
               <Field label="Max images per AI reply">
                 <input
                   type="number"

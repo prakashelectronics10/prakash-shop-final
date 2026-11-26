@@ -1,0 +1,36 @@
+const test = require("node:test");
+const assert = require("node:assert/strict");
+const Booking = require("../models/Booking");
+
+test("chat repair booking validates fields, collects photos and alerts admins after confirmation", async (t) => {
+  const save = t.mock.method(Booking, "create", async (booking) => booking);
+  const notify = t.mock.method(require("../services/bookingNotificationService"), "enqueueBookingNotification", () => {});
+  t.mock.method(require("../utils/validateEmail"), "validateEmailDeliverability", async (email) => ({ valid: email.includes("@"), email }));
+  t.mock.method(require("../services/whatsappMediaService"), "downloadInboundMedia", async () => ({ inlineData: { data: "aGk=" } }));
+  t.mock.method(require("../services/cloudinaryService"), "uploadBuffer", async () => ({ secure_url: "https://img.test/photo", public_id: "photo" }));
+  const { handleRepairBooking } = require("../services/whatsappRepairBookingService");
+  const conversation = { customerWaId: "919876543210", markModified() {}, async save() {} };
+  const send = (customerMessage, media) => handleRepairBooking({ account: {}, conversation, customerMessage, media });
+  assert.match(await send("fan repair karwana hai"), /naam/);
+  await send("Customer");
+  assert.match(await send("invalid"), /Email check/);
+  await send("customer@shop.test");
+  await send("SAME");
+  await send("Fan");
+  await send("Main Road");
+  assert.match(await send("123"), /PIN/);
+  await send("825101");
+  await send("SKIP");
+  assert.match(await send("Motor noise"), /review/);
+  for (let i = 0; i < 8; i++) await send("", { type: "image", id: String(i + 1) });
+  assert.match(await send("", { type: "image", id: "9" }), /8 photos/);
+  assert.equal(save.mock.callCount(), 0);
+  assert.match(await send("CONFIRM"), /Booking ID/);
+  assert.equal(await send("CONFIRM"), null);
+  assert.equal(notify.mock.callCount(), 1);
+  const booking = notify.mock.calls[0].arguments[0];
+  assert.equal(booking.images.length, 8);
+  assert.equal(booking.whatsappNumber, "9876543210");
+  assert.equal(booking.message, "Motor noise");
+  assert.equal(booking.bookingSource, "whatsapp");
+});

@@ -31,6 +31,7 @@ const whatsAppConversationSchema = new mongoose.Schema(
      * step: ask_if_issue | awaiting_issue_details | done
      */
     flowState: { type: mongoose.Schema.Types.Mixed, default: null },
+    repairDraft: { type: mongoose.Schema.Types.Mixed, default: null },
     checkout: { type: mongoose.Schema.Types.Mixed, default: null },
   },
   { timestamps: true },

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft, BadgePercent, Check, Copy, CreditCard, LockKeyhole, MapPin, PackageCheck, ShieldCheck } from "lucide-react";
 import toast from "react-hot-toast";
 import { apiRequest, apiUrl } from "../../api/client";
@@ -9,25 +9,13 @@ import { OptimizedImage } from "./OptimizedImage";
 import { clearAppliedCouponCode } from "../../utils/coupons";
 import { useOrderQuote } from "../../hooks/useOrderQuote";
 import { formatINR } from "../../utils/productPricing";
+import {
+  getPaymentStatus, loadRazorpayCheckout, openRazorpayCheckout, PAYMENT_RECOVERY_URL, readPaymentRecovery,
+  reportFailedPayment, savePaymentRecovery, verifyCheckoutPayment,
+} from "../../utils/orderPayment";
 import "./OrderExperience.css";
 
 const REQUIRED_FIELD_ORDER = ["name", "phone", "whatsappNumber", "address", "pincode"];
-
-let razorpayScriptPromise;
-
-function loadRazorpayCheckout() {
-  if (window.Razorpay) return Promise.resolve(true);
-  if (razorpayScriptPromise) return razorpayScriptPromise;
-  razorpayScriptPromise = new Promise((resolve, reject) => {
-    const script = document.createElement("script");
-    script.src = "https://checkout.razorpay.com/v1/checkout.js";
-    script.async = true;
-    script.onload = () => resolve(true);
-    script.onerror = () => reject(new Error("Secure payment window could not be loaded"));
-    document.body.appendChild(script);
-  });
-  return razorpayScriptPromise;
-}
 
 async function copyOrderId(orderId, automatic = false) {
   try {
@@ -89,6 +77,13 @@ export function CheckoutPage() {
   const [fieldErrors, setFieldErrors] = useState({});
   const [busy, setBusy] = useState(false);
   const [confirmedOrder, setConfirmedOrder] = useState(null);
+  const [recovery, setRecovery] = useState(readPaymentRecovery);
+  const [paymentState, setPaymentState] = useState(recovery ? "checking" : "");
+  const initialRecovery = useRef(recovery);
+  const booted = useRef(false);
+  const checking = useRef(false);
+  const finished = useRef(false);
+  const captureReported = useRef(Boolean(recovery?.awaitingConfirmation));
   const fieldRefs = {
     name: useRef(null),
     phone: useRef(null),
@@ -114,8 +109,52 @@ export function CheckoutPage() {
   useEffect(() => { setPaymentQuote(null); }, [quote]);
 
   useEffect(() => {
-    if (!items.length && !confirmedOrder) window.location.replace("/cart");
-  }, [confirmedOrder, items.length]);
+    if (!items.length && !confirmedOrder && !recovery) window.location.replace("/cart");
+  }, [confirmedOrder, items.length, recovery]);
+
+  const completePayment = useCallback((order, payment) => {
+    if (finished.current) return;
+    finished.current = true;
+    if (order.paymentStatus === "refunded") {
+      setPaymentState("refunded");
+      return;
+    }
+    setConfirmedOrder(order);
+    if (payment.clearCart) {
+      clearCart();
+      clearAppliedCouponCode();
+    }
+    savePaymentRecovery(payment);
+    void copyOrderId(order.orderId, true);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, [clearCart]);
+
+  const checkPayment = useCallback(async (payment, resume = false) => {
+    if (checking.current || finished.current) return false;
+    checking.current = true;
+    setPaymentState("checking");
+    try {
+      const status = await getPaymentStatus(payment, resume);
+      if (finished.current) return false;
+      if (status.order) completePayment(status.order, payment);
+      else if (status.processing || captureReported.current) setPaymentState("processing");
+      else setPaymentState("unpaid");
+      return !status.order && !status.processing && !captureReported.current;
+    } catch (error) {
+      if (finished.current) return false;
+      if (resume) toast.error(error.message || "Unable to resume payment");
+      setPaymentState("unavailable");
+      return false;
+    } finally {
+      checking.current = false;
+    }
+  }, [completePayment]);
+
+  useEffect(() => {
+    if (!recovery || confirmedOrder || !["processing", "unavailable"].includes(paymentState)) return undefined;
+    const timer = window.setTimeout(() => { void checkPayment(recovery); }, 8000);
+    return () => window.clearTimeout(timer);
+  }, [recovery, confirmedOrder, paymentState, checkPayment]);
 
   const focusFirstInvalidField = (errors) => {
     const firstKey = REQUIRED_FIELD_ORDER.find((key) => errors[key]);
@@ -148,18 +187,63 @@ export function CheckoutPage() {
     return true;
   };
 
-  const notifyPaymentUnsuccessful = async (orderId) => {
-    if (!orderId) return;
+  const launchPayment = useCallback(async (payment, clearCartOnSuccess) => {
+    await loadRazorpayCheckout();
+    const saved = savePaymentRecovery(payment, { clearCart: clearCartOnSuccess });
+    window.history.replaceState(window.history.state, "", PAYMENT_RECOVERY_URL);
+    setRecovery(saved);
+    setPaymentState("opening");
+    let callbackReceived = false;
     try {
-      await apiRequest("/orders/payment/failed", {
-        method: "POST",
-        cache: "no-store",
-        body: JSON.stringify({ orderId }),
+      openRazorpayCheckout(payment, {
+        onDismiss: () => {
+          setBusy(false);
+          if (!callbackReceived) void checkPayment(saved);
+        },
+        onFailed: () => {
+          if (!callbackReceived) void reportFailedPayment(saved).catch(() => {});
+          toast.error("The payment attempt was declined. You can retry from the payment window.");
+        },
+        onCaptured: async (response) => {
+          callbackReceived = true;
+          captureReported.current = true;
+          setBusy(false);
+          const pending = savePaymentRecovery(payment, { clearCart: clearCartOnSuccess, awaitingConfirmation: true });
+          setRecovery(pending);
+          setPaymentState("checking");
+          try {
+            completePayment(await verifyCheckoutPayment(payment, response), pending);
+          } catch (_error) {
+            await checkPayment(pending);
+          }
+        },
       });
-    } catch (_error) {
-      // Non-blocking — WhatsApp notify best-effort
+    } catch (error) {
+      setPaymentState("unpaid");
+      throw error;
     }
-  };
+  }, [checkPayment, completePayment]);
+
+  useEffect(() => {
+    if (booted.current || !initialRecovery.current) return;
+    booted.current = true;
+    const payment = initialRecovery.current;
+    if (!payment.startPayment) {
+      void checkPayment(payment);
+      return;
+    }
+    const saved = savePaymentRecovery(payment);
+    setRecovery(saved);
+    setBusy(true);
+    void checkPayment(saved).then((canPay) => {
+      if (canPay) return launchPayment(saved, false);
+      setBusy(false);
+      return undefined;
+    }).catch((error) => {
+      setBusy(false);
+      toast.error(error.message || "Unable to open payment");
+    });
+  }, [checkPayment, launchPayment]);
 
   const beginPayment = async (event) => {
     event.preventDefault();
@@ -170,77 +254,64 @@ export function CheckoutPage() {
       const created = await apiRequest("/orders/payment", {
         method: "POST",
         cache: "no-store",
-        body: JSON.stringify({
-          customer: form,
-          ...payload,
-        }),
+        body: JSON.stringify({ customer: form, ...payload }),
       });
-      const payment = created.data;
-      setPaymentQuote(payment);
-      let paymentCompleted = false;
-      const razorpay = new window.Razorpay({
-        key: payment.keyId,
-        amount: payment.amount,
-        currency: payment.currency,
-        name: "Prakash Electronics",
-        description: `${items.length} product order`,
-        image: `${window.location.origin}/logo192.png`,
-        order_id: payment.razorpayOrderId,
-        prefill: { name: form.name, contact: form.phone },
-        notes: { orderId: payment.orderId },
-        theme: { color: "#2563eb", backdrop_color: "rgba(15, 23, 42, 0.58)" },
-        modal: {
-          ondismiss: () => {
-            setBusy(false);
-            if (!paymentCompleted) {
-              notifyPaymentUnsuccessful(payment.orderId);
-              toast.error("Payment complete nahi hua. WhatsApp par message check karein.");
-            }
-          },
-          escape: true,
-          confirm_close: true,
-        },
-        handler: async (response) => {
-          paymentCompleted = true;
-          try {
-            const verified = await apiRequest("/orders/payment/verify", {
-              method: "POST",
-              cache: "no-store",
-              body: JSON.stringify({
-                orderId: payment.orderId,
-                razorpayOrderId: response.razorpay_order_id,
-                razorpayPaymentId: response.razorpay_payment_id,
-                razorpaySignature: response.razorpay_signature,
-              }),
-            });
-            clearCart();
-            clearAppliedCouponCode();
-            setConfirmedOrder(verified.data);
-            await copyOrderId(verified.data.orderId, true);
-            window.scrollTo({ top: 0, behavior: "smooth" });
-          } catch (error) {
-            paymentCompleted = false;
-            await notifyPaymentUnsuccessful(payment.orderId);
-            toast.error(error.message || "Payment verification failed. Please contact support with your payment ID.");
-          } finally {
-            setBusy(false);
-          }
-        },
-      });
-      razorpay.on("payment.failed", (response) => {
-        setBusy(false);
-        notifyPaymentUnsuccessful(payment.orderId);
-        toast.error(response.error?.description || "Payment failed. WhatsApp par message check karein.");
-      });
-      razorpay.open();
+      setPaymentQuote(created.data);
+      await launchPayment(created.data, true);
     } catch (error) {
       setBusy(false);
       toast.error(error.message || "Unable to start payment");
     }
   };
 
+  const retryPayment = async () => {
+    if (busy || recovery.awaitingConfirmation) return;
+    setBusy(true);
+    try {
+      if (await checkPayment(recovery, true)) await launchPayment(recovery, recovery.clearCart);
+      else setBusy(false);
+    } catch (error) {
+      setBusy(false);
+      toast.error(error.message || "Unable to open payment");
+    }
+  };
+
   if (confirmedOrder) {
     return <div className="App order-page"><Navbar /><OrderSuccess order={confirmedOrder} /><Footer /></div>;
+  }
+
+  if (recovery) {
+    const canRetry = paymentState === "unpaid" && !recovery.awaitingConfirmation;
+    const canCheck = !["checking", "opening", "refunded"].includes(paymentState);
+    return (
+      <div className="App order-page">
+        <Navbar />
+        <main className="order-success-page">
+          <section className="order-success-card" aria-live="polite">
+            <span className="order-success-icon"><CreditCard size={30} /></span>
+            <p className="order-kicker">Order {recovery.orderId}</p>
+            <h1>{{
+              checking: "Checking payment", opening: "Secure payment", processing: "Payment confirmation pending",
+              unpaid: "Continue your payment", unavailable: "Payment status unavailable", refunded: "Payment refunded",
+            }[paymentState]}</h1>
+            <p>{{
+              checking: "We’re checking the payment status with Razorpay.",
+              opening: "Complete your payment in the Razorpay window.",
+              processing: "Razorpay is confirming your payment. You can refresh this page without losing your order.",
+              unpaid: "You can pay for this same order without creating another one.",
+              unavailable: "We couldn’t check your payment right now. If you were charged, check the status again before paying.",
+              refunded: "This order has been refunded. View your order for details.",
+            }[paymentState]}</p>
+            <div className="order-success-actions order-recovery-actions">
+              {canRetry && <button type="button" disabled={busy} onClick={retryPayment}>Pay {formatINR(recovery.amount / 100)}</button>}
+              {canCheck && <button type="button" disabled={busy} onClick={() => checkPayment(recovery)}>Check payment status</button>}
+              <a href={paymentState === "refunded" ? `/orders?id=${encodeURIComponent(recovery.orderId)}` : "/orders"} className="secondary">Track orders</a>
+            </div>
+          </section>
+        </main>
+        <Footer />
+      </div>
+    );
   }
 
   if (!items.length) {

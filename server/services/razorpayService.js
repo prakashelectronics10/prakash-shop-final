@@ -44,6 +44,10 @@ function getRazorpayPayment(paymentId) {
   return razorpayRequest(`/payments/${encodeURIComponent(paymentId)}`);
 }
 
+function getRazorpayOrderPayments(orderId) {
+  return razorpayRequest(`/orders/${encodeURIComponent(orderId)}/payments`);
+}
+
 function createPaymentLink({ amount, referenceId, customer }) {
   return razorpayRequest("/payment_links", {
     method: "POST",
@@ -96,6 +100,7 @@ module.exports = {
   cancelPaymentLink,
   createRazorpayOrder,
   getRazorpayPayment,
+  getRazorpayOrderPayments,
   verifyPaymentSignature,
   verifyWebhookSignature,
 };

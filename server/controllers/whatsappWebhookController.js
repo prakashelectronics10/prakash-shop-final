@@ -6,6 +6,7 @@ const {
   verifyWebhookSignature,
   parseInboundWebhook,
   sendTextMessage,
+  sendInteractiveMessage,
 } = require("../services/whatsappCloudApiService");
 const { sendGreetingForAccount } = require("../services/whatsappGreetingService");
 const { recordMessage, applyReactionToMessage } = require("../services/whatsappConversationService");
@@ -17,6 +18,41 @@ const {
   sendCopyCodeReply,
 } = require("../services/whatsappTransactionalService");
 const { logger } = require("../utils/logger");
+const { recordDeliveryReceipts } = require("../services/whatsappDeliveryService");
+const { createOrderHistoryLink, approveOrderHistoryBrowser } = require("../services/customerWhatsAppOtpService");
+
+function requestsOrderHistory(text = "") {
+  const message = text.toLowerCase().trim().replace(/[.!?]+$/, "");
+  return /^(?:my orders|order history|all orders|view orders|view all orders)$/.test(message)
+    || /\b(?:show|view|see|list|check|get)\b.*\b(?:my|all|previous|past)\b.*\borders\b/.test(message)
+    || (/\borders?\b|ऑर्डर/.test(message)
+      && /\b(?:saar[aei]|sar[aei]|sabh?i|sab|purane|history)\b|सारे|सभी|पुराने|इतिहास/.test(message))
+    || (/\borders\b/.test(message) && /\b(?:mer[aei]|mujhe)\b/.test(message)
+      && /\b(?:dikha\w*|dekh\w*|bata\w*)\b/.test(message));
+}
+
+async function sendOrderHistoryButton({ account, conversation, customerWaId, businessNumber }) {
+  const url = await createOrderHistoryLink(customerWaId, { phoneNumberId: account.phoneNumberId, businessNumber });
+  if (!url) return false;
+  const text = "View orders tap karein aur website se isi WhatsApp chat mein confirmation bhejein. Link 10 minute tak valid hai.";
+  const result = await sendInteractiveMessage({
+    phoneNumberId: account.phoneNumberId,
+    accessToken: account.accessToken,
+    to: customerWaId,
+    interactive: {
+      type: "cta_url",
+      body: { text },
+      action: { name: "cta_url", parameters: { display_text: "View orders", url } },
+    },
+  });
+  await recordMessage({
+    accountId: account._id, conversationId: conversation._id, customerWaId,
+    direction: "outbound", sender: "system", type: "interactive", text,
+    waMessageId: result?.messages?.[0]?.id || "",
+    meta: { kind: "order_history_link" },
+  });
+  return true;
+}
 
 async function ensureAccountFromEnv(phoneNumberId) {
   if (!env.whatsapp.phoneNumberId || !env.whatsapp.accessToken) return null;
@@ -97,6 +133,12 @@ exports.handleWhatsAppWebhook = catchAsync(async (req, res) => {
     return;
   }
 
+  if (env.metaApp.appSecret) {
+    await recordDeliveryReceipts(payload).catch((error) => {
+      logger.warn("whatsapp.delivery_status_write_failed", { code: error.code });
+    });
+  }
+
   const events = parseInboundWebhook(payload);
   for (const event of events) {
     try {
@@ -142,6 +184,36 @@ exports.handleWhatsAppWebhook = catchAsync(async (req, res) => {
       });
 
       if (duplicate) continue;
+
+      const orderConfirmation = event.type === "text"
+        && /^VERIFY ORDERS ([a-f0-9]{24}) ([a-f0-9]{64})$/i.exec(String(event.text || "").trim());
+      if (env.metaApp.appSecret && orderConfirmation) {
+        const approved = await approveOrderHistoryBrowser({
+          challengeId: orderConfirmation[1].toLowerCase(),
+          browserHash: orderConfirmation[2].toLowerCase(),
+          senderWaId: event.customerWaId,
+          phoneNumberId: account.phoneNumberId,
+        });
+        await sendTextMessage({
+          phoneNumberId: account.phoneNumberId,
+          accessToken: account.accessToken,
+          to: event.customerWaId,
+          text: approved
+            ? "Verify ho gaya. Apne orders dekhne ke liye wahi browser tab kholein."
+            : "Is chat se verification complete nahi ho payi. Apne WhatsApp number se 'View orders' ka naya link maangein.",
+        });
+        continue;
+      }
+
+      if (env.metaApp.appSecret && event.type === "text" && requestsOrderHistory(event.text)) {
+        try {
+          if (await sendOrderHistoryButton({ account, conversation, customerWaId: event.customerWaId,
+            businessNumber: event.displayPhoneNumber })) continue;
+        } catch (error) {
+          logger.warn("whatsapp.order_history_button_failed", { status: error.status, code: error.code });
+          continue;
+        }
+      }
 
       // Copy Booking ID / Copy Order ID (interactive or template quick reply)
       if (looksLikeCopyButton(event.buttonReplyId, event.text)) {

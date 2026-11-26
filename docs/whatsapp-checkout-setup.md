@@ -2,28 +2,13 @@
 
 The implementation accepts captionless images, transcribes supported voice messages, collects delivery details, builds a server-priced order review, and confirms prepaid orders only after a verified Razorpay payment. COD is separately enabled per WhatsApp account in **Manage WhatsApp → AI replies → Allow cash on delivery**. COD defaults off and remains payment-due, not paid.
 
-## Activate the Pay now card
+## Order details card
 
-The requested screenshot corresponds to Meta **Enhanced Payment Links**. The implementation sends an approved WhatsApp template with exactly one dynamic Razorpay URL button. It does not paste payment URLs into customer replies or silently fall back to a browser-link message.
+Online checkout uses the approved English template `order_details_with_product_list` (ID `1468551722067479`). Its header shows the first available product image. Its Review and Pay button opens the itemized INR order and its Razorpay payment link. Configure the linked Meta catalog and sync the products and variants with their retailer IDs. Enable the payment card for the account in Manage WhatsApp after payment links are activated.
 
-1. Ask Meta or your WhatsApp Solution Partner to enable **Enhanced Payment Links** for your WhatsApp Business/Messaging account. Provide the account ID, Razorpay as gateway, and a real production sample payment link. Template approval alone does not enable enhanced rendering.
-2. In WhatsApp Manager, create this template:
-   - Name: `pulse_order_payment`
-   - Category: **Utility**
-   - Language: **English (`en`)**
-   - Header: **None**
-   - Body: `Hi {{1}}, your Prakash Electronics order {{2}} is awaiting payment. Amount: INR {{3}}. Tap Pay now to pay. We will confirm your order after payment is verified.`
-   - Example body values: `Rahul`, `PEABC234XYZ`, `300.00`
-   - Exactly one button: **Visit website**, label **Pay now**, URL type **Dynamic**
-   - URL: `https://rzp.io/rzp/{{1}}`
-   - Supply an actual sample Razorpay link when Meta asks for the example URL. If your Razorpay account generates `/i/` links, use `https://rzp.io/i/{{1}}` instead. The prefix must match the generated link; custom domains are not supported.
-3. Wait for approval. The server checks template name, language, approval status, Utility category, header absence, body variables, and button prefix before creating a new prepaid order.
-4. In **Manage WhatsApp → AI replies → WhatsApp payment card**, enter the approved name/language and turn on **Enhanced Payment Links activated** only after Meta confirms activation. Save AI settings.
-5. Use live Razorpay credentials for the native payment-card acceptance check. Enhanced rendering requires production payment links and supported recipient WhatsApp versions.
+## Repair bookings
 
-On supported clients, UPI may switch to the selected UPI app for authorization. Card/net-banking/wallet payment uses an in-app checkout/browser. The application cannot force a browser-free experience for every payment method or an unsupported WhatsApp version.
-
-Official reference: [Meta Enhanced Payment Links](https://developers.facebook.com/documentation/business-messaging/whatsapp/payments/payments-in/enhanced-payment-links).
+Send REPAIR to begin. The customer supplies booking details, adds up to eight photos, and sends CONFIRM to submit. The booking enters the regular admin booking list, email queue and mobile notification flow.
 
 ## Razorpay verification
 
@@ -54,5 +39,3 @@ npm run build
 ```
 
 Then use the actual connected WhatsApp account to check native card rendering and a deliberate merchant-approved live payment: pending before payment, confirmed after the signed provider event, and the correct WhatsApp confirmation. This live acceptance check has not been performed by this implementation session.
-
-Inspection in this session found no compatible payment-request template on the environment-configured WhatsApp account, and the local Razorpay webhook secret was missing. No template was submitted, no payment was initiated, and no customer message was sent during inspection.

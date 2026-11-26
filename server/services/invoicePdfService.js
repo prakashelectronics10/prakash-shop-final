@@ -512,10 +512,13 @@ function pageContent(invoice, pageItems, pageIndex, pageCount, assets = {}) {
       { label: "Subtotal", value: money(invoice.totals?.subtotal), bold: false },
       { label: "Discount", value: `- ${money(invoice.totals?.discountTotal)}`, bold: false },
       { label: "Tax", value: money(invoice.totals?.taxTotal), bold: false },
+      ...(invoice.totals?.platformFee > 0 ? [{ label: "Platform fee", value: money(invoice.totals.platformFee) }] : []),
     ];
 
-    commands.push(rectCommand(totalsX, ty - 88, totalsWidth, 102, panel));
-    commands.push(strokeRectCommand(totalsX, ty - 88, totalsWidth, 102, border, 0.8));
+    const totalsHeight = totalRows.length * rowGap + 28;
+    const totalsBottom = ty - totalsHeight;
+    commands.push(rectCommand(totalsX, totalsBottom, totalsWidth, totalsHeight + 14, panel));
+    commands.push(strokeRectCommand(totalsX, totalsBottom, totalsWidth, totalsHeight + 14, border, 0.8));
 
     totalRows.forEach((row) => {
       commands.push(textCommand(totalsX + 12, ty - 14, row.label, { size: 9, color: muted }));
@@ -549,11 +552,12 @@ function pageContent(invoice, pageItems, pageIndex, pageCount, assets = {}) {
       commands.push(textCommand(MARGIN, notesY + 12 - index * 12, value, { size: 8.5, color: muted }));
     });
 
+    const signatureY = invoice.totals?.platformFee > 0 ? Math.min(notesY, totalsBottom - 70) : notesY;
     if (assets.signatureName) {
-      commands.push(imageCommand(assets.signatureName, PAGE_WIDTH - MARGIN - 155, notesY + 22, 140, 40));
+      commands.push(imageCommand(assets.signatureName, PAGE_WIDTH - MARGIN - 155, signatureY + 22, 140, 40));
     }
-    commands.push(lineCommand(PAGE_WIDTH - MARGIN - 170, notesY + 18, PAGE_WIDTH - MARGIN, notesY + 18, muted, 0.9));
-    commands.push(textCommand(PAGE_WIDTH - MARGIN - 85, notesY, clipTextToWidth(invoice.signatureLabel || "Authorised Signature", 160, 8), {
+    commands.push(lineCommand(PAGE_WIDTH - MARGIN - 170, signatureY + 18, PAGE_WIDTH - MARGIN, signatureY + 18, muted, 0.9));
+    commands.push(textCommand(PAGE_WIDTH - MARGIN - 85, signatureY, clipTextToWidth(invoice.signatureLabel || "Authorised Signature", 160, 8), {
       size: 8,
       color: muted,
       align: "center",

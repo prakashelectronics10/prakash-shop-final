@@ -1,6 +1,7 @@
 const crypto = require("crypto");
 const { z } = require("zod");
 const Order = require("../models/Order");
+const AppError = require("../utils/AppError");
 const WhatsAppAISettings = require("../models/WhatsAppAISettings");
 const { createPaymentLink, findPaymentLinks, getPaymentLink, getRazorpayPayment, cancelPaymentLink } = require("./razorpayService");
 const { enqueueOrderPaidNotification } = require("./orderNotificationService");
@@ -77,7 +78,7 @@ async function previewCheckout({ account, conversation, patch }) {
       `*Total: ${money(quote.total)}*`,
       `${customer.name} | ${customer.phone}`, `${customer.address}, PIN ${customer.pincode}`,
       customer.landmark ? `Landmark: ${customer.landmark}` : "", customer.message ? `Message: ${customer.message}` : "",
-      "Details check karein; correction ho toh yahin bhejein. Pay online se WhatsApp payment card milega; payment verify hone par hi order confirm hoga.",
+      "Details check karein; correction ho toh yahin bhejein. CONFIRM likhein ya Pay online tap karein. Product list aur payment card milega; payment verify hone par hi order confirm hoga.",
       settings?.codEnabled ? "Confirm COD se order confirm hoga; delivery par payment dena hoga." : "Abhi COD service available nahi hai.",
     ].filter(Boolean).join("\n"), buttons);
   } catch (error) {
@@ -90,7 +91,7 @@ function orderReply(order, token) {
   if (order.paymentStatus === "cod") return reply(`*Order confirmed — Cash on Delivery*\nOrder ID: ${order.orderId}\nDelivery par ${money(order.total)} pay karein.`);
   if (["paid", "refunded"].includes(order.paymentStatus)) return reply(`Order ID: ${order.orderId}\nPayment: ${order.paymentStatus}\nOrder status: ${order.orderStatus}\nTotal: ${money(order.total)}`);
   if (order.paymentLinkExpiresAt && new Date(order.paymentLinkExpiresAt) <= new Date()) return reply(`Order ${order.orderId} ka payment link expire ho gaya. Order confirm nahi hua. Cancel unpaid tap karke naya order shuru kar sakte hain.`, [button("Cancel unpaid", "cancel", token)]);
-  return { ...reply(`Order ${order.orderId} *payment ka wait kar raha hai; confirm nahi hua*.\nTotal: ${money(order.total)}\n${order.paymentLinkUrl ? "WhatsApp payment card ke Pay now button se payment karein. Payment verify hone par confirmation milega." : "Payment request abhi taiyar nahi hua. Check payment button se retry karein."}`,
+  return { ...reply(`Order ${order.orderId} *payment ka wait kar raha hai; confirm nahi hua*.\nTotal: ${money(order.total)}\n${order.paymentLinkUrl ? "WhatsApp payment card ke Review and Pay button se payment karein. Payment verify hone par confirmation milega." : "Payment request abhi taiyar nahi hua. Check payment button se retry karein."}`,
     token ? [button("Check payment", "status", token), button("Cancel unpaid", "cancel", token)] : []),
     ...(order.paymentLinkUrl ? { paymentRequestOrderId: order.orderId } : {}) };
 }
@@ -121,7 +122,10 @@ async function ensurePaymentLink(order) {
   const found = await findPaymentLinks(order.orderId);
   const existing = (found.payment_links || []).find((link) => link.reference_id === order.orderId);
   const link = existing || await createPaymentLink({ amount: Math.round(order.total * 100), referenceId: order.orderId, customer: order.customer });
-  if (!link.id || !link.short_url || Number(link.amount) !== Math.round(order.total * 100) || link.currency !== "INR") throw new Error("Invalid payment link response");
+  if (!link.id || !link.short_url || link.reference_id !== order.orderId
+    || Number(link.amount) !== Math.round(order.total * 100) || link.currency !== "INR") {
+    throw new Error("Invalid payment link response");
+  }
   order.razorpayPaymentLinkId = link.id;
   order.paymentLinkUrl = link.short_url;
   order.paymentLinkExpiresAt = link.expire_by ? new Date(link.expire_by * 1000) : undefined;
@@ -137,6 +141,9 @@ async function handleCheckoutButton({ account, conversation, buttonReplyId }) {
   let order = await Order.findOne({ checkoutKey: `${conversation._id}:${token}` });
   if (order) {
     if (order.orderStatus === "cancelled") return orderReply(order, token);
+    if (order.razorpayOrderId && ["pending", "failed"].includes(order.paymentStatus)) {
+      return reply(`Order ${order.orderId} ka payment website par resume hua hai. Status ya payment ke liye View all orders kholein: https://prakashshop.in/orders`);
+    }
     if (order.paymentMethod === "online" && !["paid", "refunded"].includes(order.paymentStatus)) {
       try {
         await ensurePaymentLink(order);
@@ -178,6 +185,9 @@ async function handleCheckoutButton({ account, conversation, buttonReplyId }) {
     await require("./whatsappCheckoutIndexes").ensureWhatsAppCheckoutIndexes();
     if (action === "online") {
       const env = require("../config/env");
+      if (!env.metaCatalog.catalogId || quote.items.some((item) => !item.retailerId)) {
+        return reply("In products ki WhatsApp catalog listing abhi available nahi hai. Shop team se contact karein.");
+      }
       if (!env.razorpay.webhookSecret || !env.razorpay.keyId || !env.razorpay.keySecret) return reply("Online payments abhi available nahi hain. Shop team se contact karein; order confirm nahi hua.");
       try {
         await require("./whatsappPaymentRequestService").getPaymentTemplate({ account, settings });
@@ -224,4 +234,25 @@ async function handlePaymentLinkWebhook(event) {
   await confirmLinkPayment(order, link, payment);
 }
 
-module.exports = { previewCheckout, handleCheckoutButton, handlePaymentLinkWebhook, validLinkPayment, confirmLinkPayment, orderPatchSchema, fingerprint };
+async function resumeHostedPayment(order) {
+  await ensurePaymentLink(order);
+  const link = await getPaymentLink(order.razorpayPaymentLinkId);
+  if (link.id !== order.razorpayPaymentLinkId || link.reference_id !== order.orderId || Number(link.amount) !== Math.round(order.total * 100) || link.currency !== "INR") {
+    throw new AppError("This payment link could not be verified.", 409);
+  }
+  if (link.status === "paid" && link.payments?.length) {
+    const payment = await getRazorpayPayment(link.payments[0].payment_id);
+    await confirmLinkPayment(order, link, payment);
+    const current = await Order.findById(order._id);
+    return { order: current, processing: current.paymentStatus !== "paid" };
+  }
+  if (["expired", "cancelled"].includes(link.status) && Number(link.amount_paid || 0) === 0) return { order, expired: true };
+  if (link.status !== "created") return { order, processing: true };
+  const url = new URL(link.short_url);
+  if (url.protocol !== "https:" || url.username || url.password || !["rzp.io", "rzpy.in", "razorpay.me"].includes(url.hostname)) {
+    throw new AppError("This payment link could not be verified.", 409);
+  }
+  return { order, paymentUrl: url.href };
+}
+
+module.exports = { previewCheckout, handleCheckoutButton, handlePaymentLinkWebhook, validLinkPayment, confirmLinkPayment, orderPatchSchema, fingerprint, resumeHostedPayment };

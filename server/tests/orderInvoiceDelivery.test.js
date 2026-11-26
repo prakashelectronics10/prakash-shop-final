@@ -8,8 +8,32 @@ const WhatsAppAccount = require("../models/WhatsAppAccount");
 const WhatsAppConversation = require("../models/WhatsAppConversation");
 const WhatsAppMessage = require("../models/WhatsAppMessage");
 const { downloadPublicOrderInvoice } = require("../controllers/orderController");
-const { sendOrderInvoiceWhatsApp } = require("../services/whatsappTransactionalService");
+const { sendOrderInvoiceWhatsApp, sendPaymentReceivedWhatsApp } = require("../services/whatsappTransactionalService");
 const { getOrderInvoicePdf } = require("../services/orderInvoiceService");
+
+test("a cached legacy order invoice moves only the saved fee into the totals box", async (t) => {
+  const invoice = new Invoice({
+    orderId: "PE-LEGACY-FEE", invoiceNumber: "INV-LEGACY-FEE", paymentStatus: "paid",
+    items: [
+      { name: "Lamp", quantity: 1, unitPrice: 100, totalPrice: 100 },
+      { name: "Platform fee", quantity: 1, unitPrice: 3, totalPrice: 3 },
+    ],
+    totals: { subtotal: 103, grandTotal: 103 },
+  });
+  t.mock.method(Order, "findOne", () => ({ select: () => ({ lean: async () => ({
+    additionalCharges: [{ slug: "platform-fee", name: "Platform fee", amount: 3 }],
+  }) }) }));
+  t.mock.method(Invoice, "findById", () => ({ select: async () => ({ checkoutPdf: Buffer.from("old-layout") }) }));
+  t.mock.method(Invoice, "findOneAndUpdate", (filter, update) => ({
+    select: async () => {
+      assert.deepEqual(filter.$or[1], { checkoutPdfLayout: { $ne: update.$set.checkoutPdfLayout } });
+      return update.$set;
+    },
+  }));
+  const pdf = (await getOrderInvoicePdf(invoice)).toString("latin1");
+  assert.equal(pdf.match(/\(Platform fee\)/g)?.length, 1);
+  assert.match(pdf, /\(Subtotal\)[\s\S]*?\(Rs\. 100\.00\)[\s\S]*?\(Platform fee\)[\s\S]*?\(Rs\. 3\.00\)[\s\S]*?\(Grand Total\)[\s\S]*?\(Rs\. 103\.00\)/);
+});
 
 test("checkout and WhatsApp use the same branded PDF, sent to the entered WhatsApp number", async (t) => {
   const signature = await sharp({
@@ -126,6 +150,12 @@ test("checkout and WhatsApp use the same branded PDF, sent to the entered WhatsA
   const skipped = await sendOrderInvoiceWhatsApp({ order: { ...order, customer: { phone: order.customer.phone } }, invoice });
   assert.equal(skipped.reason, "whatsapp_number_missing");
   assert.equal(messages.length, 1);
+
+  await sendPaymentReceivedWhatsApp({ order });
+  assert.equal(messages[1].template.name, env.whatsapp.templates.paymentReceived);
+  assert.deepEqual(messages[1].template.components[1], {
+    type: "button", sub_type: "url", index: "0", parameters: [{ type: "text", text: order.orderId }],
+  });
 });
 
 test("checkout does not save an invoice with a missing configured signature", async (t) => {

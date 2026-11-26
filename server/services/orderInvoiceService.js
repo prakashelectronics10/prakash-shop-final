@@ -1,7 +1,9 @@
 const Counter = require("../models/Counter");
 const Invoice = require("../models/Invoice");
+const Order = require("../models/Order");
 const env = require("../config/env");
-const { calculateInvoiceTotals } = require("../utils/invoiceTotals");
+const { calculateInvoiceTotals, toMoneyNumber } = require("../utils/invoiceTotals");
+const { PLATFORM_FEE_SLUG } = require("./additionalChargeService");
 const { getInvoiceSettings } = require("./invoiceSettingService");
 const { generateInvoicePdf } = require("./invoicePdfService");
 
@@ -22,23 +24,49 @@ const ORDER_INVOICE_THEMES = new Map([
   ["violet", { primaryColor: "#7c3aed", accentColor: "#c084fc", buttonColor: "#6d28d9", headerColor: "#160f2e", textColor: "#151124", backgroundColor: "#fbf8ff" }],
 ]);
 
+function platformFeeCharge(order) {
+  return order?.additionalCharges?.find((charge) => charge.slug === PLATFORM_FEE_SLUG);
+}
+
+async function invoiceForPdf(invoice) {
+  const printable = invoice.toObject();
+  if (printable.totals?.platformFee != null || !printable.orderId
+    || !printable.items.some((item) => /^platform fee$/i.test(item.name))) return printable;
+
+  const order = await Order.findOne({ orderId: printable.orderId }).select("additionalCharges").lean();
+  const charge = platformFeeCharge(order);
+  if (!charge?.amount) return printable;
+  const index = printable.items.findLastIndex((item) => item.name === charge.name
+    && item.quantity === 1 && item.unitPrice === charge.amount && item.totalPrice === charge.amount);
+  if (index === -1) return printable;
+  printable.items.splice(index, 1);
+  printable.totals = { ...printable.totals,
+    subtotal: toMoneyNumber(printable.totals.subtotal - charge.amount), platformFee: charge.amount };
+  return printable;
+}
+
 async function getOrderInvoicePdf(invoice, requestedTheme = "blue") {
   const theme = ORDER_INVOICE_THEMES.get(requestedTheme) || BLUE_THEME;
+  const printable = await invoiceForPdf(invoice);
+  const feeLayout = printable.totals?.platformFee > 0;
+  const layout = 2;
   const render = () => generateInvoicePdf(
-    { ...invoice.toObject(), template: "minimal", theme },
+    { ...printable, template: "minimal", theme },
     { requireBranding: true },
   );
   if (theme !== BLUE_THEME) return render();
 
-  const readSaved = () => Invoice.findById(invoice._id).select("+checkoutPdf");
+  const readSaved = () => Invoice.findById(invoice._id).select("+checkoutPdf +checkoutPdfLayout");
   const existing = await readSaved();
-  if (existing?.checkoutPdf?.length) return existing.checkoutPdf;
+  if (existing?.checkoutPdf?.length && (!feeLayout || existing.checkoutPdfLayout === layout)) return existing.checkoutPdf;
 
   const pdf = await render();
   // A browser download and WhatsApp delivery can race. Both use the winning file.
   const saved = await Invoice.findOneAndUpdate(
-    { _id: invoice._id, checkoutPdf: { $exists: false } },
-    { $set: { checkoutPdf: pdf } },
+    { _id: invoice._id, ...(feeLayout
+      ? { $or: [{ checkoutPdf: { $exists: false } }, { checkoutPdfLayout: { $ne: layout } }] }
+      : { checkoutPdf: { $exists: false } }) },
+    { $set: { checkoutPdf: pdf, ...(feeLayout ? { checkoutPdfLayout: layout } : {}) } },
     { new: true, timestamps: false },
   ).select("+checkoutPdf");
   const checkoutPdf = saved?.checkoutPdf || (await readSaved())?.checkoutPdf;
@@ -69,7 +97,8 @@ function orderInvoiceItems(order) {
     // Website prices already include any applicable product tax.
     taxRate: 0,
   }));
-  const charges = (order.additionalCharges || []).filter((charge) => Number(charge.amount) > 0).map((charge) => ({
+  const charges = (order.additionalCharges || []).filter((charge) =>
+    charge.slug !== PLATFORM_FEE_SLUG && Number(charge.amount) > 0).map((charge) => ({
     name: charge.name,
     quantity: 1,
     unitPrice: charge.amount,
@@ -98,6 +127,9 @@ async function createOrderInvoice(order) {
   ].filter(Boolean).join(", ");
   const items = orderInvoiceItems(order);
   const calculated = calculateInvoiceTotals(items);
+  const platformFee = toMoneyNumber(platformFeeCharge(order)?.amount);
+  calculated.totals.platformFee = platformFee;
+  calculated.totals.grandTotal = toMoneyNumber(calculated.totals.grandTotal + platformFee);
   const invoiceNumber = await nextInvoiceNumber();
 
   try {

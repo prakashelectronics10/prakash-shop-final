@@ -210,7 +210,9 @@ function imagePreviewBlock(booking) {
   (booking.images || []).forEach((image, index) => {
     if (image.url) previews.push({ label: `Uploaded image ${index + 1}`, url: optimizedImageUrl(image.url) });
   });
-  if (booking.imageUrl) previews.push({ label: "Uploaded image", url: optimizedImageUrl(booking.imageUrl) });
+  if (booking.imageUrl && !booking.images?.some((image) => image.url === booking.imageUrl)) {
+    previews.push({ label: "Uploaded image", url: optimizedImageUrl(booking.imageUrl) });
+  }
 
   if (!previews.length) return "";
 
@@ -220,7 +222,6 @@ function imagePreviewBlock(booking) {
         <td>
           <h3 style="margin:0 0 12px;color:#0f172a;font-size:16px;">Image Preview</h3>
           ${previews
-            .slice(0, 6)
             .map((item) => `
               <div style="display:inline-block;width:154px;margin:0 10px 12px 0;vertical-align:top;">
                 <img src="${escapeHtml(item.url)}" alt="${escapeHtml(item.label)}" width="154" style="display:block;width:154px;max-width:154px;height:112px;object-fit:cover;border-radius:14px;border:1px solid #bfdbfe;background:#eff6ff;" />
@@ -245,6 +246,7 @@ function renderAdminBookingEmail({ booking, logoUrl }) {
     text: [
       subjectLine,
       `Customer: ${booking.fullName}`,
+      `Email: ${booking.customerEmail || "Not provided"}`,
       `Phone: ${booking.phoneNumber}`,
       `WhatsApp: ${booking.whatsappNumber}`,
       `Address: ${booking.address}`,
@@ -257,6 +259,7 @@ function renderAdminBookingEmail({ booking, logoUrl }) {
       `Status: ${statusLabel(booking.status)}`,
       `Source: ${booking.bookingSource || "manual"}`,
       `Booking ID: ${booking._id}`,
+      ...(booking.images || []).filter((image) => image.url).map((image, i) => `Photo ${i + 1}: ${image.url}`),
     ].join("\n"),
     html: `
       <div style="margin:0;padding:0;background:#eaf4ff;font-family:Arial,Helvetica,sans-serif;color:#0f172a;">
@@ -309,7 +312,7 @@ function renderAdminBookingEmail({ booking, logoUrl }) {
                     ${imagePreviewBlock(booking)}
 
                     <div style="margin-top:22px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:18px;padding:16px;color:#1e3a8a;font-size:13px;line-height:1.6;">
-                      This notification was generated automatically from the public website booking system. Open the admin panel to update status or contact the customer.
+                      Open this booking in the admin panel to update its status or contact the customer.
                     </div>
                   </td>
                 </tr>

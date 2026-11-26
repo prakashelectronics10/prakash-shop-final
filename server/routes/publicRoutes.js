@@ -14,6 +14,7 @@ const {
 const {
   sendWhatsAppOtp,
   verifyWhatsAppOtp,
+  getWhatsAppOtpDelivery,
 } = require("../controllers/customerWhatsAppOtpController");
 const { upload } = require("../controllers/uploadController");
 
@@ -32,6 +33,9 @@ const whatsappOtpVerifyLimiter = rateLimit({
   legacyHeaders: false,
   message: { success: false, message: "Too many verification attempts. Please try again later." },
 });
+const whatsappOtpDeliveryLimiter = rateLimit({
+  windowMs: 60000, limit: 30, standardHeaders: "draft-7", legacyHeaders: false,
+});
 
 router.get("/site", getSite);
 router.get("/products", getProducts);
@@ -42,6 +46,7 @@ router.post("/validate-address", validateBookingAddress);
 router.post("/suggest-addresses", suggestBookingAddresses);
 router.post("/whatsapp-otp/send", whatsappOtpSendLimiter, sendWhatsAppOtp);
 router.post("/whatsapp-otp/verify", whatsappOtpVerifyLimiter, verifyWhatsAppOtp);
+router.post("/whatsapp-otp/status", whatsappOtpDeliveryLimiter, getWhatsAppOtpDelivery);
 router.post("/bookings", upload.array("images", 8), createBooking);
 
 const analyticsRouter = express.Router();

@@ -17,6 +17,7 @@ const { priceOrderCoupons } = require("../services/couponService");
 const {
   createRazorpayOrder,
   getRazorpayPayment,
+  getRazorpayOrderPayments,
   verifyPaymentSignature,
   verifyWebhookSignature,
 } = require("../services/razorpayService");
@@ -29,6 +30,7 @@ const {
 const { logger } = require("../utils/logger");
 const Invoice = require("../models/Invoice");
 const { createOrderInvoice, getOrderInvoicePdf, orderInvoicePath } = require("../services/orderInvoiceService");
+const { verifiedOrderHistoryNumber, exchangeOrderHistoryLink } = require("../services/customerWhatsAppOtpService");
 
 const ORDER_STATUSES = ["confirmed", "shipped", "out_for_delivery", "delivered"];
 
@@ -76,6 +78,8 @@ function productQuery(item = {}) {
   return clauses.length ? { $or: clauses, isActive: true } : { _id: null };
 }
 
+const { catalogRetailerId } = require("../services/metaCatalogMapper");
+
 async function resolveOrderItems(rawItems = []) {
   if (!Array.isArray(rawItems) || !rawItems.length || rawItems.length > 50) {
     throw new AppError("Your cart must contain between 1 and 50 products", 400);
@@ -111,6 +115,7 @@ async function resolveOrderItems(rawItems = []) {
         unitPrice: variant.pricing.price,
         quantity,
         lineTotal: Number((variant.pricing.price * quantity).toFixed(2)),
+        retailerId: catalogRetailerId(product, variant.combination),
         variantCombinationId: variant.combination.id,
         variantSku: variant.sku,
         variantSummary: variant.summary,
@@ -135,6 +140,7 @@ async function resolveOrderItems(rawItems = []) {
       unitPrice,
       quantity,
       lineTotal: Number((unitPrice * quantity).toFixed(2)),
+      retailerId: catalogRetailerId(product),
       variantCombinationId: "",
       variantSku: "",
       variantSummary: "",
@@ -149,7 +155,7 @@ async function buildOrderQuote(rawItems, couponCode = "") {
   const subtotal = Number(items.reduce((sum, item) => sum + item.lineTotal, 0).toFixed(2));
   const discountedSubtotal = Number(items.reduce((sum, item) => sum + item.discountedLineTotal, 0).toFixed(2));
   const discountTotal = Number((subtotal - discountedSubtotal).toFixed(2));
-  const additionalCharges = await getOrderChargeSnapshots();
+  const additionalCharges = await getOrderChargeSnapshots(subtotal);
   const additionalChargesTotal = Number(additionalCharges.reduce((sum, charge) => sum + charge.amount, 0).toFixed(2));
   const deliveryCharge = additionalCharges.find((charge) => charge.slug === "delivery-charge")?.amount || 0;
   const applied = items.filter((item) => item.coupon);
@@ -209,6 +215,155 @@ function publicOrder(order) {
   };
 }
 
+const RETRYABLE_PAYMENT_STATES = ["pending", "failed"];
+
+function paymentMatches(order, payment) {
+  return Boolean(payment?.id && payment.order_id === order.razorpayOrderId
+    && payment.currency === "INR" && Number(payment.amount) === Math.round(order.total * 100));
+}
+
+async function confirmCapturedOrder(order, payment) {
+  const now = new Date();
+  const confirmed = await Order.findOneAndUpdate({
+    _id: order._id, razorpayOrderId: order.razorpayOrderId,
+    paymentStatus: { $in: RETRYABLE_PAYMENT_STATES }, orderStatus: "awaiting_payment",
+  }, { $set: {
+    paymentStatus: "paid", orderStatus: "confirmed", razorpayPaymentId: payment.id, paidAt: now,
+    invoiceWhatsAppNextAttemptAt: now, statusUpdatedAt: now,
+  } }, { new: true });
+  if (confirmed) {
+    enqueueOrderPaidNotification(confirmed);
+    void createOrderInvoice(confirmed).catch((error) => {
+      logger.error("order.invoice_create_failed", { orderId: confirmed.orderId, message: error.message });
+    });
+  }
+  return confirmed || await Order.findById(order._id);
+}
+
+async function reconcileOrderPayment(order) {
+  if (!RETRYABLE_PAYMENT_STATES.includes(order.paymentStatus) || !order.razorpayOrderId) {
+    return { order, processing: false, failed: false };
+  }
+  const payments = await getRazorpayOrderPayments(order.razorpayOrderId);
+  if (!Array.isArray(payments.items)) throw new AppError("Payment status could not be verified.", 502);
+  const attempts = payments.items.filter((payment) => payment?.order_id === order.razorpayOrderId);
+  const matching = attempts.filter((payment) => paymentMatches(order, payment));
+  const captured = matching.find((payment) => payment.status === "captured");
+  if (captured) return { order: await confirmCapturedOrder(order, captured), processing: false, failed: false };
+  return {
+    order,
+    processing: attempts.some((payment) => ["authorized", "created", "captured"].includes(payment.status)),
+    failed: matching.some((payment) => payment.status === "failed"),
+  };
+}
+
+async function findCheckoutPayment(body) {
+  const orderId = String(body.orderId || "").trim().toUpperCase();
+  const razorpayOrderId = String(body.razorpayOrderId || "").trim();
+  if (!orderId || !/^order_[A-Za-z0-9]+$/.test(razorpayOrderId)) throw new AppError("Payment session not found", 404);
+  const order = await Order.findOne({ orderId, razorpayOrderId });
+  if (!order) throw new AppError("Payment session not found", 404);
+  return order;
+}
+
+function paymentState(res, order, processing = false) {
+  res.set("Cache-Control", "no-store");
+  return res.json({ success: true, data: {
+    orderId: order.orderId, paymentStatus: order.paymentStatus, processing,
+    order: ["paid", "refunded"].includes(order.paymentStatus) ? publicOrder(order) : undefined,
+  } });
+}
+
+exports.getCheckoutPaymentStatus = asyncHandler(async (req, res) => {
+  const { order, processing } = await reconcileOrderPayment(await findCheckoutPayment(req.body));
+  if (req.body.resume === true && !processing && RETRYABLE_PAYMENT_STATES.includes(order.paymentStatus)) {
+    if (order.orderStatus !== "awaiting_payment") throw new AppError("This order is no longer eligible for payment.", 409);
+    await resolveOrderItems(order.items);
+  }
+  return paymentState(res, order, processing);
+});
+
+async function ownedOrderFilter(body) {
+  const number = await verifiedOrderHistoryNumber(body);
+  return { "customer.whatsappNumber": { $in: [number, `91${number}`, `+91${number}`] } };
+}
+
+exports.exchangeCustomerOrderLink = asyncHandler(async (req, res) => {
+  res.set("Cache-Control", "no-store");
+  res.json({ success: true, data: await exchangeOrderHistoryLink(req.body?.code, req.body?.browserToken) });
+});
+
+exports.getCustomerOrders = asyncHandler(async (req, res) => {
+  const filter = await ownedOrderFilter(req.body);
+  const cursor = String(req.body.cursor || "");
+  if (cursor && !/^[a-f0-9]{24}$/i.test(cursor)) throw new AppError("Invalid order history cursor", 400);
+  if (cursor) filter._id = { $lt: cursor };
+  const limit = 20;
+  const orders = await Order.find(filter).sort({ _id: -1 }).limit(limit + 1).lean();
+  const page = orders.slice(0, limit);
+  const invoices = await Invoice.find({ orderId: { $in: page.map((order) => order.orderId) } }).select("orderId invoiceNumber").lean();
+  const invoiceNumbers = new Map(invoices.map((invoice) => [invoice.orderId, invoice.invoiceNumber]));
+  await Promise.all(page.filter((order) => order.paymentStatus === "paid" && !invoiceNumbers.has(order.orderId)).map(async (order) => {
+    try {
+      const invoice = await createOrderInvoice(order);
+      if (invoice) invoiceNumbers.set(order.orderId, invoice.invoiceNumber);
+    } catch (error) {
+      logger.warn("order.history_invoice_unavailable", { orderId: order.orderId, detail: error.message });
+    }
+  }));
+  res.set("Cache-Control", "no-store");
+  res.json({ success: true, data: {
+    orders: page.map((order) => ({
+      ...publicOrder(order),
+      placedAt: order.createdAt,
+      invoiceNumber: invoiceNumbers.get(order.orderId) || "",
+      canPay: order.paymentMethod !== "cod" && RETRYABLE_PAYMENT_STATES.includes(order.paymentStatus) && order.orderStatus === "awaiting_payment",
+    })),
+    nextCursor: orders.length > limit ? String(page.at(-1)._id) : "",
+  } });
+});
+
+exports.retryCustomerOrderPayment = asyncHandler(async (req, res) => {
+  const filter = await ownedOrderFilter(req.body);
+  const orderId = String(req.params.orderId || "").trim().toUpperCase();
+  let original = await Order.findOne({ ...filter, orderId });
+  if (!original) throw new AppError("Order not found", 404);
+  res.set("Cache-Control", "no-store");
+  if (original.paymentMethod === "cod" || !RETRYABLE_PAYMENT_STATES.includes(original.paymentStatus) || original.orderStatus !== "awaiting_payment") {
+    return paymentState(res, original);
+  }
+  if (original.source === "whatsapp" && !original.razorpayOrderId) {
+    const { order, paymentUrl, processing, expired } = await require("../services/whatsappCheckoutService").resumeHostedPayment(original);
+    if (paymentUrl) {
+      await resolveOrderItems(order.items);
+      return res.json({ success: true, data: { paymentUrl } });
+    }
+    if (!expired) return paymentState(res, order, processing);
+    await resolveOrderItems(order.items);
+    const providerOrder = await createRazorpayOrder({
+      amount: Math.round(order.total * 100), receipt: order.orderId, notes: { internalOrderId: order.orderId },
+    });
+    original = await Order.findOneAndUpdate({
+      _id: order._id, razorpayOrderId: { $in: ["", null] }, razorpayPaymentLinkId: order.razorpayPaymentLinkId,
+      paymentStatus: { $in: RETRYABLE_PAYMENT_STATES }, orderStatus: "awaiting_payment",
+    }, { $set: { razorpayOrderId: providerOrder.id } }, { new: true }) || await Order.findById(order._id);
+  }
+  const { order, processing } = await reconcileOrderPayment(original);
+  if (processing || !RETRYABLE_PAYMENT_STATES.includes(order.paymentStatus) || order.orderStatus !== "awaiting_payment") {
+    return paymentState(res, order, processing);
+  }
+  if (!order.razorpayOrderId) throw new AppError("This payment session is unavailable. Please contact the shop.", 409);
+  await resolveOrderItems(order.items);
+  return res.json({ success: true, data: {
+    orderId: order.orderId,
+    razorpayOrderId: order.razorpayOrderId,
+    keyId: env.razorpay.keyId,
+    amount: Math.round(order.total * 100),
+    currency: order.currency,
+    customer: { name: order.customer.name, phone: order.customer.phone },
+  } });
+});
+
 exports.createPaymentOrder = asyncHandler(async (req, res) => {
   const customer = sanitizeCustomer(req.body.customer);
   const { items, subtotal, discountedSubtotal, coupon, discountTotal, additionalCharges, deliveryCharge, total } = await buildOrderQuote(req.body.items, req.body.couponCode);
@@ -263,40 +418,25 @@ exports.createPaymentOrder = asyncHandler(async (req, res) => {
 });
 
 exports.markPaymentFailed = asyncHandler(async (req, res) => {
-  const orderId = String(req.body.orderId || "").trim().toUpperCase();
-  if (!orderId) throw new AppError("Order ID is required", 400);
-  const order = await Order.findOne({ orderId });
-  if (!order) throw new AppError("Order not found", 404);
-  if (["paid", "refunded", "cod"].includes(order.paymentStatus) || order.source === "whatsapp") {
-    return res.json({ success: true, data: { orderId: order.orderId, paymentStatus: order.paymentStatus, notified: false } });
-  }
-
-  if (order.paymentStatus !== "failed") {
-    order.paymentStatus = "failed";
-    await order.save();
-  }
-
-  let notified = false;
-  if (!order.whatsappPaymentFailedNotifiedAt) {
-    order.whatsappPaymentFailedNotifiedAt = new Date();
-    await order.save();
+  const { order, processing, failed } = await reconcileOrderPayment(await findCheckoutPayment(req.body));
+  if (processing || !failed) return paymentState(res, order, processing);
+  const claimed = await Order.findOneAndUpdate({
+    _id: order._id, paymentStatus: { $in: RETRYABLE_PAYMENT_STATES },
+    orderStatus: "awaiting_payment", whatsappPaymentFailedNotifiedAt: null,
+  }, { $set: { paymentStatus: "failed", whatsappPaymentFailedNotifiedAt: new Date() } }, { new: true });
+  if (claimed) {
     try {
-      await sendPaymentUnsuccessfulWhatsApp({ order });
-      notified = true;
+      await sendPaymentUnsuccessfulWhatsApp({ order: claimed });
     } catch (error) {
       logger.error("whatsapp.payment_failed_notify_error", {
-        orderId: order.orderId,
+        orderId: claimed.orderId,
         message: error.message,
       });
-      order.whatsappPaymentFailedNotifiedAt = null;
-      await order.save().catch(() => undefined);
+      await Order.updateOne({ _id: claimed._id, paymentStatus: "failed" },
+        { $set: { whatsappPaymentFailedNotifiedAt: null } }).catch(() => undefined);
     }
   }
-
-  res.json({
-    success: true,
-    data: { orderId: order.orderId, paymentStatus: order.paymentStatus, notified },
-  });
+  return paymentState(res, claimed || await Order.findById(order._id));
 });
 
 exports.getOrderQuote = asyncHandler(async (req, res) => {
@@ -317,53 +457,22 @@ exports.getOrderQuote = asyncHandler(async (req, res) => {
 });
 
 exports.verifyPayment = asyncHandler(async (req, res) => {
-  const orderId = String(req.body.orderId || "").trim().toUpperCase();
-  const razorpayOrderId = String(req.body.razorpayOrderId || "").trim();
+  const order = await findCheckoutPayment(req.body);
+  const { razorpayOrderId } = order;
   const razorpayPaymentId = String(req.body.razorpayPaymentId || "").trim();
   const signature = String(req.body.razorpaySignature || "").trim();
-  const order = await Order.findOne({ orderId });
-  if (!order || order.source === "whatsapp" || order.razorpayOrderId !== razorpayOrderId) throw new AppError("Order verification failed", 400);
-  if (["paid", "refunded"].includes(order.paymentStatus)) {
-    if (order.paymentStatus === "paid") {
-      try { await createOrderInvoice(order); } catch (error) {
-        logger.error("order.invoice_create_failed", { orderId: order.orderId, message: error.message });
-      }
-    }
-    return res.json({ success: true, data: publicOrder(order) });
-  }
   if (!verifyPaymentSignature({ razorpayOrderId, razorpayPaymentId, signature })) {
-    order.paymentStatus = "failed";
-    await order.save();
-    if (!order.whatsappPaymentFailedNotifiedAt) {
-      order.whatsappPaymentFailedNotifiedAt = new Date();
-      await order.save();
-      sendPaymentUnsuccessfulWhatsApp({ order }).catch((error) => {
-        logger.error("whatsapp.payment_failed_notify_error", { orderId: order.orderId, message: error.message });
-      });
-    }
     throw new AppError("Payment signature could not be verified", 400);
   }
-  const payment = await getRazorpayPayment(razorpayPaymentId);
-  const validProviderPayment = payment.order_id === razorpayOrderId
-    && payment.currency === "INR"
-    && Number(payment.amount) === Math.round(order.total * 100)
-    && payment.status === "captured";
-  if (!validProviderPayment) throw new AppError("Payment details do not match this order", 400);
-
-  order.paymentStatus = "paid";
-  order.orderStatus = "confirmed";
-  order.razorpayPaymentId = razorpayPaymentId;
-  order.paidAt = new Date();
-  order.invoiceWhatsAppNextAttemptAt = new Date();
-  order.statusUpdatedAt = new Date();
-  await order.save();
-  try {
-    await createOrderInvoice(order);
-  } catch (error) {
-    logger.error("order.invoice_create_failed", { orderId: order.orderId, message: error.message });
+  if (["paid", "refunded"].includes(order.paymentStatus)) {
+    return res.json({ success: true, data: publicOrder(order) });
   }
-  enqueueOrderPaidNotification(order);
-  res.json({ success: true, data: publicOrder(order) });
+  const payment = await getRazorpayPayment(razorpayPaymentId);
+  if (!paymentMatches(order, payment) || payment.id !== razorpayPaymentId) throw new AppError("Payment details do not match this order", 400);
+  if (payment.status !== "captured") throw new AppError("Your payment is still being verified.", 409);
+  const confirmed = await confirmCapturedOrder(order, payment);
+  if (!["paid", "refunded"].includes(confirmed?.paymentStatus)) throw new AppError("Your payment is still being verified.", 409);
+  res.json({ success: true, data: publicOrder(confirmed) });
 });
 
 exports.handleRazorpayWebhook = asyncHandler(async (req, res) => {
@@ -373,30 +482,19 @@ exports.handleRazorpayWebhook = asyncHandler(async (req, res) => {
   }
   const event = JSON.parse(req.body.toString("utf8"));
   await require("../services/whatsappCheckoutService").handlePaymentLinkWebhook(event);
-  if (event.event === "payment.captured") {
+  if (["payment.captured", "payment.failed"].includes(event.event)) {
     const payment = event.payload?.payment?.entity;
     if (payment?.order_id && payment?.id) {
-      const order = await Order.findOne({ razorpayOrderId: payment.order_id, source: { $ne: "whatsapp" } });
-      if (
-        order
-        && payment.status === "captured"
-        && payment.currency === "INR"
-        && Number(payment.amount) === Math.round(order.total * 100)
-        && !["paid", "refunded"].includes(order.paymentStatus)
-      ) {
-        order.paymentStatus = "paid";
-        order.orderStatus = "confirmed";
-        order.razorpayPaymentId = payment.id;
-        order.paidAt = payment.created_at ? new Date(payment.created_at * 1000) : new Date();
-        order.invoiceWhatsAppNextAttemptAt = new Date();
-        order.statusUpdatedAt = new Date();
-        await order.save();
-        try {
-          await createOrderInvoice(order);
-        } catch (error) {
-          logger.error("order.invoice_create_failed", { orderId: order.orderId, message: error.message });
+      const order = await Order.findOne({ razorpayOrderId: payment.order_id });
+      if (order && paymentMatches(order, payment) && RETRYABLE_PAYMENT_STATES.includes(order.paymentStatus)) {
+        if (event.event === "payment.captured" && payment.status === "captured") {
+          await confirmCapturedOrder(order, payment);
+        } else if (event.event === "payment.failed" && payment.status === "failed") {
+          await Order.updateOne(
+            { _id: order._id, paymentStatus: "pending", orderStatus: "awaiting_payment" },
+            { $set: { paymentStatus: "failed" } },
+          );
         }
-        enqueueOrderPaidNotification(order);
       }
     }
   }

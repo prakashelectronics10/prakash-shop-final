@@ -33,6 +33,7 @@ async function connectDB() {
   logger.info("mongodb.order_invoice_indexes_ready");
   await require("../models/Order").collection.createIndex({ invoiceWhatsAppNextAttemptAt: 1 }, { sparse: true });
   await require("../models/InvoiceSetting").collection.createIndex({ key: 1 }, { unique: true });
+  await require("../models/WhatsAppDeliveryReceipt").collection.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
   const cleanup = await revokeAllAdminSessionsOnce();
   if (!cleanup.skipped) {
     logger.info("mongodb.admin_sessions_revoked_once", { modifiedCount: cleanup.modifiedCount });

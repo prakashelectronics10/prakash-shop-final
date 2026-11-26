@@ -58,6 +58,7 @@ const invoiceSchema = new mongoose.Schema(
       subtotal: { type: Number, min: 0, default: 0 },
       discountTotal: { type: Number, min: 0, default: 0 },
       taxTotal: { type: Number, min: 0, default: 0 },
+      platformFee: { type: Number, min: 0 },
       grandTotal: { type: Number, min: 0, default: 0 },
     },
     template: {
@@ -78,6 +79,7 @@ const invoiceSchema = new mongoose.Schema(
     signatureUrl: { type: String, trim: true, default: "" },
     pdfUrl: { type: String, trim: true, default: "" },
     checkoutPdf: { type: Buffer, select: false },
+    checkoutPdfLayout: { type: Number, select: false },
     pdfFileAsset: { type: mongoose.Schema.Types.ObjectId, ref: "FileAsset", default: null },
     pdfFile: {
       fileName: { type: String, trim: true, default: "" },

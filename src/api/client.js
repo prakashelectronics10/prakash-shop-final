@@ -112,7 +112,7 @@ export async function apiRequest(path, options = {}) {
 
     payload ??= await response.json().catch(() => ({}));
     if (!response.ok) {
-      throw new Error(payload.message || "Request failed");
+      throw Object.assign(new Error(payload.message || "Request failed"), { status: response.status });
     }
 
     if (shouldCache(method, options)) {

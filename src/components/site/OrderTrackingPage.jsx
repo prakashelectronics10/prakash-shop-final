@@ -7,6 +7,7 @@ import trackOrderHero from "../../assets/track-order-hero.webp";
 import { Navbar } from "./Navbar";
 import { Footer } from "./Footer";
 import { OptimizedImage } from "./OptimizedImage";
+import { OrderHistory } from "./OrderHistory";
 import "./OrderExperience.css";
 
 const STEPS = [
@@ -73,8 +74,9 @@ function CustomerDetails({ customer }) {
   );
 }
 
-function OrderResult({ order, invoiceTheme, onInvoiceThemeChange }) {
+function OrderResult({ order, invoiceTheme, onInvoiceThemeChange, inSheet = false }) {
   const activeIndex = order.orderStatus === "cancelled" ? -1 : STEPS.findIndex((step) => step.key === order.orderStatus);
+  const unpaid = ["failed", "pending"].includes(order.paymentStatus);
   const chargeRows = Array.isArray(order.additionalCharges) && order.additionalCharges.length
     ? order.additionalCharges
     : [{ name: "Delivery charge", slug: "delivery-charge", amount: order.deliveryCharge || 0 }];
@@ -84,8 +86,7 @@ function OrderResult({ order, invoiceTheme, onInvoiceThemeChange }) {
     <section className="tracking-result">
       <header className="tracking-order-head">
         <div>
-          <p className="order-kicker">Order details</p>
-          <h2>{order.orderId}</h2>
+          {!inSheet && <><p className="order-kicker">Order details</p><h2>{order.orderId}</h2></>}
           <span>Placed {formatDate(order.placedAt)}</span>
         </div>
         <strong className={`tracking-status-pill ${order.orderStatus}`}>{order.orderStatus.replaceAll("_", " ")}</strong>
@@ -131,6 +132,8 @@ function OrderResult({ order, invoiceTheme, onInvoiceThemeChange }) {
               <strong>This order has been cancelled.</strong>
               <span>{order.refund?.status === "processed" ? "Your refund has been processed." : order.refund?.status === "failed" ? "The refund needs administrator attention. Please contact the shop with your Order ID." : "Your refund has been initiated and normally appears in 5–7 working days."}</span>
             </div>
+          ) : unpaid ? (
+            <p>Fulfilment will begin after payment is confirmed.</p>
           ) : (
             <ol className="order-timeline">
               {STEPS.map((step, index) => {
@@ -158,12 +161,12 @@ function OrderResult({ order, invoiceTheme, onInvoiceThemeChange }) {
               <strong>{Number(charge.amount || 0) ? formatINR(charge.amount) : "Free"}</strong>
             </p>
           ))}
-          <p className="tracking-total"><span>{order.paymentMethod === "cod" ? "Due on delivery" : "Paid total"}</span><strong>{formatINR(order.total)}</strong></p>
-          <small><Check size={15} /> {order.paymentMethod === "cod" ? "Cash on delivery — payment due" : "Payment verified"}</small>
+          <p className="tracking-total"><span>{order.paymentMethod === "cod" ? "Due on delivery" : unpaid ? "Amount due" : order.paymentStatus === "refunded" ? "Order total" : "Paid total"}</span><strong>{formatINR(order.total)}</strong></p>
+          {!unpaid && <small><Check size={15} /> {order.paymentMethod === "cod" ? "Cash on delivery — payment due" : order.paymentStatus === "refunded" ? "Refund processed" : "Payment verified"}</small>}
           {order.invoiceDownloadUrl && (
             <div className="tracking-invoice-actions">
-              <label htmlFor="tracking-invoice-template">Invoice theme</label>
-              <select id="tracking-invoice-template" value={invoiceTheme} onChange={(event) => onInvoiceThemeChange(event.target.value)}>
+              <label htmlFor={inSheet ? "history-invoice-template" : "tracking-invoice-template"}>Invoice theme</label>
+              <select id={inSheet ? "history-invoice-template" : "tracking-invoice-template"} value={invoiceTheme} onChange={(event) => onInvoiceThemeChange(event.target.value)}>
                 {invoiceThemePresets.map((preset) => <option key={preset.name} value={preset.name.toLowerCase().replace("neon ", "")}>{preset.name}{preset.name === "Neon Blue" ? " (Default)" : ""}</option>)}
               </select>
               <a href={`${apiUrl(order.invoiceDownloadUrl)}?theme=${encodeURIComponent(invoiceTheme)}`} download={`Invoice-${order.orderId}.pdf`}>
@@ -239,6 +242,9 @@ export function OrderTrackingPage() {
             {error && <small role="alert">{error}</small>}
           </form>
         </header>
+        <OrderHistory renderDetails={(selected) => (
+          <OrderResult order={selected} invoiceTheme={invoiceTheme} onInvoiceThemeChange={setInvoiceTheme} inSheet />
+        )} />
         {order && <OrderResult order={order} invoiceTheme={invoiceTheme} onInvoiceThemeChange={setInvoiceTheme} />}
       </main>
       <Footer />

@@ -40,6 +40,27 @@ test("missing account activation blocks payment templates before API access", as
   await assert.rejects(getPaymentTemplate({ account: {}, settings: { enhancedPaymentsEnabled: false } }), /activated/);
 });
 
+test("order card uses the approved template ID, language and declared customer parameter", async (t) => {
+  const { orderDetailsComponents } = require("../services/whatsappPaymentRequestService");
+  const approved = { name: "order_details_with_product_list", status: "APPROVED", language: "en_IN",
+    components: [{ type: "HEADER", format: "IMAGE" }, { type: "BODY", text: "Hi {{customer_name}}" },
+      { type: "BUTTONS", buttons: [{ type: "ORDER_DETAILS" }] }] };
+  t.mock.method(global, "fetch", async (url) => {
+    assert.match(new URL(url).pathname, /\/1468551722067479$/);
+    return Response.json(approved);
+  });
+  const args = { account: { accessToken: "test" }, settings: { enhancedPaymentsEnabled: true } };
+  const order = { orderId: "PE123", items: [], customer: { name: "Rahul", address: "Main Road" },
+    subtotal: 0, total: 0, paymentLinkUrl: "https://rzp.io/i/abc" };
+  const config = await getPaymentTemplate(args);
+  assert.equal(config.language, "en_IN");
+  assert.deepEqual(orderDetailsComponents(order, config)[1].parameters,
+    [{ type: "text", text: "Rahul", parameter_name: "customer_name" }]);
+  approved.components[1].text = "Review your order below";
+  const components = orderDetailsComponents(order, await getPaymentTemplate(args));
+  assert.deepEqual(components.map((component) => component.type), ["header", "button"]);
+});
+
 test("payment request sends a template, records its ID, and reuses the sent card on retries", async (t) => {
   const Order = require("../models/Order");
   const Settings = require("../models/WhatsAppAISettings");
@@ -65,4 +86,23 @@ test("payment request sends a template, records its ID, and reuses the sent card
   assert.equal(messagesSent, 1);
   assert.equal(order.paymentRequestMessageId, "wamid.payment-card");
   assert.equal(records.at(-1).meta.kind, "payment_request");
+});
+
+test("order details template carries the catalog variant, product image and exact INR totals", () => {
+  const { orderDetailsComponents } = require("../services/whatsappPaymentRequestService");
+  const components = orderDetailsComponents({
+    orderId: "PE0123", customer: { name: "Rahul", address: "Main Road", pincode: "825101" },
+    paymentLinkUrl: "https://rzp.io/rzp/abc", total: 210.5, subtotal: 200.5, discountTotal: 10,
+    additionalCharges: [{ name: "Delivery", amount: 20 }],
+    items: [{ productName: "Fan", variantSummary: "Blue", retailerId: "FAN-BLUE",
+      productImageUrl: "https://shop.test/blue.jpg", unitPrice: 100.25, quantity: 2 }],
+  });
+  assert.equal(components[0].parameters[0].image.link, "https://shop.test/blue.jpg");
+  assert.equal(components[1].parameters[0].text, "Rahul");
+  assert.equal(components[2].sub_type, "order_details");
+  const details = components[2].parameters[0].action.order_details;
+  assert.equal(details.order.items[0].retailer_id, "FAN-BLUE");
+  assert.equal(details.order.items[0].amount.value * details.order.items[0].quantity, details.order.subtotal.value);
+  assert.equal(details.total_amount.value, details.order.subtotal.value + details.order.shipping.value - details.order.discount.value);
+  assert.equal(details.payment_settings[0].payment_link.uri, "https://rzp.io/rzp/abc");
 });

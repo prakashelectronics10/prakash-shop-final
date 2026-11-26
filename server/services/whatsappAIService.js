@@ -5,7 +5,7 @@ const ProjectPart = require("../models/ProjectPart");
 const WhatsAppAISettings = require("../models/WhatsAppAISettings");
 const WhatsAppMessage = require("../models/WhatsAppMessage");
 const { getPulseAIKnowledge } = require("./pulseAIKnowledgeService");
-const { requestGeminiWithRetry, isRetryableGeminiError } = require("./geminiClient");
+const { requestGeminiWithRetry } = require("./geminiClient");
 const {
   sendTextMessage,
   sendImageMessage,
@@ -22,12 +22,35 @@ const Order = require("../models/Order");
 const { publishMessage, publishConversationUpsert } = require("./whatsappRealtimeService");
 const { serializeMessage, serializeConversation } = require("./whatsappConversationService");
 
-const FALLBACK_MODELS = ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-2.5-flash"];
+const FALLBACK_MODELS = ["gemini-3.5-flash-lite", "gemini-3.5-flash"];
+const modelCooldowns = new Map();
 
 function extractGeminiText(data) {
   const parts = data?.candidates?.[0]?.content?.parts;
   if (!Array.isArray(parts)) return "";
-  return parts.map((part) => part.text || "").join("\n").trim();
+  return parts.filter((part) => !part?.thought && typeof part?.text === "string").map((part) => part.text).join("\n").trim();
+}
+
+function fallbackReply(conversation, customerMessage) {
+  const site = String(env.productionUrl || "https://prakashshop.in").replace(/\/$/, "");
+  let text = "Pulse AI abhi busy hai. Thodi der mein dobara message bhejein, ya Prakash Electronics se contact karein: " + site + "/contact";
+  if (/\b(?:track|tracking|order status)\b/i.test(customerMessage)) {
+    text = "Order ka status aur invoice yahan check karein: " + site + "/orders";
+  } else if (/\b(?:book|repair|service)\b/i.test(customerMessage)) {
+    text = "Repair booking yahin shuru karne ke liye REPAIR likhein.";
+  } else if (/^(?:hi|hey|hello|hii|namaste)[!.\s]*$/i.test(customerMessage)) {
+    text = "Namaste! Prakash Electronics mein aapka swagat hai. Products, repair ya order status mein kis cheez ki help chahiye?";
+  }
+  return { text, images: [], buttons: [], memory: conversation.conversationMemory || {}, model: "local-fallback" };
+}
+
+function isButtonUrl(value) {
+  try {
+    const url = new URL(value);
+    return ["https:", "http:"].includes(url.protocol) && !url.username && !url.password;
+  } catch (_error) {
+    return false;
+  }
 }
 
 function extractJsonBlock(text, label) {
@@ -156,11 +179,19 @@ async function generateWhatsAppAIReply({
   settings,
   mediaPart,
 }) {
-  const knowledge = await getPulseAIKnowledge();
-  const imageCatalog = await loadImageCatalog();
-  const history = await buildHistoryForModel(conversation._id);
-  const existingOrder = conversation.checkout?.orderId
-    ? await Order.findOne({ orderId: conversation.checkout.orderId, whatsappConversation: conversation._id }).select("orderId paymentStatus orderStatus total").lean() : null;
+  const apiKey = env.geminiApiKey;
+  const models = [...new Set([env.geminiModel, ...FALLBACK_MODELS].filter(Boolean))]
+    .filter((model) => (modelCooldowns.get(model) || 0) <= Date.now());
+  if (!apiKey || !models.length) return fallbackReply(conversation, customerMessage);
+
+  const [knowledge, imageCatalog, history, existingOrder] = await Promise.all([
+    getPulseAIKnowledge(),
+    loadImageCatalog(),
+    buildHistoryForModel(conversation._id),
+    conversation.checkout?.orderId
+      ? Order.findOne({ orderId: conversation.checkout.orderId, whatsappConversation: conversation._id }).select("orderId paymentStatus orderStatus total").lean()
+      : null,
+  ]);
   const maxImages = Math.max(0, Math.min(5, Number(settings.maxImagesPerReply ?? 3)));
 
   const flowHint = conversation.flowState?.type
@@ -224,17 +255,6 @@ WHATSAPP_BUTTONS: [{"label":"max 20 chars","type":"url|quick_reply|copy_code","u
 CONVERSATION_MEMORY: {"summary":"...","importantFacts":[],"openTopics":[]}
 `;
 
-  const apiKey = env.geminiApiKey;
-  if (!apiKey) {
-    return {
-      text: "Thanks for messaging Prakash Electronics. Our assistant is briefly unavailable — please share what you need and our team will help shortly.",
-      images: [],
-      buttons: [],
-      memory: conversation.conversationMemory || {},
-      model: "local-fallback",
-    };
-  }
-
   const contents = history.slice(-14).map((item) => ({
     role: item.role,
     parts: [{ text: String(item.text || "").slice(0, 4000) }],
@@ -243,29 +263,30 @@ CONVERSATION_MEMORY: {"summary":"...","importantFacts":[],"openTopics":[]}
 
   const requestBody = JSON.stringify({
     contents,
-    generationConfig: { maxOutputTokens: 1400 },
+    generationConfig: { maxOutputTokens: 2500 },
     systemInstruction: { parts: [{ text: systemPrompt }] },
   });
 
-  const models = Array.from(new Set([env.geminiModel, ...FALLBACK_MODELS].filter(Boolean)));
-  const geminiResult = await requestGeminiWithRetry({ apiKey, models, requestBody });
-
-  if (!geminiResult.response?.ok) {
-    const err = geminiResult.error;
-    if (err && (isRetryableGeminiError(err) || Number(err.status) >= 500)) {
-      return {
-        text: "Thanks for your message. Please give us a moment — a team member or assistant will reply shortly.",
-        images: [],
-        buttons: [],
-        memory: conversation.conversationMemory || {},
-        model: "local-fallback",
-      };
-    }
-    throw err || new Error("Gemini unavailable");
+  const geminiResult = await requestGeminiWithRetry({
+    apiKey, models, requestBody, readResponseBody: true, attemptsPerModel: 1,
+    attemptTimeoutMs: mediaPart ? 12500 : 8000,
+    totalTimeoutMs: mediaPart ? 26000 : 17000,
+    onRateLimit: (error, model) => {
+      const seconds = Number(error.headers?.get("retry-after"));
+      const cooldown = seconds > 0 ? Math.min(seconds, 300) * 1000 : 65000;
+      modelCooldowns.set(model, Date.now() + cooldown);
+    },
+  });
+  const raw = extractGeminiText(geminiResult.data);
+  if (!raw) {
+    logger.warn("whatsapp.ai.provider_fallback", {
+      statusCode: geminiResult.error?.status || geminiResult.response?.status,
+      providerCode: geminiResult.error?.code,
+      model: geminiResult.usedModel,
+      attempts: geminiResult.attempts,
+    });
+    return fallbackReply(conversation, customerMessage);
   }
-
-  const data = await geminiResult.response.json();
-  const raw = extractGeminiText(data);
   let checkoutPatch = null;
   const checkoutLine = raw.match(/^WHATSAPP_ORDER:\s*(.+)$/mi);
   if (checkoutLine) {
@@ -339,133 +360,83 @@ async function sendAIOutbound({ account, conversation, reply }) {
   };
 
   const recorded = [];
+  const recordReply = async (result, { type, text, buttons, meta }) => {
+    const waMessageId = result?.messages?.[0]?.id;
+    if (!waMessageId) throw new Error("WhatsApp did not acknowledge the AI reply");
+    try {
+      recorded.push(await recordMessage({
+        accountId: account._id, conversationId: conversation._id, customerWaId: conversation.customerWaId,
+        direction: "outbound", sender: "ai", type, text, buttons, waMessageId, meta,
+      }));
+    } catch (error) {
+      logger.warn("whatsapp.ai.history_write_failed", { code: error.code });
+    }
+  };
+  const sendReplyText = async (text, meta) => {
+    const result = await sendTextMessage({ ...creds, text });
+    await recordReply(result, { type: "text", text, meta });
+  };
 
   let formattedText = markdownToWhatsApp(reply.text);
   if (formattedText.length > 1024 && reply.buttons?.length) {
     for (let offset = 0; offset < formattedText.length; offset += 4000) {
       const text = formattedText.slice(offset, offset + 4000);
-      const result = await sendTextMessage({ ...creds, text });
-      recorded.push(await recordMessage({ accountId: account._id, conversationId: conversation._id,
-        customerWaId: conversation.customerWaId, direction: "outbound", sender: "ai", type: "text",
-        text, waMessageId: result?.messages?.[0]?.id || "" }));
+      await sendReplyText(text);
     }
     formattedText = "Upar di gayi poori details check karke option choose karein.";
   }
-  const urlButtons = (reply.buttons || []).filter((button) => button.type === "url" && button.url);
+  const urlButtons = (reply.buttons || []).filter((button) => button.type === "url" && isButtonUrl(button.url));
   const copyButtons = (reply.buttons || []).filter((button) => button.type === "copy_code" && button.code);
   const quickButtons = (reply.buttons || []).filter((button) => button.type === "quick_reply");
 
+  let interactive;
   if (urlButtons.length === 1 && !quickButtons.length) {
     const button = urlButtons[0];
-    const result = await sendInteractiveMessage({
-      ...creds,
-      interactive: {
-        type: "cta_url",
-        body: { text: formattedText.slice(0, 1024) },
-        action: {
-          name: "cta_url",
-          parameters: { display_text: button.label, url: button.url },
-        },
+    interactive = {
+      type: "cta_url",
+      body: { text: formattedText.slice(0, 1024) },
+      action: {
+        name: "cta_url",
+        parameters: { display_text: button.label, url: button.url },
       },
-    });
-    recorded.push(await recordMessage({
-      accountId: account._id,
-      conversationId: conversation._id,
-      customerWaId: conversation.customerWaId,
-      direction: "outbound",
-      sender: "ai",
-      type: "interactive",
-      text: formattedText,
-      buttons: reply.buttons,
-      waMessageId: result?.messages?.[0]?.id || "",
-      meta: { model: reply.model },
-    }));
+    };
   } else if (quickButtons.length) {
-    const result = await sendInteractiveMessage({
-      ...creds,
-      interactive: {
-        type: "button",
-        body: { text: formattedText.slice(0, 1024) },
-        action: {
-          buttons: quickButtons.slice(0, 3).map((button) => ({
-            type: "reply",
-            reply: {
-              id: button.payload || button.id,
-              title: button.label,
-            },
-          })),
-        },
+    interactive = {
+      type: "button",
+      body: { text: formattedText.slice(0, 1024) },
+      action: {
+        buttons: quickButtons.slice(0, 3).map((button) => ({
+          type: "reply",
+          reply: {
+            id: button.payload || button.id,
+            title: button.label,
+          },
+        })),
       },
-    });
-    recorded.push(await recordMessage({
-      accountId: account._id,
-      conversationId: conversation._id,
-      customerWaId: conversation.customerWaId,
-      direction: "outbound",
-      sender: "ai",
-      type: "interactive",
-      text: formattedText,
-      buttons: reply.buttons,
-      waMessageId: result?.messages?.[0]?.id || "",
-      meta: { model: reply.model },
-    }));
-    for (const button of urlButtons) {
-      const text = `${button.label}: ${button.url}`;
-      const resultText = await sendTextMessage({ ...creds, text });
-      recorded.push(await recordMessage({
-        accountId: account._id,
-        conversationId: conversation._id,
-        customerWaId: conversation.customerWaId,
-        direction: "outbound",
-        sender: "ai",
-        type: "text",
-        text,
-        waMessageId: resultText?.messages?.[0]?.id || "",
-      }));
+    };
+  }
+  let interactiveSent = false;
+  if (interactive) {
+    try {
+      const result = await sendInteractiveMessage({ ...creds, interactive });
+      await recordReply(result, { type: "interactive", text: formattedText, buttons: reply.buttons, meta: { model: reply.model } });
+      interactiveSent = true;
+    } catch (error) {
+      const metaCode = error.payload?.error?.code;
+      if (error.status !== 400 || (metaCode && ![100, 131008, 131009].includes(metaCode))) throw error;
+      logger.warn("whatsapp.ai.interactive_rejected", { metaCode });
     }
-  } else {
-    const result = await sendTextMessage({ ...creds, text: formattedText });
-    recorded.push(await recordMessage({
-      accountId: account._id,
-      conversationId: conversation._id,
-      customerWaId: conversation.customerWaId,
-      direction: "outbound",
-      sender: "ai",
-      type: "text",
-      text: formattedText,
-      waMessageId: result?.messages?.[0]?.id || "",
-      meta: { model: reply.model },
-    }));
+  }
+  if (!interactiveSent) await sendReplyText(formattedText, { model: reply.model });
+  if (!interactiveSent || interactive?.type !== "cta_url") {
     for (const button of urlButtons) {
-      const text = `${button.label}: ${button.url}`;
-      const resultText = await sendTextMessage({ ...creds, text });
-      recorded.push(await recordMessage({
-        accountId: account._id,
-        conversationId: conversation._id,
-        customerWaId: conversation.customerWaId,
-        direction: "outbound",
-        sender: "ai",
-        type: "text",
-        text,
-        waMessageId: resultText?.messages?.[0]?.id || "",
-      }));
+      await sendReplyText(`${button.label}: ${button.url}`);
     }
   }
 
   for (const button of copyButtons) {
     const text = formatCopyCodeMessage(button.code, button.label || "Your code");
-    const result = await sendTextMessage({ ...creds, text });
-    recorded.push(await recordMessage({
-      accountId: account._id,
-      conversationId: conversation._id,
-      customerWaId: conversation.customerWaId,
-      direction: "outbound",
-      sender: "ai",
-      type: "text",
-      text,
-      waMessageId: result?.messages?.[0]?.id || "",
-      meta: { copyCode: button.code },
-    }));
+    await sendReplyText(text, { copyCode: button.code });
   }
 
   for (const image of reply.images || []) {
@@ -507,6 +478,21 @@ async function replyWithAI({ account, conversation, customerMessage, media, butt
     return { skipped: true, reason: "ai_disabled" };
   }
 
+  const repairText = await require("./whatsappRepairBookingService").handleRepairBooking({
+    account, conversation, customerMessage, media, buttonReplyId,
+  });
+  if (repairText) {
+    const reply = { text: repairText, model: "repair_booking" };
+    await sendAIOutbound({ account, conversation, reply });
+    return { skipped: false, reply };
+  }
+  if (!buttonReplyId && conversation.checkout?.quoteHash && !conversation.checkout.orderId) {
+    const confirmation = String(customerMessage || "").trim().toLowerCase();
+    if (/^(confirm cod|cash on delivery|cod)$/.test(confirmation)) buttonReplyId = "checkout:cod:" + conversation.checkout.token;
+    else if (/^(confirm|confirm order|order confirm|pay online|confirm online|yes|haan|ha)$/.test(confirmation)) {
+      buttonReplyId = "checkout:online:" + conversation.checkout.token;
+    }
+  }
   const checkoutReply = await handleCheckoutButton({ account, conversation, buttonReplyId });
   if (checkoutReply) {
     await sendAIOutbound({ account, conversation, reply: checkoutReply });
@@ -555,15 +541,22 @@ async function replyWithAI({ account, conversation, customerMessage, media, butt
       }
     }
   }
-  let reply = await generateWhatsAppAIReply({ account, conversation, customerMessage, settings, mediaPart });
+  let reply;
+  try {
+    reply = await generateWhatsAppAIReply({ account, conversation, customerMessage, settings, mediaPart });
+  } catch (error) {
+    logger.warn("whatsapp.ai.generation_failed", { code: error.code, errorType: error.name });
+    reply = fallbackReply(conversation, customerMessage);
+  }
   if (reply.checkoutPatch) {
     reply = await previewCheckout({ account, conversation, patch: reply.checkoutPatch });
   }
 
-  conversation.conversationMemory = reply.memory || conversation.conversationMemory || {};
-  await conversation.save();
-
   await sendAIOutbound({ account, conversation, reply });
+  if (reply.memory && reply.memory !== conversation.conversationMemory) {
+    conversation.conversationMemory = reply.memory;
+    await conversation.save().catch((error) => logger.warn("whatsapp.ai.memory_write_failed", { code: error.code }));
+  }
   logger.info("whatsapp.ai.replied", {
     accountId: String(account._id),
     customerWaId: conversation.customerWaId,

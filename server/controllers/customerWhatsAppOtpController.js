@@ -1,8 +1,14 @@
 const asyncHandler = require("../utils/asyncHandler");
 const {
+  getCustomerOtpDelivery,
   sendCustomerWhatsAppOtp,
   verifyCustomerWhatsAppOtp,
 } = require("../services/customerWhatsAppOtpService");
+
+exports.getWhatsAppOtpDelivery = asyncHandler(async (req, res) => {
+  const status = await getCustomerOtpDelivery(req.body);
+  res.set("Cache-Control", "no-store").json({ success: true, data: { status } });
+});
 
 exports.sendWhatsAppOtp = asyncHandler(async (req, res) => {
   const result = await sendCustomerWhatsAppOtp({

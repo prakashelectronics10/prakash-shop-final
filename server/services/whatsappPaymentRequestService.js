@@ -19,9 +19,65 @@ function validatePaymentTemplate(template) {
   return { name: template.name, language: template.language, prefix };
 }
 
-async function getPaymentTemplate({ account, settings }) {
+const ORDER_TEMPLATE = "order_details_with_product_list";
+const ORDER_TEMPLATE_ID = "1468551722067479";
+const env = require("../config/env");
+const { toHttpsUrl } = require("./metaCatalogMapper");
+
+function orderDetailsComponents(order, template) {
+  if (!/^https:\/\/rzp\.io\/(?:rzp|i)\/[a-zA-Z0-9_-]+$/.test(order.paymentLinkUrl)) throw new Error("Invalid Razorpay payment link");
+  const amount = (rupees) => ({ offset: 100, value: Math.round(rupees * 100) });
+  const image = order.items.map((item) => toHttpsUrl(item.productImageUrl, env.productionUrl)).find(Boolean)
+    || new URL("/logo512.png", env.productionUrl).href;
+  const charges = order.additionalCharges || [];
+  const shipping = charges.length
+    ? charges.reduce((sum, charge) => sum + amount(charge.amount).value, 0)
+    : amount(order.deliveryCharge || 0).value;
+  const customer = order.customer;
+  const details = {
+    reference_id: order.orderId, type: "physical-goods", currency: "INR", payment_type: "upi",
+    beneficiaries: [{ name: customer.name, address_line1: customer.address.slice(0, 100),
+      address_line2: (customer.address.slice(100) || customer.landmark || "").slice(0, 100), postal_code: customer.pincode, country: "India" }],
+    payment_settings: [{ type: "payment_link", payment_link: { uri: order.paymentLinkUrl } }],
+    total_amount: amount(order.total),
+    order: {
+      status: "pending", catalog_id: env.metaCatalog.catalogId,
+      items: order.items.map((item) => ({ retailer_id: item.retailerId,
+        name: [item.productName, item.variantSummary].filter(Boolean).join(" - "),
+        quantity: item.quantity, amount: amount(item.unitPrice) })),
+      subtotal: amount(order.subtotal), discount: amount(order.discountTotal || 0),
+      shipping: { offset: 100, value: shipping,
+        ...(charges.length ? { description: charges.map((c) => c.name + " Rs " + c.amount).join(", ").slice(0, 120) } : {}) },
+    },
+  };
+  const bodyParameter = template?.bodyParameter ?? "1";
+  return [
+    ...(template?.imageHeader !== false ? [{ type: "header", parameters: [{ type: "image", image: { link: image } }] }] : []),
+    ...(bodyParameter ? [{ type: "body", parameters: [{ type: "text", text: customer.name,
+      ...(bodyParameter === "1" ? {} : { parameter_name: bodyParameter }) }] }] : []),
+    { type: "button", sub_type: "order_details", index: "0", parameters: [{ type: "action", action: { order_details: details } }] },
+  ];
+}
+
+async function getPaymentTemplate({ account, settings, legacy = false }) {
   if (settings?.enhancedPaymentsEnabled !== true) throw new Error("Enhanced Payment Links must be activated for this WhatsApp account");
   if (!String(require("../config/env").razorpay.keyId || "").startsWith("rzp_live_")) throw new Error("Enhanced payment cards require live Razorpay payment links");
+  if (!legacy) {
+    const template = await graphRequest({ businessAccountId: ORDER_TEMPLATE_ID, path: "", method: "GET",
+      accessToken: account.accessToken, query: { fields: "name,status,language,components" } });
+    if (template.name !== ORDER_TEMPLATE || template.status !== "APPROVED"
+      || !template.components?.some((c) => c.type === "BUTTONS" && c.buttons?.[0]?.type === "ORDER_DETAILS")) {
+      throw new Error("Order details template unavailable");
+    }
+    const header = template.components.find((component) => component.type === "HEADER");
+    const body = template.components.find((component) => component.type === "BODY");
+    const variables = [...new Set(Array.from((body?.text || "").matchAll(/\{\{([^}]+)\}\}/g), (match) => match[1]))];
+    if (!body || (header && header.format !== "IMAGE") || variables.length > 1
+      || (variables.length && !["1", "name", "customer_name"].includes(variables[0]))) {
+      throw new Error("Order details template has unsupported header or body parameters");
+    }
+    return { name: template.name, language: template.language, imageHeader: Boolean(header), bodyParameter: variables[0] || "" };
+  }
   const name = settings.paymentTemplateName || "pulse_order_payment";
   const language = settings.paymentTemplateLanguage || "en";
   const response = await graphRequest({
@@ -48,8 +104,8 @@ async function sendPaymentRequest({ account, conversation, orderId }) {
   if (!order || order.orderStatus !== "awaiting_payment" || !["pending", "failed"].includes(order.paymentStatus)) return { skipped: true };
   if (order.paymentRequestMessageId) return { sent: true, reused: true };
   const settings = await Settings.findOne({ account: account._id }).lean();
-  const template = await getPaymentTemplate({ account, settings });
-  const components = paymentTemplateComponents(order, template);
+  const template = await getPaymentTemplate({ account, settings, legacy: !order.items?.some((item) => item.retailerId) });
+  const components = template.name === ORDER_TEMPLATE ? orderDetailsComponents(order, template) : paymentTemplateComponents(order, template);
   const claim = await Order.findOneAndUpdate({ _id: order._id, paymentRequestMessageId: "",
     orderStatus: "awaiting_payment", paymentStatus: { $in: ["pending", "failed"] },
     $or: [{ paymentRequestClaimUntil: null }, { paymentRequestClaimUntil: { $lt: new Date() } }],
@@ -63,7 +119,7 @@ async function sendPaymentRequest({ account, conversation, orderId }) {
     await Order.updateOne({ _id: order._id }, { $set: { paymentRequestMessageId: waMessageId }, $unset: { paymentRequestClaimUntil: 1 } });
     await recordMessage({ accountId: account._id, conversationId: conversation._id, customerWaId: conversation.customerWaId,
       direction: "outbound", sender: "system", type: "interactive", waMessageId,
-      text: `Payment request: ${order.orderId} — INR ${Number(order.total).toFixed(2)}. Tap Pay now on the payment card.`,
+      text: `Payment request: ${order.orderId} — INR ${Number(order.total).toFixed(2)}. Open the payment card to review your order.`,
       meta: { kind: "payment_request", template: template.name, orderId: order.orderId },
     });
     return { sent: true };
@@ -73,4 +129,4 @@ async function sendPaymentRequest({ account, conversation, orderId }) {
   }
 }
 
-module.exports = { getPaymentTemplate, validatePaymentTemplate, paymentTemplateComponents, sendPaymentRequest };
+module.exports = { orderDetailsComponents, getPaymentTemplate, validatePaymentTemplate, paymentTemplateComponents, sendPaymentRequest };
