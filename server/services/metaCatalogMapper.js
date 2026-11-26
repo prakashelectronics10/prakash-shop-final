@@ -215,6 +215,7 @@ function listVariantRetailerIds(product = {}) {
 }
 
 module.exports = {
+  productPath,
   catalogRetailerId,
   MetaProductValidationError,
   mapProductToMeta,

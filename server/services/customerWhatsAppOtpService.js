@@ -259,77 +259,6 @@ async function verifiedOrderHistoryNumber({ challengeId, verifiedToken }) {
   return challenge.whatsappNumber;
 }
 
-async function createOrderHistoryLink(senderWaId, { phoneNumberId, businessNumber }) {
-  const sender = /^(?:91)?([6-9]\d{9})$/.exec(String(senderWaId || ""));
-  const businessDigits = String(businessNumber || "").replace(/\D/g, "");
-  if (!sender || !phoneNumberId || !/^[1-9]\d{7,14}$/.test(businessDigits)) return null;
-  const url = new URL("/orders", env.productionUrl);
-  if (url.protocol !== "https:") throw new Error("Order history links require an HTTPS storefront");
-  const linkToken = createVerifiedToken();
-  const challenge = await CustomerWhatsAppOtp.create({
-    whatsappNumber: sender[1],
-    purpose: "order-history-link",
-    otpHash: CustomerWhatsAppOtp.hashToken(linkToken),
-    historyLinkPhoneNumberId: String(phoneNumberId),
-    historyLinkBusinessNumber: businessDigits,
-    expiresAt: new Date(Date.now() + 10 * 60 * 1000),
-  });
-  url.hash = new URLSearchParams({ viewOrders: `${challenge._id}.${linkToken}` }).toString();
-  return url.href;
-}
-
-async function approveOrderHistoryBrowser({ challengeId, browserHash, senderWaId, phoneNumberId }) {
-  const sender = /^(?:91)?([6-9]\d{9})$/.exec(String(senderWaId || ""));
-  if (!sender) return false;
-  const approved = await CustomerWhatsAppOtp.findOneAndUpdate({
-    _id: challengeId,
-    purpose: "order-history-link",
-    whatsappNumber: sender[1],
-    historyLinkPhoneNumberId: String(phoneNumberId),
-    expiresAt: { $gt: new Date() },
-    $or: [{ historyLinkBrowserHash: { $exists: false } }, { historyLinkBrowserHash: browserHash }],
-  }, { $set: { historyLinkBrowserHash: browserHash } });
-  return Boolean(approved);
-}
-
-async function exchangeOrderHistoryLink(code, browserToken) {
-  const match = typeof code === "string" && /^([a-f0-9]{24})\.([\w-]{43})$/i.exec(code);
-  const invalid = "This WhatsApp link expired or was already used. Request a new link or verify your number.";
-  if (!match || typeof browserToken !== "string" || !/^[a-f0-9]{64}$/.test(browserToken)) {
-    throw new AppError(invalid, 401);
-  }
-  const now = new Date();
-  const browserHash = CustomerWhatsAppOtp.hashToken(browserToken);
-  const linkFilter = {
-    _id: match[1],
-    purpose: "order-history-link",
-    otpHash: CustomerWhatsAppOtp.hashToken(match[2]),
-    expiresAt: { $gt: now },
-  };
-  const link = await CustomerWhatsAppOtp.findOne(linkFilter)
-    .select("+historyLinkBusinessNumber +historyLinkBrowserHash").lean();
-  if (!link?.historyLinkBusinessNumber) throw new AppError(invalid, 401);
-  if (!link.historyLinkBrowserHash) {
-    const confirmationUrl = new URL(`https://wa.me/${link.historyLinkBusinessNumber}`);
-    confirmationUrl.searchParams.set("text", `VERIFY ORDERS ${match[1]} ${browserHash}`);
-    return { confirmationUrl: confirmationUrl.href };
-  }
-  if (link.historyLinkBrowserHash !== browserHash) throw new AppError(invalid, 401);
-  const verifiedToken = createVerifiedToken();
-  const expiresInMs = env.whatsapp.verifiedTokenTtlMs || 15 * 60 * 1000;
-  const verified = await CustomerWhatsAppOtp.findOneAndUpdate({
-    ...linkFilter,
-    historyLinkBrowserHash: browserHash,
-  }, { $set: {
-    purpose: "order-history",
-    verifiedAt: now,
-    verifiedTokenHash: CustomerWhatsAppOtp.hashToken(verifiedToken),
-    expiresAt: new Date(now.getTime() + expiresInMs),
-  } });
-  if (!verified) throw new AppError(invalid, 401);
-  return { challengeId: match[1], verifiedToken, expiresInMs };
-}
-
 module.exports = {
   getCustomerOtpDelivery,
   sendCustomerWhatsAppOtp,
@@ -337,7 +266,4 @@ module.exports = {
   consumeVerifiedWhatsAppOtp,
   assertValidWhatsAppNumber,
   verifiedOrderHistoryNumber,
-  createOrderHistoryLink,
-  approveOrderHistoryBrowser,
-  exchangeOrderHistoryLink,
 };

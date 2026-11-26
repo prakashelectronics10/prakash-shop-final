@@ -1110,7 +1110,7 @@ export default function ManageWhatsAppModule({ apiFetch }) {
                   return (
                     <div key={message._id || message.id} className={`wa-bubble-row ${outbound ? "out" : "in"}`}>
                       <div className={`wa-bubble ${outbound ? "out" : "in"}`}>
-                        {message.type === "image" && message.mediaUrl ? (
+                        {["image", "interactive"].includes(message.type) && message.mediaUrl ? (
                           <a href={message.mediaUrl} target="_blank" rel="noreferrer">
                             <img src={message.mediaUrl} alt="" />
                           </a>

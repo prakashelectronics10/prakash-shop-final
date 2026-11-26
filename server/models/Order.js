@@ -103,6 +103,8 @@ const orderSchema = new mongoose.Schema(
     invoiceWhatsAppClaimUntil: Date,
     invoiceWhatsAppSentAt: Date,
     invoiceWhatsAppMessageId: String,
+    whatsappCardStatusSentAt: Date,
+    whatsappCardStatusNextAttemptAt: Date,
     notifiedAt: { type: Date, default: null },
     statusUpdatedAt: { type: Date, default: Date.now },
     refund: {

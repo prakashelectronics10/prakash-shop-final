@@ -58,3 +58,39 @@ test("a paid invoice waits for template approval and is sent once across concurr
   assert.equal(await deliverNextOrderInvoice(nextAttempt), false);
   assert.equal(send.mock.callCount(), 2);
 });
+
+test("a verified paid order card status is claimed and delivered once", async (t) => {
+  const { deliverNextOrderCardStatus } = require("../services/orderInvoiceWhatsAppWorker");
+  const order = { _id: "status-order", orderId: "PE-CARD-TEST", customer: { whatsappNumber: "9000000001" },
+    whatsappAccount: "account", orderStatus: "confirmed" };
+  const env = require("../config/env");
+  const enabled = env.whatsapp.enabled;
+  env.whatsapp.enabled = true;
+  t.after(() => { env.whatsapp.enabled = enabled; });
+  t.mock.method(require("../models/WhatsAppAccount"), "findOne", async () => ({
+    phoneNumberId: "phone-id", accessToken: "test",
+  }));
+  const sent = t.mock.method(global, "fetch", async (_url, options) => {
+    const payload = JSON.parse(options.body);
+    assert.equal(payload.to, "919000000001");
+    assert.equal(payload.interactive.type, "order_status");
+    assert.deepEqual(payload.interactive.action.parameters, {
+      reference_id: order.orderId, order: { status: "processing", description: "Payment received." },
+    });
+    return Response.json({ messages: [{ id: "wamid.status" }] });
+  });
+  t.mock.method(Order, "findOneAndUpdate", async (filter, update) => {
+    assert.equal(filter.paymentStatus, "paid");
+    assert.equal(filter.whatsappCardStatusSentAt, null);
+    if (order.whatsappCardStatusNextAttemptAt || order.whatsappCardStatusSentAt) return null;
+    return Object.assign(order, update.$set);
+  });
+  t.mock.method(Order, "updateOne", async (filter, update) => {
+    assert.equal(filter.whatsappCardStatusNextAttemptAt, order.whatsappCardStatusNextAttemptAt);
+    Object.assign(order, update.$set);
+    delete order.whatsappCardStatusNextAttemptAt;
+  });
+  assert.deepEqual(await Promise.all([deliverNextOrderCardStatus(), deliverNextOrderCardStatus()]), [true, false]);
+  assert.ok(order.whatsappCardStatusSentAt);
+  assert.equal(sent.mock.callCount(), 1);
+});

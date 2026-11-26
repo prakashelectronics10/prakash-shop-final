@@ -133,9 +133,7 @@ function saveSession(credentials) {
 function request(path, credentials, data = {}) {
   return apiRequest(path, {
     method: "POST", cache: "no-store", timeout: 45000,
-    body: JSON.stringify(credentials
-      ? { challengeId: credentials.challengeId, verifiedToken: credentials.verifiedToken, ...data }
-      : data),
+    body: JSON.stringify({ challengeId: credentials.challengeId, verifiedToken: credentials.verifiedToken, ...data }),
   }).then((response) => response.data);
 }
 
@@ -151,11 +149,8 @@ export function OrderHistory({ renderDetails }) {
   const [selected, setSelected] = useState(null);
   const [paying, setPaying] = useState(false);
   const [paymentMessage, setPaymentMessage] = useState("");
-  const [openingLink, setOpeningLink] = useState(false);
-  const [confirmationUrl, setConfirmationUrl] = useState("");
   const authRef = useRef(null);
   const paymentTask = useRef(null);
-  const linkRequest = useRef(null);
 
   const closeDetails = useCallback(() => {
     paymentTask.current = null;
@@ -215,59 +210,9 @@ export function OrderHistory({ renderDetails }) {
   }, [loadOrders]);
 
   useEffect(() => {
-    let active = true;
-    let timer;
-    const url = new URL(window.location.href);
-    const hash = new URLSearchParams(url.hash.slice(1));
-    if (hash.has("viewOrders")) {
-      const code = hash.get("viewOrders");
-      hash.delete("viewOrders");
-      url.hash = hash.toString();
-      window.history.replaceState(window.history.state, "", url);
-      revoke();
-      if (!window.crypto?.getRandomValues) {
-        setExpanded(true);
-        setError("This browser cannot verify the WhatsApp link. Verify your number to view orders.");
-        return undefined;
-      }
-      const browserToken = Array.from(window.crypto.getRandomValues(new Uint8Array(32)),
-        (byte) => byte.toString(16).padStart(2, "0")).join("");
-      linkRequest.current = { code, browserToken };
-    }
-    if (linkRequest.current) {
-      setExpanded(true);
-      setOpeningLink(true);
-      const check = async () => {
-        try {
-          const result = await request("/orders/history/link", null, linkRequest.current);
-          if (!active) return;
-          if (result.confirmationUrl) {
-            setConfirmationUrl(result.confirmationUrl);
-            timer = window.setTimeout(check, 4000);
-            return;
-          }
-          onVerified(result);
-        } catch (err) {
-          if (!active) return;
-          setError(err.message || "Could not open the WhatsApp link.");
-        }
-        if (active) {
-          linkRequest.current = null;
-          setConfirmationUrl("");
-          setOpeningLink(false);
-        }
-      };
-      // Schedule after effect setup so React's development replay cannot redeem twice.
-      timer = window.setTimeout(check, 0);
-    } else {
-      const stored = readSession();
-      if (stored) onVerified(stored);
-    }
-    return () => {
-      active = false;
-      window.clearTimeout(timer);
-    };
-  }, [onVerified, revoke]);
+    const stored = readSession();
+    if (stored) onVerified(stored);
+  }, [onVerified]);
 
   const pay = async () => {
     if (!auth || !selected || paymentTask.current) return;
@@ -318,16 +263,7 @@ export function OrderHistory({ renderDetails }) {
         <ListOrdered size={18} /> View all orders <ChevronRight size={16} aria-hidden="true" />
       </button>
       {expanded && <div id="verified-order-history" className="order-history-panel">
-        {openingLink ? (
-          confirmationUrl ? (
-            <>
-              <p>Send the prepared message from the WhatsApp chat that received your link. Then return to this tab.</p>
-              <a className="order-history-trigger" href={confirmationUrl} target="_blank" rel="noopener noreferrer">
-                <MessageCircle size={17} /> Confirm in WhatsApp
-              </a>
-            </>
-          ) : <p role="status">Opening your orders…</p>
-        ) : auth ? (
+        {auth ? (
           <>
             <header className="order-history-header">
               <h2>Your orders</h2>

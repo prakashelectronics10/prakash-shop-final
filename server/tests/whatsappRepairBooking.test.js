@@ -11,7 +11,8 @@ test("chat repair booking validates fields, collects photos and alerts admins af
   const { handleRepairBooking } = require("../services/whatsappRepairBookingService");
   const conversation = { customerWaId: "919876543210", markModified() {}, async save() {} };
   const send = (customerMessage, media) => handleRepairBooking({ account: {}, conversation, customerMessage, media });
-  assert.match(await send("fan repair karwana hai"), /naam/);
+  assert.equal(await send("repair booking status"), null);
+  assert.match(await send("Mera fan repair chahiye"), /naam/);
   await send("Customer");
   assert.match(await send("invalid"), /Email check/);
   await send("customer@shop.test");
@@ -25,10 +26,12 @@ test("chat repair booking validates fields, collects photos and alerts admins af
   for (let i = 0; i < 8; i++) await send("", { type: "image", id: String(i + 1) });
   assert.match(await send("", { type: "image", id: "9" }), /8 photos/);
   assert.equal(save.mock.callCount(), 0);
-  assert.match(await send("CONFIRM"), /Booking ID/);
+  const confirmation = await send("confirm booking");
+  assert.match(confirmation, /Booking ID/);
   assert.equal(await send("CONFIRM"), null);
   assert.equal(notify.mock.callCount(), 1);
   const booking = notify.mock.calls[0].arguments[0];
+  assert.ok(confirmation.endsWith(booking._id));
   assert.equal(booking.images.length, 8);
   assert.equal(booking.whatsappNumber, "9876543210");
   assert.equal(booking.message, "Motor noise");

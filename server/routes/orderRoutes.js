@@ -11,7 +11,6 @@ const {
   downloadPublicOrderInvoice,
   getCheckoutPaymentStatus,
   getCustomerOrders,
-  exchangeCustomerOrderLink,
   retryCustomerOrderPayment,
 } = require("../controllers/orderController");
 const { requireAdmin, requirePermission } = require("../middleware/auth");
@@ -32,7 +31,6 @@ router.post("/payment/verify", customerOrderLimiter, verifyPayment);
 router.post("/payment/failed", customerOrderLimiter, markPaymentFailed);
 router.post("/payment/status", customerOrderLimiter, getCheckoutPaymentStatus);
 router.post("/history", customerOrderLimiter, getCustomerOrders);
-router.post("/history/link", customerOrderLimiter, exchangeCustomerOrderLink);
 router.post("/history/:orderId/pay", customerOrderLimiter, retryCustomerOrderPayment);
 router.get("/track/:orderId/invoice.pdf", downloadPublicOrderInvoice);
 router.get("/charges", getPublicCharges);

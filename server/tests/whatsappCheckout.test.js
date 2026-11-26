@@ -50,6 +50,7 @@ test("repeated paid webhook atomically confirms and notifies once", async (t) =>
     assert.deepEqual(filter.paymentStatus.$in, ["pending", "failed"]);
     assert.equal(update.$set.orderStatus, "confirmed");
     assert.equal(update.$set.paymentStatus, "paid");
+    assert.equal(update.$set.invoiceWhatsAppNextAttemptAt, update.$set.paidAt);
     return calls++ === 0 ? { ...online, ...update.$set } : null;
   });
   assert.equal(await confirmLinkPayment(online, link, payment), true);
@@ -163,6 +164,27 @@ test("review uses server totals and collects missing required address fields", a
   assert.match(result.text, /525.00/);
   assert.ok(result.buttons.some((b) => b.label === "Confirm COD"));
   assert.notEqual(convo.checkout.token, "review-token");
+});
+
+test("a returning number must confirm its saved delivery before the formatted order review", async (t) => {
+  const convo = conversation();
+  convo.checkout = undefined;
+  t.mock.method(Order, "findOne", (filter) => {
+    if (filter.checkoutKey) return null;
+    assert.deepEqual(filter["customer.whatsappNumber"].$in, ["9876543210", "919876543210", "+919876543210"]);
+    return { sort: () => ({ select: () => ({ lean: async () => ({ customer: { ...customer, message: "Old instruction" } }) }) }) };
+  });
+  t.mock.method(controller, "buildOrderQuote", async () => quote);
+  t.mock.method(Settings, "findOne", () => ({ lean: async () => ({ codEnabled: false }) }));
+  const delivery = await previewCheckout({ account, conversation: convo, patch: { items } });
+  assert.match(delivery.text, /Saved delivery details\*\n\nName: Test Customer\nPhone: 9876543210/);
+  assert.doesNotMatch(delivery.text, /Old instruction/);
+  const token = convo.checkout.token;
+  const blocked = await handleCheckoutButton({ account, conversation: convo, buttonReplyId: `checkout:online:${token}` });
+  assert.match(blocked.text, /Pehle Confirm delivery/);
+  const review = await handleCheckoutButton({ account, conversation: convo, buttonReplyId: `checkout:delivery:${token}` });
+  assert.match(review.text, /\*Products\*\n[^]*\n\n\*Payment summary\*\n[^]*\n\n\*Delivery details\*/);
+  assert.ok(review.buttons.some((entry) => entry.label === "Pay online"));
 });
 
 test("price changes require a fresh review instead of creating an order", async (t) => {

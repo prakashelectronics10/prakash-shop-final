@@ -35,6 +35,28 @@ async function saveDraft(conversation, draft) {
   await conversation.save();
 }
 
+async function savedDelivery(customerWaId) {
+  const match = /^(?:91)?([6-9]\d{9})$/.exec(String(customerWaId || ""));
+  if (!match) return null;
+  const number = match[1];
+  const previous = await Order.findOne({
+    "customer.whatsappNumber": { $in: [number, `91${number}`, `+91${number}`] },
+    orderStatus: { $nin: ["awaiting_payment", "cancelled"] },
+    paymentStatus: { $in: ["paid", "cod", "refunded"] },
+  }).sort({ createdAt: -1 }).select("customer").lean();
+  const { name, phone, address, pincode, landmark } = previous?.customer || {};
+  if (!name || !phone || !address || !pincode) return null;
+  return { name, phone, address, pincode, landmark };
+}
+
+function deliveryLines(customer) {
+  return [
+    `Name: ${customer.name}`, `Phone: ${customer.phone}`, `Address: ${customer.address}`,
+    `PIN: ${customer.pincode}`, customer.landmark && `Landmark: ${customer.landmark}`,
+    customer.message && `Delivery note: ${customer.message}`,
+  ].filter(Boolean).join("\n");
+}
+
 async function previewCheckout({ account, conversation, patch }) {
   const parsed = orderPatchSchema.safeParse(patch);
   if (!parsed.success) return reply("Order details clear nahi hain. Product, quantity aur delivery details dobara bhejein.");
@@ -47,9 +69,11 @@ async function previewCheckout({ account, conversation, patch }) {
     }
   }
   const base = prior.orderId ? {} : prior;
+  const saved = !base.items?.length && parsed.data.items?.length ? await savedDelivery(conversation.customerWaId) : null;
   const draft = {
     ...base, ...parsed.data,
-    customer: { ...(base.customer || {}), ...(parsed.data.customer || {}), whatsappNumber: conversation.customerWaId },
+    customer: { ...saved, ...base.customer, ...parsed.data.customer, whatsappNumber: conversation.customerWaId },
+    confirmDelivery: Boolean(saved || base.confirmDelivery),
     token: crypto.randomBytes(12).toString("hex"), updatedAt: Date.now(),
     quoteHash: null,
   };
@@ -60,6 +84,11 @@ async function previewCheckout({ account, conversation, patch }) {
   try {
     const { sanitizeCustomer, buildOrderQuote } = require("../controllers/orderController");
     const customer = sanitizeCustomer(draft.customer);
+    if (draft.confirmDelivery) {
+      return reply(`*Saved delivery details*\n\n${deliveryLines(customer)}\n\nConfirm delivery tap karein, ya sirf changed details bhejein.`, [
+        button("Confirm delivery", "delivery", draft.token), button("Cancel draft", "cancel", draft.token),
+      ]);
+    }
     const quote = await buildOrderQuote(draft.items, draft.couponCode);
     if (!Number.isFinite(quote.total) || quote.total < 1) throw new Error("Order total kam se kam Rs. 1 hona chahiye.");
     draft.customer = customer;
@@ -70,17 +99,19 @@ async function previewCheckout({ account, conversation, patch }) {
     if (settings?.codEnabled === true) buttons.push(button("Confirm COD", "cod", draft.token));
     buttons.push(button("Cancel draft", "cancel", draft.token));
     // Keep the interactive body small; long summaries are sent as a separate text message.
+    const items = quote.items.map((i) => `• ${i.productName}${i.variantSummary ? ` (${i.variantSummary})` : ""}\n  Qty ${i.quantity} · ${money(i.discountedLineTotal)}`);
+    const totals = [
+      `Subtotal: ${money(quote.subtotal)}`, `Discount: ${money(quote.discountTotal)}`,
+      ...quote.additionalCharges.map((c) => `${c.name}: ${money(c.amount)}`), `*Total: ${money(quote.total)}*`,
+    ];
     return reply([
-      "*Order review — abhi confirm nahi hua*",
-      ...quote.items.map((i) => `${i.productName}${i.variantSummary ? ` (${i.variantSummary})` : ""} × ${i.quantity}: ${money(i.discountedLineTotal)}`),
-      `Subtotal: ${money(quote.subtotal)} | Discount: ${money(quote.discountTotal)}`,
-      ...quote.additionalCharges.map((c) => `${c.name}: ${money(c.amount)}`),
-      `*Total: ${money(quote.total)}*`,
-      `${customer.name} | ${customer.phone}`, `${customer.address}, PIN ${customer.pincode}`,
-      customer.landmark ? `Landmark: ${customer.landmark}` : "", customer.message ? `Message: ${customer.message}` : "",
-      "Details check karein; correction ho toh yahin bhejein. CONFIRM likhein ya Pay online tap karein. Product list aur payment card milega; payment verify hone par hi order confirm hoga.",
-      settings?.codEnabled ? "Confirm COD se order confirm hoga; delivery par payment dena hoga." : "Abhi COD service available nahi hai.",
-    ].filter(Boolean).join("\n"), buttons);
+      ["*Order review*", "Payment ke baad order confirm hoga."].join("\n"),
+      ["*Products*", items.join("\n\n")].join("\n"),
+      ["*Payment summary*", ...totals].join("\n"),
+      ["*Delivery details*", deliveryLines(customer)].join("\n"),
+      "Details sahi hain toh Pay online tap karein ya CONFIRM bhejein. Correction yahin bhej sakte hain.",
+      settings?.codEnabled ? "COD choose karne ke liye Confirm COD tap karein." : "",
+    ].filter(Boolean).join("\n\n"), buttons);
   } catch (error) {
     return reply(`Order abhi confirm nahi hua. ${error.statusCode && error.statusCode < 500 ? error.message : "Details, stock ya pricing verify nahi ho payi. Details check karke dobara bhejein."}`);
   }
@@ -108,10 +139,13 @@ function validLinkPayment(order, link, payment) {
 
 async function confirmLinkPayment(order, link, payment) {
   if (!validLinkPayment(order, link, payment)) return false;
+  const now = new Date();
   const updated = await Order.findOneAndUpdate({
-    _id: order._id, paymentStatus: { $in: ["pending", "failed"] }, orderStatus: "awaiting_payment",
+    _id: order._id, razorpayPaymentLinkId: link.id,
+    paymentStatus: { $in: ["pending", "failed"] }, orderStatus: "awaiting_payment",
   }, { $set: { paymentStatus: "paid", orderStatus: "confirmed", razorpayPaymentId: payment.id,
-    razorpayOrderId: payment.order_id, paidAt: new Date(), statusUpdatedAt: new Date() } }, { new: true });
+    razorpayOrderId: payment.order_id, paidAt: now, statusUpdatedAt: now,
+    invoiceWhatsAppNextAttemptAt: now } }, { new: true });
   if (updated) enqueueOrderPaidNotification(updated);
   return Boolean(updated);
 }
@@ -171,6 +205,11 @@ async function handleCheckoutButton({ account, conversation, buttonReplyId }) {
   if (action === "cancel") {
     await saveDraft(conversation, null);
     return reply("Order draft cancel kar diya. Koi order confirm nahi hua.");
+  }
+  if (draft.confirmDelivery && Date.now() - draft.updatedAt <= 30 * 60 * 1000) {
+    if (action !== "delivery") return reply("Pehle Confirm delivery tap karke delivery details verify karein.", [button("Confirm delivery", "delivery", token)]);
+    await saveDraft(conversation, { ...draft, confirmDelivery: false });
+    return previewCheckout({ account, conversation, patch: {} });
   }
   if (!["online", "cod"].includes(action) || !draft.quoteHash || Date.now() - draft.updatedAt > 30 * 60 * 1000) {
     return reply("Order review expire ho gaya. Product aur details dobara bhejein taaki latest total check ho sake.");

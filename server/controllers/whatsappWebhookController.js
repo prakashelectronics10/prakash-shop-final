@@ -19,7 +19,6 @@ const {
 } = require("../services/whatsappTransactionalService");
 const { logger } = require("../utils/logger");
 const { recordDeliveryReceipts } = require("../services/whatsappDeliveryService");
-const { createOrderHistoryLink, approveOrderHistoryBrowser } = require("../services/customerWhatsAppOtpService");
 
 function requestsOrderHistory(text = "") {
   const message = text.toLowerCase().trim().replace(/[.!?]+$/, "");
@@ -31,10 +30,9 @@ function requestsOrderHistory(text = "") {
       && /\b(?:dikha\w*|dekh\w*|bata\w*)\b/.test(message));
 }
 
-async function sendOrderHistoryButton({ account, conversation, customerWaId, businessNumber }) {
-  const url = await createOrderHistoryLink(customerWaId, { phoneNumberId: account.phoneNumberId, businessNumber });
-  if (!url) return false;
-  const text = "View orders tap karein aur website se isi WhatsApp chat mein confirmation bhejein. Link 10 minute tak valid hai.";
+async function sendOrderHistoryButton({ account, conversation, customerWaId }) {
+  const url = new URL("/orders", env.productionUrl).href;
+  const text = "Apne orders track karne ke liye View orders tap karein.";
   const result = await sendInteractiveMessage({
     phoneNumberId: account.phoneNumberId,
     accessToken: account.accessToken,
@@ -51,7 +49,6 @@ async function sendOrderHistoryButton({ account, conversation, customerWaId, bus
     waMessageId: result?.messages?.[0]?.id || "",
     meta: { kind: "order_history_link" },
   });
-  return true;
 }
 
 async function ensureAccountFromEnv(phoneNumberId) {
@@ -185,34 +182,9 @@ exports.handleWhatsAppWebhook = catchAsync(async (req, res) => {
 
       if (duplicate) continue;
 
-      const orderConfirmation = event.type === "text"
-        && /^VERIFY ORDERS ([a-f0-9]{24}) ([a-f0-9]{64})$/i.exec(String(event.text || "").trim());
-      if (env.metaApp.appSecret && orderConfirmation) {
-        const approved = await approveOrderHistoryBrowser({
-          challengeId: orderConfirmation[1].toLowerCase(),
-          browserHash: orderConfirmation[2].toLowerCase(),
-          senderWaId: event.customerWaId,
-          phoneNumberId: account.phoneNumberId,
-        });
-        await sendTextMessage({
-          phoneNumberId: account.phoneNumberId,
-          accessToken: account.accessToken,
-          to: event.customerWaId,
-          text: approved
-            ? "Verify ho gaya. Apne orders dekhne ke liye wahi browser tab kholein."
-            : "Is chat se verification complete nahi ho payi. Apne WhatsApp number se 'View orders' ka naya link maangein.",
-        });
+      if (event.type === "text" && requestsOrderHistory(event.text)) {
+        await sendOrderHistoryButton({ account, conversation, customerWaId: event.customerWaId });
         continue;
-      }
-
-      if (env.metaApp.appSecret && event.type === "text" && requestsOrderHistory(event.text)) {
-        try {
-          if (await sendOrderHistoryButton({ account, conversation, customerWaId: event.customerWaId,
-            businessNumber: event.displayPhoneNumber })) continue;
-        } catch (error) {
-          logger.warn("whatsapp.order_history_button_failed", { status: error.status, code: error.code });
-          continue;
-        }
       }
 
       // Copy Booking ID / Copy Order ID (interactive or template quick reply)

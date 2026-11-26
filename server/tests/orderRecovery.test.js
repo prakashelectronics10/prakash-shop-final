@@ -103,52 +103,39 @@ test("history uses a dedicated verified, unexpired OTP and looks up only its Wha
   ]);
 });
 
-test("WhatsApp history links bind the sender number and can only be exchanged once", async (t) => {
-  const { createOrderHistoryLink, approveOrderHistoryBrowser, exchangeOrderHistoryLink, verifiedOrderHistoryNumber } =
-    require("../services/customerWhatsAppOtpService");
-  const id = "ab".repeat(12);
-  const business = { phoneNumberId: "wa-business-id", businessNumber: "+91 9000000002" };
-  let record;
-  t.mock.method(Otp, "create", async (fields) => (record = { _id: id, ...fields }));
-  t.mock.method(Otp, "findOneAndUpdate", async (filter, update) => {
-    if (filter._id !== record._id || filter.purpose !== record.purpose || record.expiresAt <= filter.expiresAt.$gt) return null;
-    if (filter.whatsappNumber && (filter.whatsappNumber !== record.whatsappNumber
-      || filter.historyLinkPhoneNumberId !== record.historyLinkPhoneNumberId
-      || (record.historyLinkBrowserHash && filter.$or[1].historyLinkBrowserHash !== record.historyLinkBrowserHash))) return null;
-    if (filter.otpHash && (filter.otpHash !== record.otpHash || filter.historyLinkBrowserHash !== record.historyLinkBrowserHash)) return null;
-    Object.assign(record, update.$set);
-    return record;
+test("WhatsApp View orders opens the public Track Order URL without credentials", async (t) => {
+  const env = require("../config/env");
+  const originalEnabled = env.whatsapp.enabled;
+  const originalSecret = env.metaApp.appSecret;
+  t.after(() => {
+    env.whatsapp.enabled = originalEnabled;
+    env.metaApp.appSecret = originalSecret;
   });
-  t.mock.method(Otp, "findOne", (filter) => ({ select: () => ({ lean: async () =>
-    record.purpose === filter.purpose && record.expiresAt > filter.expiresAt.$gt
-      && (filter.otpHash ? filter.otpHash === record.otpHash : record.verifiedTokenHash === filter.verifiedTokenHash) ? record : null,
-  }) }));
-  assert.equal(await createOrderHistoryLink("449000000001", business), null);
-  const url = new URL(await createOrderHistoryLink("919000000001", business));
-  assert.equal(url.pathname, "/orders");
-  assert.equal(url.search, "");
-  const code = new URLSearchParams(url.hash.slice(1)).get("viewOrders");
-  const originalToken = code.split(".")[1];
-  assert.equal(record.otpHash, Otp.hashToken(originalToken));
-  await assert.rejects(verifiedOrderHistoryNumber({ challengeId: id, verifiedToken: originalToken }), { statusCode: 401 });
-  const ownerBrowser = "1".repeat(64);
-  const otherBrowser = "2".repeat(64);
-  const pendingOwner = await exchangeOrderHistoryLink(code, ownerBrowser);
-  const pendingOther = await exchangeOrderHistoryLink(code, otherBrowser);
-  assert.equal(pendingOther.verifiedToken, undefined);
-  assert.notEqual(pendingOther.confirmationUrl, pendingOwner.confirmationUrl);
-  const approval = { challengeId: id, browserHash: Otp.hashToken(ownerBrowser), senderWaId: "919000000001", phoneNumberId: business.phoneNumberId };
-  assert.equal(await approveOrderHistoryBrowser({ ...approval, senderWaId: "919000000003" }), false);
-  assert.equal(await approveOrderHistoryBrowser({ ...approval, phoneNumberId: "other-business" }), false);
-  assert.equal(await approveOrderHistoryBrowser(approval), true);
-  await assert.rejects(exchangeOrderHistoryLink(code, otherBrowser), { statusCode: 401 });
-  const exchanges = await Promise.allSettled([exchangeOrderHistoryLink(code, ownerBrowser), exchangeOrderHistoryLink(code, ownerBrowser)]);
-  assert.equal(exchanges.filter(({ status }) => status === "fulfilled").length, 1);
-  const { value } = exchanges.find(({ status }) => status === "fulfilled");
-  assert.notEqual(value.verifiedToken, originalToken);
-  assert.equal(await verifiedOrderHistoryNumber(value), "9000000001");
-  await assert.rejects(verifiedOrderHistoryNumber({ challengeId: id, verifiedToken: originalToken }), { statusCode: 401 });
-  const expiredUrl = new URL(await createOrderHistoryLink("919000000001", business));
-  record.expiresAt = new Date(0);
-  await assert.rejects(exchangeOrderHistoryLink(new URLSearchParams(expiredUrl.hash.slice(1)).get("viewOrders"), ownerBrowser), { statusCode: 401 });
+  env.whatsapp.enabled = true;
+  env.metaApp.appSecret = "";
+  t.mock.method(require("../models/WhatsAppAccount"), "findOne", async () => ({
+    _id: "account", phoneNumberId: "shop-phone", accessToken: "test-token",
+  }));
+  t.mock.method(require("../services/whatsappConversationService"), "recordMessage",
+    async () => ({ conversation: { _id: "conversation" } }));
+  const send = t.mock.method(require("../services/whatsappCloudApiService"), "sendInteractiveMessage",
+    async () => ({ messages: [{ id: "sent-message" }] }));
+  const createOtp = t.mock.method(Otp, "create", async () => { throw new Error("Unexpected OTP creation"); });
+  const { handleWhatsAppWebhook } = require("../controllers/whatsappWebhookController");
+  const body = { entry: [{ changes: [{ field: "messages", value: {
+    metadata: { phone_number_id: "shop-phone" },
+    messages: [{ id: "incoming", from: "919000000001", type: "text", text: { body: "View all orders" } }],
+  } }] }] };
+  await new Promise((resolve, reject) =>
+    handleWhatsAppWebhook({ body }, { status: () => ({ json: resolve }) }, reject));
+  // The webhook acknowledges before it finishes sending the WhatsApp reply.
+  await new Promise(setImmediate);
+  assert.equal(send.mock.callCount(), 1);
+  const { to, interactive } = send.mock.calls[0].arguments[0];
+  assert.equal(to, "919000000001");
+  assert.equal(interactive.type, "cta_url");
+  assert.deepEqual(interactive.action.parameters, {
+    display_text: "View orders", url: new URL("/orders", env.productionUrl).href,
+  });
+  assert.equal(createOtp.mock.callCount(), 0);
 });

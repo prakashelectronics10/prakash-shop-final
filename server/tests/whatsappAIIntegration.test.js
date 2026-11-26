@@ -8,7 +8,7 @@ function query(value) {
 }
 
 test("captionless images reach vision, voice transcripts reach chat/history, and human takeover skips media", async (t) => {
-  const conversation = { _id: "66b000000000000000000002", account: "66b000000000000000000003", customerWaId: "919876543210", conversationMemory: {}, async save() {} };
+  const conversation = { _id: "66b000000000000000000002", account: "66b000000000000000000003", customerWaId: "919876543210", conversationMemory: {}, markModified() {}, async save() {} };
   const account = { _id: conversation.account, accessToken: "secret", phoneNumberId: "123" };
   for (const model of ["Offer", "ShopProduct", "ProjectPart"]) {
     t.mock.method(require(`../models/${model}`), "find", () => query([]));
@@ -27,7 +27,9 @@ test("captionless images reach vision, voice transcripts reach chat/history, and
   });
   const sends = [];
   t.mock.method(require("../services/whatsappCloudApiService"), "sendTextMessage", async (args) => { sends.push(args.text); return { messages: [{ id: "outbound" }] }; });
+  let acceptInteractive = false;
   const interactive = t.mock.method(require("../services/whatsappCloudApiService"), "sendInteractiveMessage", async () => {
+    if (acceptInteractive) return { messages: [{ id: "product-card" }] };
     throw Object.assign(new Error("Meta rejected parameters"), { status: 400, payload: { error: { code: 131009 } } });
   });
   t.mock.method(require("../services/whatsappConversationService"), "recordMessage", async (args) => args);
@@ -92,4 +94,24 @@ test("captionless images reach vision, voice transcripts reach chat/history, and
 
   await generateWhatsAppAIReply({ account, conversation, customerMessage: "products", settings: {} });
   assert.deepEqual(models, ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.5-flash-lite"]);
+
+  acceptInteractive = true;
+  const product = { _id: "66b000000000000000000001", slug: "test-speaker", name: "Test speaker", imageUrl: "https://images.test/speaker.jpg" };
+  t.mock.method(require("../models/ShopProduct"), "find", () => query([product]));
+  t.mock.method(global, "fetch", async () => Response.json({ candidates: [{ content: { parts: [
+    { text: `Speaker details.\nWHATSAPP_IMAGES: [{"id":"product:${product._id}"}]` },
+  ] } }] }));
+  await maybeReplyWithAI({ account, conversation, customerMessage: "Show me the speaker" });
+  const card = interactive.mock.calls.at(-1).arguments[0].interactive;
+  assert.equal(card.header.image.link, product.imageUrl);
+  assert.equal(card.action.parameters.display_text, "View product");
+  assert.equal(new URL(card.action.parameters.url).pathname, "/product/test-speaker");
+
+  t.mock.method(global, "fetch", async () => Response.json({ candidates: [{ content: { parts: [
+    { text: "Repair booking confirmed. Booking ID: FAKE-1\nWHATSAPP_REPAIR: START" },
+  ] } }] }));
+  const booking = await maybeReplyWithAI({ account, conversation, customerMessage: "Mera old fan theek karwana hai" });
+  assert.match(booking.reply.text, /poora naam/);
+  assert.doesNotMatch(sends.at(-1), /FAKE-1|confirmed/);
+  assert.equal(conversation.repairDraft.step, 0);
 });

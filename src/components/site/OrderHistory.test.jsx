@@ -1,6 +1,5 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { randomFillSync } from "crypto";
 import { apiRequest } from "../../api/client";
 import { OrderHistory } from "./OrderHistory";
 
@@ -53,42 +52,22 @@ test("history requires verification and opens unpaid order details in the sheet"
   }
 });
 
-test("WhatsApp history waits for browser approval and refresh restores the verified session", async () => {
+test("Track Order restores verification from this tab only", async () => {
   const container = document.createElement("div");
   document.body.appendChild(container);
   let root = createRoot(container);
   const before = globalThis.IS_REACT_ACT_ENVIRONMENT;
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
-  jest.useFakeTimers();
-  const originalCrypto = Object.getOwnPropertyDescriptor(window, "crypto");
-  Object.defineProperty(window, "crypto", { configurable: true, value: { getRandomValues: randomFillSync } });
   apiRequest.mockClear();
-  window.history.replaceState({}, "", "/orders#viewOrders=private-code");
-  const credentials = { challengeId: "challenge", verifiedToken: "session-token", expiresInMs: 900000 };
-  const page = { data: { orders: [{ orderId: "PEFROMCHAT", paymentStatus: "paid", total: 249 }] } };
-  const confirmationUrl = "https://wa.me/919000000002?text=VERIFY";
-  apiRequest.mockResolvedValueOnce({ data: { confirmationUrl } })
-    .mockResolvedValueOnce({ data: credentials }).mockResolvedValueOnce(page).mockResolvedValueOnce(page);
+  window.history.replaceState({}, "", "/orders");
+  const credentials = { challengeId: "challenge", verifiedToken: "session-token", expiresAt: Date.now() + 900000 };
+  window.sessionStorage.setItem("prakash.orderHistory", JSON.stringify(credentials));
+  apiRequest.mockResolvedValueOnce({ data: { orders: [{ orderId: "PEVERIFIED", paymentStatus: "paid", total: 249 }] } });
   const render = () => root.render(<OrderHistory renderDetails={() => null} />);
   try {
     await act(async () => render());
-    await act(async () => jest.advanceTimersByTime(0));
-    expect(window.location.hash).toBe("");
-    expect(apiRequest.mock.calls[0][0]).toBe("/orders/history/link");
-    const linkRequest = JSON.parse(apiRequest.mock.calls[0][1].body);
-    expect(linkRequest).toEqual({ code: "private-code", browserToken: expect.stringMatching(/^[a-f0-9]{64}$/) });
-    expect(container.querySelector("a").href).toBe(confirmationUrl);
-    expect(container.textContent).not.toContain("PEFROMCHAT");
-    await act(async () => jest.advanceTimersByTime(4000));
-    expect(JSON.parse(apiRequest.mock.calls[1][1].body)).toEqual(linkRequest);
-    expect(container.textContent).toContain("PEFROMCHAT");
-    expect(container.querySelector("input")).toBeNull();
-
-    await act(async () => root.unmount());
-    root = createRoot(container);
-    await act(async () => render());
-    expect(apiRequest.mock.calls.map(([path]) => path)).toEqual(["/orders/history/link", "/orders/history/link", "/orders/history", "/orders/history"]);
-    expect(container.textContent).toContain("PEFROMCHAT");
+    expect(apiRequest.mock.calls.map(([path]) => path)).toEqual(["/orders/history"]);
+    expect(container.textContent).toContain("PEVERIFIED");
 
     await act(async () => root.unmount());
     window.sessionStorage.clear();
@@ -96,14 +75,11 @@ test("WhatsApp history waits for browser approval and refresh restores the verif
     await act(async () => render());
     await act(async () => container.querySelector(".order-history-trigger").click());
     expect(container.querySelector("#order-history-number")).not.toBeNull();
-    expect(apiRequest).toHaveBeenCalledTimes(4);
+    expect(apiRequest).toHaveBeenCalledTimes(1);
   } finally {
     act(() => root.unmount());
     window.sessionStorage.clear();
     window.history.replaceState({}, "", "/");
-    jest.useRealTimers();
-    if (originalCrypto) Object.defineProperty(window, "crypto", originalCrypto);
-    else delete window.crypto;
     container.remove();
     globalThis.IS_REACT_ACT_ENVIRONMENT = before;
   }

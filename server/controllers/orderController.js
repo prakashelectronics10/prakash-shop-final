@@ -30,7 +30,7 @@ const {
 const { logger } = require("../utils/logger");
 const Invoice = require("../models/Invoice");
 const { createOrderInvoice, getOrderInvoicePdf, orderInvoicePath } = require("../services/orderInvoiceService");
-const { verifiedOrderHistoryNumber, exchangeOrderHistoryLink } = require("../services/customerWhatsAppOtpService");
+const { verifiedOrderHistoryNumber } = require("../services/customerWhatsAppOtpService");
 
 const ORDER_STATUSES = ["confirmed", "shipped", "out_for_delivery", "delivered"];
 
@@ -287,11 +287,6 @@ async function ownedOrderFilter(body) {
   const number = await verifiedOrderHistoryNumber(body);
   return { "customer.whatsappNumber": { $in: [number, `91${number}`, `+91${number}`] } };
 }
-
-exports.exchangeCustomerOrderLink = asyncHandler(async (req, res) => {
-  res.set("Cache-Control", "no-store");
-  res.json({ success: true, data: await exchangeOrderHistoryLink(req.body?.code, req.body?.browserToken) });
-});
 
 exports.getCustomerOrders = asyncHandler(async (req, res) => {
   const filter = await ownedOrderFilter(req.body);

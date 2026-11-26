@@ -341,6 +341,26 @@ async function sendOrderConfirmationWhatsApp({ order }) {
   return { ok: true };
 }
 
+async function sendPaidOrderCardStatus(order) {
+  const account = await withAccount(order);
+  const customerWaId = toWhatsAppE164(order.customer?.whatsappNumber);
+  if (!account || !/^\d{8,15}$/.test(customerWaId)) return false;
+  const status = order.orderStatus === "delivered" ? "completed"
+    : ["shipped", "out_for_delivery"].includes(order.orderStatus) ? "shipped" : "processing";
+  const result = await sendInteractiveMessage({
+    phoneNumberId: account.phoneNumberId, accessToken: account.accessToken, to: customerWaId,
+    interactive: {
+      type: "order_status",
+      body: { text: `Payment verified for order ${order.orderId}.` },
+      action: { name: "review_order", parameters: {
+        reference_id: order.orderId,
+        order: { status, description: "Payment received." },
+      } },
+    },
+  });
+  return Boolean(result?.messages?.[0]?.id);
+}
+
 async function sendOrderInvoiceWhatsApp({ order, invoice }) {
   if (!invoice?._id) return { ok: false, reason: "invoice_not_available" };
   const whatsappNumber = toWhatsAppE164(order.customer?.whatsappNumber);
@@ -933,6 +953,7 @@ module.exports = {
   sendBookingConfirmationWhatsApp,
   sendOrderConfirmationWhatsApp,
   sendOrderInvoiceWhatsApp,
+  sendPaidOrderCardStatus,
   sendPaymentUnsuccessfulWhatsApp,
   sendPaymentReceivedWhatsApp,
   sendOrderShipmentWhatsApp,

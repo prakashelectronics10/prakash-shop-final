@@ -2,7 +2,7 @@ const env = require("../config/env");
 const Order = require("../models/Order");
 const { logger } = require("../utils/logger");
 const { createOrderInvoice } = require("./orderInvoiceService");
-const { sendOrderInvoiceWhatsApp } = require("./whatsappTransactionalService");
+const { sendOrderInvoiceWhatsApp, sendPaidOrderCardStatus } = require("./whatsappTransactionalService");
 
 const POLL_MS = 30000;
 const REVIEW_RETRY_MS = 5 * 60 * 1000;
@@ -11,6 +11,7 @@ const LEASE_MS = 2 * 60 * 1000;
 const BATCH_SIZE = 10;
 let timer;
 let running = false;
+let missingInvoicesQueued = false;
 
 async function deliverNextOrderInvoice(now = new Date()) {
   const claimUntil = new Date(now.getTime() + LEASE_MS);
@@ -57,12 +58,51 @@ async function deliverNextOrderInvoice(now = new Date()) {
   return true;
 }
 
+async function deliverNextOrderCardStatus(now = new Date()) {
+  const nextAttempt = new Date(now.getTime() + FAILURE_RETRY_MS);
+  const order = await Order.findOneAndUpdate({
+    source: "whatsapp", paymentStatus: "paid",
+    orderStatus: { $in: ["confirmed", "shipped", "out_for_delivery", "delivered"] },
+    paymentRequestMessageId: { $gt: "" },
+    "items.retailerId": { $gt: "" },
+    whatsappCardStatusSentAt: null,
+    paidAt: { $gte: new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000) },
+    $or: [
+      { whatsappCardStatusNextAttemptAt: null },
+      { whatsappCardStatusNextAttemptAt: { $lte: now } },
+    ],
+  }, { $set: { whatsappCardStatusNextAttemptAt: nextAttempt } },
+  { new: true, sort: { paidAt: -1 }, timestamps: false });
+  if (!order) return false;
+  try {
+    if (await sendPaidOrderCardStatus(order)) {
+      await Order.updateOne({ _id: order._id, whatsappCardStatusNextAttemptAt: nextAttempt }, {
+        $set: { whatsappCardStatusSentAt: new Date() },
+        $unset: { whatsappCardStatusNextAttemptAt: 1 },
+      }, { timestamps: false });
+    }
+  } catch (error) {
+    logger.warn("order.whatsapp_card_status_retry", {
+      orderId: order.orderId, status: error.status, metaCode: error.payload?.error?.code,
+    });
+  }
+  return true;
+}
+
 async function tick() {
   if (running) return;
   running = true;
   try {
+    if (!missingInvoicesQueued) {
+      await Order.updateMany({
+        source: "whatsapp", paymentStatus: "paid", invoiceWhatsAppSentAt: null,
+        invoiceWhatsAppNextAttemptAt: { $exists: false }, "customer.whatsappNumber": /^\+?\d{8,15}$/,
+      }, { $set: { invoiceWhatsAppNextAttemptAt: new Date() } }, { timestamps: false });
+      missingInvoicesQueued = true;
+    }
     for (let count = 0; count < BATCH_SIZE; count += 1) {
-      if (!(await deliverNextOrderInvoice())) break;
+      const tasks = await Promise.all([deliverNextOrderInvoice(), deliverNextOrderCardStatus()]);
+      if (!tasks.some(Boolean)) break;
     }
   } catch (error) {
     logger.error("order.whatsapp_invoice_worker_failed", { detail: error.message });
@@ -78,4 +118,4 @@ function startOrderInvoiceWhatsAppWorker() {
   void tick();
 }
 
-module.exports = { deliverNextOrderInvoice, startOrderInvoiceWhatsAppWorker };
+module.exports = { deliverNextOrderInvoice, deliverNextOrderCardStatus, startOrderInvoiceWhatsAppWorker };

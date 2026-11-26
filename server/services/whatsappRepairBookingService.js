@@ -26,8 +26,9 @@ function review(draft) {
 }
 
 function isRepairRequest(text) {
-  return /^(?:repair|book service|service booking)$/i.test(text)
-    || /(?:repair|marammat|मरम्मत).*(?:book|kar[awn]|कर|बुक)|(?:book|बुक).*(?:repair|service|मरम्मत)/i.test(text);
+  if (/\b(?:status|track|already booked)\b|स्टेटस/.test(text.toLowerCase())) return false;
+  return /\b(?:repairs?|repairing|marammat|repar|repaire)\b|रिपेयर|मरम्मत|ठीक\s*कर/i.test(text)
+    || /(?:\bservice\b|सर्विस).*(?:book|kar|कर|बुक)|(?:book|बुक).*(?:\bservice\b|सर्विस)/i.test(text);
 }
 
 async function handleRepairBooking({ account, conversation, customerMessage, media, buttonReplyId }) {
@@ -81,19 +82,19 @@ async function handleRepairBooking({ account, conversation, customerMessage, med
     await save(draft);
     return fields[draft.step]?.[1] || review(draft);
   }
-  if (!/^confirm$/i.test(input)) return review(draft);
+  if (!/^(?:confirm(?: booking| repair)?|booking confirm|yes|haan|han|ha|हाँ|हां)[.!]?$/i.test(input)) return review(draft);
+  let booking;
   try {
-    const booking = await Booking.create({ _id: draft.id, ...draft.data, images: draft.images,
+    booking = await Booking.create({ _id: draft.id, ...draft.data, images: draft.images,
       imageUrl: draft.images[0]?.url, imagePublicId: draft.images[0]?.publicId, bookingSource: "whatsapp" });
-    enqueueBookingNotification(booking);
   } catch (error) {
-    if (error.code !== 11000) {
-      require("../utils/logger").logger.error("whatsapp.repair_booking_failed", { code: error.code, bookingId: draft.id });
-      return "Booking save verify nahi ho payi. Thodi der baad CONFIRM dobara bhejein.";
-    }
+    if (error.code === 11000) booking = await Booking.findById(draft.id);
+    if (!booking) require("../utils/logger").logger.error("whatsapp.repair_booking_failed", { code: error.code, bookingId: draft.id });
   }
+  if (!booking) return "Booking save verify nahi ho payi. Thodi der baad CONFIRM dobara bhejein.";
+  enqueueBookingNotification(booking);
   await save(null);
-  return "Repair booking submit ho gayi. Booking ID: " + draft.id;
+  return "Repair booking submit ho gayi. Booking ID: " + booking._id;
 }
 
 module.exports = { handleRepairBooking };
