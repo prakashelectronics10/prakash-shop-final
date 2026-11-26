@@ -67,13 +67,14 @@ test("submission rechecks eligibility and persists only a valid pending review",
   await assert.rejects(request(reviews.submitReview, input), { statusCode: 409, message: /already been submitted/ });
 });
 
-test("public summary calculates the weighted average from approved ratings and projects only public fields", async (t) => {
+test("public summary orders approved cards by submission time and calculates the overall rating", async (t) => {
   const createdAt = new Date();
+  const earlierCreatedAt = new Date(createdAt.getTime() - 60_000);
   const reviewId = new Types.ObjectId();
   const earlierReviewId = new Types.ObjectId();
   const items = [
+    { _id: earlierReviewId, rating: 2, review: "", createdAt: earlierCreatedAt },
     { _id: reviewId, rating: 5, review: "Excellent", createdAt, reviewerName: "Aarav Kumar Sharma", orderId: "PEPRIVATE" },
-    { _id: earlierReviewId, rating: 2, review: "", createdAt },
   ];
   const aggregate = t.mock.method(ProductReview, "aggregate", async () => [{ counts: [{ _id: 5, count: 2 }, { _id: 2, count: 1 }], items }]);
   const { data } = await request(reviews.getPublicReviews);
@@ -81,11 +82,12 @@ test("public summary calculates the weighted average from approved ratings and p
   assert.equal(data.total, 3);
   assert.deepEqual(data.distribution.map(({ count }) => count), [2, 0, 0, 1, 0]);
   assert.deepEqual(data.items, [
+    { _id: earlierReviewId, rating: 2, review: "", createdAt: earlierCreatedAt, displayName: "Customer" },
     { _id: reviewId, rating: 5, review: "Excellent", createdAt, displayName: "Aarav S." },
-    { _id: earlierReviewId, rating: 2, review: "", createdAt, displayName: "Customer" },
   ]);
   const [pipeline] = aggregate.mock.calls[0].arguments;
   assert.equal(pipeline[0].$match.status, "approved");
+  assert.deepEqual(pipeline[1].$sort, { createdAt: 1, _id: 1 });
   const itemStages = pipeline[2].$facet.items;
   assert.deepEqual(itemStages[2].$lookup.pipeline, [{ $project: { _id: 0, "customer.name": 1 } }]);
   assert.equal(itemStages[2].$lookup.localField, "order");

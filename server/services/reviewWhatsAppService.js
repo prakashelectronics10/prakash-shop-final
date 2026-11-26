@@ -8,8 +8,8 @@ const { getActiveWhatsAppAccount, toWhatsAppE164 } = require("./whatsappAccountS
 const whatsapp = require("./whatsappCloudApiService");
 
 const SETTINGS_ID = "product-review-whatsapp";
-const ACTIONS = ["approve", "decline", "later"];
 const PREFIX = "product-review:";
+const QUICK_REPLY_ACTIONS = new Map([["approve", "approve"], ["decline", "decline"], ["manage later", "later"]]);
 const POLL_MS = 15_000;
 const MAX_ATTEMPTS = 5;
 let timer;
@@ -46,7 +46,7 @@ function templateComponents(review, delivery, whatsappNumber, phoneNumberId) {
   const text = [`${review.rating}/5`, compactText(review.review, 600) || "Rating only", compactText(review.productName, 100)];
   return [
     { type: "body", parameters: text.map((value) => ({ type: "text", text: value })) },
-    ...ACTIONS.map((action, index) => ({
+    ...[...QUICK_REPLY_ACTIONS.values()].map((action, index) => ({
       type: "button", sub_type: "quick_reply", index: String(index),
       parameters: [{ type: "payload", payload: `${PREFIX}${review._id}:${delivery._id}:${action}:${actionSignature(review._id, delivery._id, action, recipientWaId, phoneNumberId)}` }],
     })),
@@ -101,26 +101,53 @@ async function deliverNextReviewAlert(now = new Date()) {
   return true;
 }
 
-function isReviewAction(id) {
+function isSignedReviewAction(id) {
   return typeof id === "string" && id.startsWith(PREFIX);
+}
+
+function getContextReviewAction(event) {
+  const messageId = event.raw?.context?.id;
+  if (event.type === "button" && typeof messageId === "string" && messageId) {
+    return QUICK_REPLY_ACTIONS.get(event.text?.toLowerCase());
+  }
+  return undefined;
 }
 
 async function handleReviewAction({ account, event }) {
   if (!env.metaApp.appSecret || !env.jwtSecret || !["button", "interactive"].includes(event.type)) return;
-  const match = /^product-review:([a-f\d]{24}):([a-f\d]{24}):(approve|decline|later):([a-f\d]{32})$/.exec(event.buttonReplyId);
-  if (!match) return;
-  const [, reviewId, deliveryId, action, signature] = match;
-  const phoneNumberId = account.phoneNumberId;
-  const expected = actionSignature(reviewId, deliveryId, action, event.customerWaId, phoneNumberId);
-  if (!crypto.timingSafeEqual(Buffer.from(signature, "hex"), Buffer.from(expected, "hex"))) return;
+  const phoneNumberId = String(account.phoneNumberId);
+  const sender = toWhatsAppE164(event.customerWaId);
+  if (!sender) return;
 
-  const review = await ProductReview.findById(reviewId).select("whatsappDeliveries").lean();
-  const delivery = review?.whatsappDeliveries?.find((item) => String(item._id) === deliveryId);
-  if (!delivery?.messageId || delivery.phoneNumberId !== phoneNumberId
-      || (event.raw?.context?.id && event.raw.context.id !== delivery.messageId)) return;
+  let review;
+  let delivery;
+  let action;
+  if (isSignedReviewAction(event.buttonReplyId)) {
+    const match = /^product-review:([a-f\d]{24}):([a-f\d]{24}):(approve|decline|later):([a-f\d]{32})$/.exec(event.buttonReplyId);
+    if (!match) return;
+    const [, reviewId, deliveryId, signedAction, signature] = match;
+    const expected = actionSignature(reviewId, deliveryId, signedAction, sender, phoneNumberId);
+    if (!crypto.timingSafeEqual(Buffer.from(signature, "hex"), Buffer.from(expected, "hex"))) return;
+
+    // The signed payload binds the action to this delivery, sender, and business number.
+    // A reply can arrive before the outbound message ID is saved, or refer to an earlier delivery retry.
+    review = await ProductReview.findById(reviewId).select("whatsappDeliveries").lean();
+    delivery = review?.whatsappDeliveries?.find((item) => String(item._id) === deliveryId);
+    action = signedAction;
+  } else {
+    action = getContextReviewAction(event);
+    if (!action) return;
+    const messageId = event.raw.context.id;
+    // Template quick replies without a custom payload must match the original outbound alert.
+    review = await ProductReview.findOne({ whatsappDeliveries: { $elemMatch: { messageId, phoneNumberId } } })
+      .select("whatsappDeliveries").lean();
+    delivery = review?.whatsappDeliveries?.find((item) => item.messageId === messageId && item.phoneNumberId === phoneNumberId);
+  }
+  if (!delivery) return;
+
   const settings = await ReviewWhatsAppSettings.findById(SETTINGS_ID).lean();
   const recipient = settings?.recipients?.find((item) => item._id.equals(delivery.recipientId)
-    && toWhatsAppE164(item.whatsappNumber) === event.customerWaId);
+    && toWhatsAppE164(item.whatsappNumber) === sender);
   if (!recipient) return;
 
   let text;
@@ -130,13 +157,18 @@ async function handleReviewAction({ account, event }) {
   } else {
     const status = action === "approve" ? "approved" : "declined";
     const now = new Date();
-    const update = await ProductReview.updateOne({ _id: reviewId, status: "pending" }, {
+    const update = await ProductReview.updateOne({ _id: review._id, status: "pending" }, {
       $set: { status, readAt: now, moderatedAt: now, moderatedByWhatsAppRecipient: recipient._id },
       $unset: { moderatedBy: 1 },
     });
-    text = update.modifiedCount ? `Review ${status}.` : "This review has already been moderated.";
+    if (update.modifiedCount) {
+      text = status === "approved" ? "Review approved and published on the product page." : "Review declined.";
+    } else {
+      const current = await ProductReview.findById(review._id).select("status").lean();
+      text = current ? `This review is already ${current.status}.` : "This review is no longer available.";
+    }
   }
-  await whatsapp.sendTextMessage({ phoneNumberId, accessToken: account.accessToken, to: event.customerWaId, text });
+  return { phoneNumberId, accessToken: account.accessToken, to: sender, text };
 }
 
 async function wakeReviewAlerts() {
@@ -161,6 +193,6 @@ function startReviewWhatsAppWorker() {
 }
 
 module.exports = {
-  SETTINGS_ID, alertsAvailable, prepareReviewAlerts, isReviewAction, handleReviewAction,
+  SETTINGS_ID, alertsAvailable, prepareReviewAlerts, isSignedReviewAction, getContextReviewAction, handleReviewAction,
   startReviewWhatsAppWorker, wakeReviewAlerts, templateComponents, deliverNextReviewAlert,
 };

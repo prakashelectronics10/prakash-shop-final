@@ -30,6 +30,7 @@ productReviewSchema.index({ order: 1, sourceType: 1, productId: 1 }, { unique: t
 productReviewSchema.index({ productId: 1, sourceType: 1, status: 1, createdAt: -1, _id: -1 });
 productReviewSchema.index({ createdAt: -1, _id: -1 });
 productReviewSchema.index({ "whatsappDeliveries.nextAttemptAt": 1 }, { sparse: true });
+productReviewSchema.index({ "whatsappDeliveries.messageId": 1 }, { sparse: true });
 
 const ProductReview = mongoose.model("ProductReview", productReviewSchema);
 

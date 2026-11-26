@@ -19,7 +19,7 @@ const {
 } = require("../services/whatsappTransactionalService");
 const { logger } = require("../utils/logger");
 const { recordDeliveryReceipts } = require("../services/whatsappDeliveryService");
-const { isReviewAction, handleReviewAction } = require("../services/reviewWhatsAppService");
+const { isSignedReviewAction, getContextReviewAction, handleReviewAction } = require("../services/reviewWhatsAppService");
 
 function requestsOrderHistory(text = "") {
   const message = text.toLowerCase().trim().replace(/[.!?]+$/, "");
@@ -124,12 +124,37 @@ exports.handleWhatsAppWebhook = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: "Invalid JSON" });
   }
 
-  res.status(200).json({ success: true });
-
   if (!env.whatsapp.enabled) {
     logger.info("whatsapp.webhook.ignored_disabled");
-    return;
+    return res.status(200).json({ success: true });
   }
+
+  const conversationEvents = [];
+  const reviewReplies = [];
+  for (const event of parseInboundWebhook(payload)) {
+    const signedReviewAction = isSignedReviewAction(event.buttonReplyId);
+    if (env.metaApp.appSecret && (signedReviewAction || getContextReviewAction(event))) {
+      try {
+        const account = await resolveAccountByPhoneNumberId(event.phoneNumberId);
+        const reply = account && await handleReviewAction({ account, event });
+        if (reply) {
+          reviewReplies.push(reply);
+          continue;
+        }
+      } catch (error) {
+        // A failed write must remain retryable by Meta.
+        logger.error("review_whatsapp.action_failed", { code: error.code, messageId: event.messageId });
+        return res.status(503).json({ success: false, message: "Review action temporarily unavailable" });
+      }
+    }
+    if (!signedReviewAction) conversationEvents.push(event);
+  }
+
+  res.status(200).json({ success: true });
+
+  await Promise.all(reviewReplies.map((reply) => sendTextMessage(reply).catch((error) => {
+    logger.warn("review_whatsapp.reply_failed", { status: error.status, metaCode: error.payload?.error?.code });
+  })));
 
   if (env.metaApp.appSecret) {
     await recordDeliveryReceipts(payload).catch((error) => {
@@ -137,17 +162,11 @@ exports.handleWhatsAppWebhook = catchAsync(async (req, res) => {
     });
   }
 
-  const events = parseInboundWebhook(payload);
-  for (const event of events) {
+  for (const event of conversationEvents) {
     try {
       const account = await resolveAccountByPhoneNumberId(event.phoneNumberId);
       if (!account) {
         logger.warn("whatsapp.webhook.unknown_phone", { phoneNumberId: event.phoneNumberId });
-        continue;
-      }
-
-      if (isReviewAction(event.buttonReplyId)) {
-        if (env.metaApp.appSecret) await handleReviewAction({ account, event });
         continue;
       }
 

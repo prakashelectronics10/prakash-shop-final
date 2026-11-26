@@ -74,7 +74,7 @@ exports.getPublicReviews = asyncHandler(async (req, res) => {
   const pageSize = 8;
   const [result] = await ProductReview.aggregate([
     { $match: { ...identity, status: "approved" } },
-    { $sort: newestFirst },
+    { $sort: { createdAt: 1, _id: 1 } },
     { $facet: {
       counts: [{ $group: { _id: "$rating", count: { $sum: 1 } } }],
       items: [

@@ -6,6 +6,7 @@ import ReviewWhatsAppSettings from "./ReviewWhatsAppSettings";
 import "./ProductReviewsModule.css";
 
 const initialFilters = { product: "", status: "", read: "", from: "", to: "" };
+const REVIEW_REFRESH_MS = 15_000;
 const dateFormat = new Intl.DateTimeFormat("en-IN", {
   dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Kolkata",
 });
@@ -38,6 +39,7 @@ export default function ProductReviewsModule({ apiFetch }) {
 
   useEffect(() => {
     let current = true;
+    let inFlight = false;
     const { product, ...otherFilters } = filters;
     const query = new URLSearchParams({ page: String(page) });
     if (product) {
@@ -46,20 +48,43 @@ export default function ProductReviewsModule({ apiFetch }) {
       query.set("productId", productId);
     }
     Object.entries(otherFilters).forEach(([name, value]) => { if (value) query.set(name, value); });
-    setLoading(true);
-    setListError("");
-    apiFetch(`/product-reviews/admin?${query}`, { cache: "no-store" }).then(({ data }) => {
-      if (!current) return;
-      if (!Array.isArray(data?.items)) throw new Error("Couldn’t load reviews.");
-      const lastPage = Math.max(1, data.pages);
-      if (page > lastPage) setPage(lastPage);
-      else setResult(data);
-    }).catch((error) => {
-      if (current) setListError(error.message || "Couldn’t load reviews.");
-    }).finally(() => {
-      if (current) setLoading(false);
-    });
-    return () => { current = false; };
+    async function loadReviews(showLoading = false) {
+      if (inFlight) return;
+      inFlight = true;
+      if (showLoading) {
+        setLoading(true);
+        setListError("");
+      }
+      try {
+        const { data } = await apiFetch(`/product-reviews/admin?${query}`, { cache: "no-store" });
+        if (!current) return;
+        if (!Array.isArray(data?.items)) throw new Error("Couldn’t load reviews.");
+        const lastPage = Math.max(1, data.pages);
+        if (page > lastPage) setPage(lastPage);
+        else setResult(data);
+        setListError("");
+      } catch (error) {
+        if (current && showLoading) setListError(error.message || "Couldn’t load reviews.");
+      } finally {
+        inFlight = false;
+        if (current && showLoading) setLoading(false);
+      }
+    }
+
+    function refreshVisibleReviews() {
+      if (document.visibilityState === "visible" && !saving.current) void loadReviews();
+    }
+
+    void loadReviews(true);
+    const timer = window.setInterval(refreshVisibleReviews, REVIEW_REFRESH_MS);
+    window.addEventListener("focus", refreshVisibleReviews);
+    document.addEventListener("visibilitychange", refreshVisibleReviews);
+    return () => {
+      current = false;
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refreshVisibleReviews);
+      document.removeEventListener("visibilitychange", refreshVisibleReviews);
+    };
   }, [apiFetch, filters, page, revision]);
 
   function apply(event) {
@@ -149,7 +174,7 @@ export default function ProductReviewsModule({ apiFetch }) {
                   <div className="admin-review-actions" aria-label="Review actions">
                     {item.status !== "approved" && <button type="button" className="primary-button" disabled={Boolean(savingId)} onClick={() => update(item, { status: "approved" })}><Check size={16} /> Approve</button>}
                     {item.status !== "declined" && <button type="button" className="ghost-button admin-review-decline" disabled={Boolean(savingId)} onClick={() => update(item, { status: "declined" })}><X size={16} /> Decline</button>}
-                    <button type="button" className="ghost-button" disabled={Boolean(savingId)} onClick={() => update(item, { read: !item.readAt })}>Mark as {item.readAt ? "unread" : "read"}</button>
+                    {item.status !== "approved" && <button type="button" className="ghost-button" disabled={Boolean(savingId)} onClick={() => update(item, { read: !item.readAt })}>Mark as {item.readAt ? "unread" : "read"}</button>}
                     {savingId === item._id && <span className="muted" role="status">Saving…</span>}
                   </div>
                 </article>

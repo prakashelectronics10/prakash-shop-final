@@ -1,5 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const { createHmac } = require("node:crypto");
 const { Types } = require("mongoose");
 const ProductReview = require("../models/ProductReview");
 const ReviewWhatsAppSettings = require("../models/ReviewWhatsAppSettings");
@@ -9,6 +10,7 @@ const env = require("../config/env");
 const whatsapp = require("../services/whatsappCloudApiService");
 const transactionalWhatsApp = require("../services/whatsappTransactionalService");
 const controller = require("../controllers/reviewWhatsAppController");
+const { handleWhatsAppWebhook } = require("../controllers/whatsappWebhookController");
 const service = require("../services/reviewWhatsAppService");
 const template = require("../config/product-review-alert-template.json");
 
@@ -98,22 +100,91 @@ test("moderation buttons require the intended WhatsApp sender and affect only pe
   const settings = { recipients: [recipient] };
   t.mock.method(ReviewWhatsAppSettings, "findById", () => ({ lean: async () => settings }));
   const update = t.mock.method(ProductReview, "updateOne", async () => ({ modifiedCount: 1 }));
-  const send = t.mock.method(whatsapp, "sendTextMessage", async () => ({}));
   const [, approve, decline, later] = service.templateComponents(review, delivery, recipient.whatsappNumber, account.phoneNumberId);
   const event = { type: "button", customerWaId: "919876543210", raw: { context: { id: delivery.messageId } } };
   const reply = (button, overrides = {}) => service.handleReviewAction({ account, event: { ...event, ...overrides, buttonReplyId: button.parameters[0].payload } });
   await reply(approve, { customerWaId: "919000000000" });
   assert.equal(update.mock.callCount(), 0);
-  await reply(approve);
+  assert.match((await reply(approve)).text, /approved and published/);
   await reply(decline);
-  assert.deepEqual(update.mock.calls[0].arguments[0], { _id: String(review._id), status: "pending" });
+  assert.deepEqual(update.mock.calls[0].arguments[0], { _id: review._id, status: "pending" });
   assert.deepEqual(update.mock.calls.map(({ arguments: args }) => args[1].$set.status), ["approved", "declined"]);
-  await reply(later);
+  assert.match((await reply(later)).text, /admin panel/);
   assert.equal(update.mock.callCount(), 2);
-  assert.match(send.mock.calls[2].arguments[0].text, /admin panel/);
   settings.recipients = [];
   await reply(approve);
   assert.equal(update.mock.callCount(), 2);
+});
+
+function postQuickReply(message) {
+  const body = Buffer.from(JSON.stringify({ entry: [{ changes: [{ field: "messages", value: {
+    metadata: { phone_number_id: account.phoneNumberId }, messages: [{
+      id: "wamid.inbound", from: "919876543210", type: "button", ...message,
+    }],
+  } }] }] }));
+  const signature = `sha256=${createHmac("sha256", env.metaApp.appSecret).update(body).digest("hex")}`;
+  return new Promise((resolve, reject) => handleWhatsAppWebhook({ body, get: () => signature }, {
+    status: (status) => ({ json: () => resolve(status) }),
+  }, reject));
+}
+
+test("Meta can retry a signed approval when saving fails, even before the outbound message ID is recorded", async (t) => {
+  enableProvider(t);
+  let status = "pending";
+  let shouldFail = true;
+  const inFlightReview = { ...review, whatsappDeliveries: [{ _id: delivery._id, recipientId: recipient._id }] };
+  t.mock.method(WhatsAppAccount, "findOne", async () => account);
+  t.mock.method(ProductReview, "findById", () => ({ select: (field) => ({
+    lean: async () => field === "status" ? { status } : inFlightReview,
+  }) }));
+  t.mock.method(ReviewWhatsAppSettings, "findById", () => ({ lean: async () => ({ recipients: [recipient] }) }));
+  const write = t.mock.method(ProductReview, "updateOne", async (filter, { $set }) => {
+    if (shouldFail) throw new Error("Temporary database error");
+    if (status !== filter.status) return { modifiedCount: 0 };
+    assert.ok($set.readAt instanceof Date);
+    assert.equal($set.moderatedByWhatsAppRecipient, recipient._id);
+    status = $set.status;
+    return { modifiedCount: 1 };
+  });
+  const send = t.mock.method(global, "fetch", async () => ({ ok: true, json: async () => ({}) }));
+  const [, approve] = service.templateComponents(review, delivery, recipient.whatsappNumber, account.phoneNumberId);
+  const message = { context: { id: "wamid.original-attempt" }, button: { text: "Approve", payload: approve.parameters[0].payload } };
+
+  assert.equal(await postQuickReply(message), 503);
+  assert.equal(status, "pending");
+  assert.equal(send.mock.callCount(), 0);
+
+  shouldFail = false;
+  assert.equal(await postQuickReply(message), 200);
+  assert.equal(status, "approved");
+  assert.equal(await postQuickReply(message), 200);
+  assert.equal(status, "approved");
+  assert.equal(write.mock.callCount(), 3);
+  assert.deepEqual(send.mock.calls.map(({ arguments: [, request] }) => JSON.parse(request.body).text.body), [
+    "Review approved and published on the product page.", "This review is already approved.",
+  ]);
+});
+
+test("a template button label is accepted only for the matching alert and its verified recipient", async (t) => {
+  enableProvider(t);
+  const find = t.mock.method(ProductReview, "findOne", () => ({ select() { return this; }, lean: async () => review }));
+  t.mock.method(ReviewWhatsAppSettings, "findById", () => ({ lean: async () => ({ recipients: [recipient] }) }));
+  const update = t.mock.method(ProductReview, "updateOne", async () => ({ modifiedCount: 1 }));
+  const event = { type: "button", text: "Approve", customerWaId: "919876543210", raw: { context: { id: delivery.messageId } } };
+
+  await service.handleReviewAction({ account, event: { ...event, type: "text" } });
+  await service.handleReviewAction({ account, event: { ...event, customerWaId: "919000000000" } });
+  await service.handleReviewAction({ account, event: { ...event, raw: { context: { id: "wamid.other" } } } });
+  await service.handleReviewAction({ account, event: { ...event, buttonReplyId: "product-review:invalid" } });
+  assert.equal(update.mock.callCount(), 0);
+  assert.equal(find.mock.callCount(), 2);
+
+  const reply = await service.handleReviewAction({ account, event });
+  assert.deepEqual(find.mock.calls[2].arguments[0], { whatsappDeliveries: { $elemMatch: {
+    messageId: delivery.messageId, phoneNumberId: account.phoneNumberId,
+  } } });
+  assert.match(reply.text, /approved and published/);
+  assert.equal(update.mock.callCount(), 1);
 });
 
 test("adding a number requires a valid one-use WhatsApp code in the original admin session", async (t) => {
