@@ -45,6 +45,8 @@ test("shows each suggestion once per browser and starts independently in a fresh
     expect(sheet().querySelector("a").getAttribute("href")).toBe("/pulse-ai#say-hello");
     expect(sheet().querySelector("button")).toBeNull();
 
+    tick(30_000);
+    expect(sheet().querySelector("h2").textContent).toBe("Pulse AI");
     act(() => sheet().dispatchEvent(new Event("cancel", { cancelable: true })));
     expect(sheet()).toBeNull();
     tick(7_999);
@@ -65,7 +67,12 @@ test("shows each suggestion once per browser and starts independently in a fresh
     render();
     tick(20_000);
     expect(sheet().querySelector("h2").textContent).toBe("Pulse AI");
-    tick(8_000);
+    const pulseLink = sheet().querySelector("a");
+    pulseLink.addEventListener("click", (event) => event.preventDefault(), { once: true });
+    act(() => pulseLink.click());
+    tick(7_999);
+    expect(sheet()).toBeNull();
+    tick(1);
     expect(sheet().querySelector("h2").textContent).toBe("Connect with us on WhatsApp");
   } finally {
     cleanup();
@@ -86,11 +93,14 @@ test("a new visit can show cards that were never shown, including in a browser t
     expect(sheet()).toBeNull();
     tick(1);
     expect(sheet().querySelector("h2").textContent).toBe("Pulse AI");
+    act(() => window.dispatchEvent(new Event("pagehide")));
+    expect(sheet()).toBeNull();
     render(null);
     sessionStorage.removeItem(visitKey);
+    tick(2_000);
 
     render();
-    tick(7_999);
+    tick(5_999);
     expect(sheet()).toBeNull();
     tick(1);
     expect(sheet().querySelector("h2").textContent).toBe("Connect with us on WhatsApp");
@@ -121,10 +131,32 @@ test("carries the first-visit timer across pages and waits for an open storefron
     render(null);
     render();
     expect(sheet()).toBeNull();
-    tick(4_000);
+    tick(7_999);
+    expect(sheet()).toBeNull();
+    tick(1);
     expect(sheet().querySelector("h2").textContent).toBe("Connect with us on WhatsApp");
   } finally {
     productDialog.remove();
+    cleanup();
+  }
+});
+
+test("a second tab waits until the Pulse AI card has been dismissed", () => {
+  const { render, tick, sheet, cleanup } = setup();
+  try {
+    const pulseShownAt = Date.now();
+    localStorage.setItem(visitKey, JSON.stringify({ pulseShownAt, pulseDismissedAt: null }));
+    render();
+    tick(30_000);
+    expect(sheet()).toBeNull();
+
+    localStorage.setItem(visitKey, JSON.stringify({ pulseShownAt, pulseDismissedAt: Date.now() }));
+    act(() => window.dispatchEvent(new StorageEvent("storage", { key: visitKey })));
+    tick(7_999);
+    expect(sheet()).toBeNull();
+    tick(1);
+    expect(sheet().querySelector("h2").textContent).toBe("Connect with us on WhatsApp");
+  } finally {
     cleanup();
   }
 });

@@ -19,6 +19,10 @@ function getVisitStart() {
   return now;
 }
 
+function readShownSuggestions() {
+  return JSON.parse(window.localStorage.getItem(VISIT_KEY) || "{}");
+}
+
 function pageHasActiveInteraction() {
   return document.querySelector('dialog[open]:not(.first-visit-suggestion), [aria-modal="true"]:not(.first-visit-suggestion)')
     || document.activeElement?.matches('input, textarea, select, [contenteditable="true"]');
@@ -107,6 +111,7 @@ function SuggestionSheet({ suggestion, onDismiss }) {
 
 export function FirstVisitSuggestions() {
   const [suggestion, setSuggestion] = useState(null);
+  const dismissPulseRef = useRef(null);
 
   useEffect(() => {
     let startedAt;
@@ -118,16 +123,42 @@ export function FirstVisitSuggestions() {
     }
     let active = true;
     let timer;
-    function showDueSuggestion() {
+    let pulseOpen = false;
+    let releasePulseLock;
+
+    function recordPulseDismissal() {
+      if (!pulseOpen) return false;
+      pulseOpen = false;
+      try {
+        const shown = readShownSuggestions();
+        if (shown.pulseShownAt && !shown.pulseDismissedAt) {
+          window.localStorage.setItem(VISIT_KEY, JSON.stringify({ ...shown, pulseDismissedAt: Date.now() }));
+        }
+      } catch {
+        // The dialog can still close if browser storage is unavailable.
+      } finally {
+        releasePulseLock?.();
+        releasePulseLock = undefined;
+      }
+      return true;
+    }
+
+    function showDueSuggestion(holdsLock = false) {
       window.clearTimeout(timer);
-      if (!active || document.visibilityState === "hidden") return;
+      if (!active || pulseOpen || document.visibilityState === "hidden") return;
 
       try {
-        const shown = JSON.parse(window.localStorage.getItem(VISIT_KEY) || "{}");
+        const shown = readShownSuggestions();
         if (shown.whatsappShown) return;
         const now = Date.now();
-        const dueAt = shown.pulseShownAt
-          ? Math.max(shown.pulseShownAt, startedAt) + WHATSAPP_DELAY
+        if (shown.pulseShownAt && !shown.pulseDismissedAt) {
+          // A live Pulse card holds the lock. Recover stale visits and older saved state.
+          if (shown.pulseDismissedAt === null && !holdsLock) return;
+          shown.pulseDismissedAt = now;
+          window.localStorage.setItem(VISIT_KEY, JSON.stringify(shown));
+        }
+        const dueAt = shown.pulseDismissedAt
+          ? shown.pulseDismissedAt + WHATSAPP_DELAY
           : startedAt + PULSE_DELAY;
         const remaining = dueAt - now;
         if (remaining > 0) {
@@ -135,11 +166,12 @@ export function FirstVisitSuggestions() {
         } else if (pageHasActiveInteraction()) {
           timer = window.setTimeout(advanceSuggestions, 1000);
         } else if (!shown.pulseShownAt) {
-          window.localStorage.setItem(VISIT_KEY, JSON.stringify({ pulseShownAt: now }));
+          window.localStorage.setItem(VISIT_KEY, JSON.stringify({ pulseShownAt: now, pulseDismissedAt: null }));
+          pulseOpen = true;
           setSuggestion("pulse");
-          timer = window.setTimeout(advanceSuggestions, WHATSAPP_DELAY);
+          if (holdsLock) return new Promise((resolve) => { releasePulseLock = resolve; });
         } else {
-          window.localStorage.setItem(VISIT_KEY, JSON.stringify({ pulseShownAt: shown.pulseShownAt, whatsappShown: true }));
+          window.localStorage.setItem(VISIT_KEY, JSON.stringify({ ...shown, whatsappShown: true }));
           setSuggestion("whatsapp");
         }
       } catch {
@@ -148,21 +180,44 @@ export function FirstVisitSuggestions() {
     }
 
     function advanceSuggestions() {
-      if (!active || document.visibilityState === "hidden") return;
+      if (!active || pulseOpen || document.visibilityState === "hidden") return;
       const locks = window.navigator.locks;
-      // Serialize storage updates when two storefront tabs reach a timer together.
-      if (locks?.request) void locks.request(VISIT_KEY, showDueSuggestion).catch(showDueSuggestion);
+      if (locks?.request) void locks.request(VISIT_KEY, () => showDueSuggestion(true)).catch(() => showDueSuggestion());
       else showDueSuggestion();
     }
 
+    function onPageHide() {
+      if (recordPulseDismissal()) setSuggestion(null);
+    }
+
+    function onStorageChange(event) {
+      if (event.key === VISIT_KEY) advanceSuggestions();
+    }
+
+    dismissPulseRef.current = () => {
+      if (recordPulseDismissal()) advanceSuggestions();
+    };
     advanceSuggestions();
     document.addEventListener("visibilitychange", advanceSuggestions);
+    window.addEventListener("pageshow", advanceSuggestions);
+    window.addEventListener("pagehide", onPageHide);
+    window.addEventListener("storage", onStorageChange);
     return () => {
       active = false;
+      recordPulseDismissal();
+      dismissPulseRef.current = null;
       window.clearTimeout(timer);
       document.removeEventListener("visibilitychange", advanceSuggestions);
+      window.removeEventListener("pageshow", advanceSuggestions);
+      window.removeEventListener("pagehide", onPageHide);
+      window.removeEventListener("storage", onStorageChange);
     };
   }, []);
 
-  return suggestion ? <SuggestionSheet suggestion={suggestion} onDismiss={() => setSuggestion(null)} /> : null;
+  function dismissSuggestion() {
+    setSuggestion(null);
+    dismissPulseRef.current?.();
+  }
+
+  return suggestion ? <SuggestionSheet suggestion={suggestion} onDismiss={dismissSuggestion} /> : null;
 }
