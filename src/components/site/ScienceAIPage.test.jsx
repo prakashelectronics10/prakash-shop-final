@@ -115,3 +115,39 @@ test("reveals the reply immediately in chunks, then shows its link chips", async
     HTMLElement.prototype.scrollIntoView = oldScrollIntoView;
   }
 });
+
+test("the suggestion link sends its greeting once in a new chat", async () => {
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  const oldUrl = window.location.href;
+  const oldActEnvironment = globalThis.IS_REACT_ACT_ENVIRONMENT;
+  const oldScrollIntoView = HTMLElement.prototype.scrollIntoView;
+  const storageKey = "prakash:pulse-ai-sessions:v2";
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  HTMLElement.prototype.scrollIntoView = jest.fn();
+  jest.useFakeTimers();
+  window.history.replaceState({}, "", "/pulse-ai#say-hello");
+  sessionStorage.setItem(storageKey, JSON.stringify({
+    activeSessionId: "existing-chat",
+    sessions: [{ id: "existing-chat", messages: [{ role: "user", text: "My existing chat" }] }],
+  }));
+  apiRequest.mockClear();
+  apiRequest.mockResolvedValueOnce({ data: { response: "I can help with products and repair bookings." } });
+
+  try {
+    await act(async () => root.render(<CartProvider><ScienceAIPage /></CartProvider>));
+    expect(apiRequest).toHaveBeenCalledTimes(1);
+    expect(apiRequest.mock.calls[0][0]).toBe("/science-ai/chat");
+    const request = JSON.parse(apiRequest.mock.calls[0][1].body);
+    expect(request.message).toBe("Hi Pulse AI! What can you help me with?");
+    expect(request.sessionId).not.toBe("existing-chat");
+    expect(window.location.hash).toBe("");
+  } finally {
+    act(() => root.unmount());
+    jest.useRealTimers();
+    sessionStorage.removeItem(storageKey);
+    window.history.replaceState({}, "", oldUrl);
+    globalThis.IS_REACT_ACT_ENVIRONMENT = oldActEnvironment;
+    HTMLElement.prototype.scrollIntoView = oldScrollIntoView;
+  }
+});

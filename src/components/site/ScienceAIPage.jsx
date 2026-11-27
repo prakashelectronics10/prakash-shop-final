@@ -6,7 +6,7 @@ import { SCIENCE_PROJECTS_CATEGORY, getCartStockLimit, useCart } from "../../con
 import { notifyCartResult } from "../../utils/cartToast";
 import { couponOrderItems, getAppliedCouponCode } from "../../utils/coupons";
 import { formatINR } from "../../utils/productPricing";
-import { consumePulseAISearchPrompt, readPulseAISearchPrompt } from "../../utils/pulseAISearchPrompt";
+import { consumePulseAIStartupPrompt, readPulseAIStartupPrompt } from "../../utils/pulseAISearchPrompt";
 import { getSiteOgImage } from "../../utils/routes";
 import { AIChatInput } from "../ui/AIChatInput";
 import AITextLoading from "../ui/ai-text-loading";
@@ -511,7 +511,7 @@ export function ScienceAIPage() {
   const { items: cartItems, totals } = useCart();
   const [chatState, setChatState] = useState(() => {
     const state = loadScienceAIState();
-    if (!readPulseAISearchPrompt()) return state;
+    if (!readPulseAIStartupPrompt()) return state;
 
     const activeSession = state.sessions.find((item) => item.id === state.activeSessionId);
     if (!activeSession?.messages.some((message) => message.role === "user")) return state;
@@ -885,7 +885,7 @@ export function ScienceAIPage() {
   }, [addAssistantMessage, cartItems, conversationHistory, conversationMemory, finishReplyReveal, images, input, session.id, session.titleGenerated, updateSessionById]);
 
   useEffect(() => {
-    const prompt = consumePulseAISearchPrompt();
+    const prompt = consumePulseAIStartupPrompt();
     if (prompt) void sendMessage(prompt);
   }, [sendMessage]);
 

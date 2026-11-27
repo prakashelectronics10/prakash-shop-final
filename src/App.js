@@ -31,6 +31,7 @@ const Carousel3D = lazy(() => import('./components/site/Carousel3D').then((modul
 const About = lazy(() => import('./components/site/About').then((module) => ({ default: module.About })));
 const Contact = lazy(() => import('./components/site/Contact').then((module) => ({ default: module.Contact })));
 const FloatingUI = lazy(() => import('./components/site/FloatingUI').then((module) => ({ default: module.FloatingUI })));
+const FirstVisitSuggestions = lazy(() => import('./components/site/FirstVisitSuggestions').then((module) => ({ default: module.FirstVisitSuggestions })));
 const Footer = lazy(() => import('./components/site/Footer').then((module) => ({ default: module.Footer })));
 const BrandsMarquee = lazy(() => import('./components/site/BrandsMarquee').then((module) => ({ default: module.BrandsMarquee })));
 const AboutPage = lazy(() => import('./components/site/AboutPage').then((module) => ({ default: module.AboutPage })));
@@ -286,7 +287,7 @@ function NotFoundPage() {
   );
 }
 
-function PublicShell({ children, siteData = true, showFloatingActions = true }) {
+function PublicShell({ children, siteData = true, showFloatingActions = true, showVisitorSuggestions = showFloatingActions }) {
   useEffect(() => {
     document.body.classList.add('public-light-theme');
     return () => document.body.classList.remove('public-light-theme');
@@ -301,6 +302,11 @@ function PublicShell({ children, siteData = true, showFloatingActions = true }) 
         </Suspense>
       ) : null}
       {showFloatingActions ? <CartFloatingButton /> : null}
+      {showVisitorSuggestions ? (
+        <Suspense fallback={null}>
+          <FirstVisitSuggestions />
+        </Suspense>
+      ) : null}
     </CartProvider>
   );
 
@@ -469,7 +475,7 @@ function App() {
 
   if (window.location.pathname === '/booking' || params.get('page') === 'booking') {
     return (
-      <PublicShell>
+      <PublicShell showVisitorSuggestions={false}>
         <LazyScreen>
           <Booking />
         </LazyScreen>
@@ -545,7 +551,7 @@ function App() {
 
   if (window.location.pathname === '/cart' || params.get('page') === 'cart') {
     return (
-      <PublicShell>
+      <PublicShell showVisitorSuggestions={false}>
         <LazyScreen>
           <CartPage />
         </LazyScreen>
@@ -555,7 +561,7 @@ function App() {
 
   if (window.location.pathname === '/checkout') {
     return (
-      <PublicShell>
+      <PublicShell showVisitorSuggestions={false}>
         <LazyScreen>
           <CheckoutPage />
         </LazyScreen>
@@ -565,7 +571,7 @@ function App() {
 
   if (window.location.pathname === '/orders') {
     return (
-      <PublicShell>
+      <PublicShell showVisitorSuggestions={false}>
         <LazyScreen>
           <OrderTrackingPage />
         </LazyScreen>
