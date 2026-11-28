@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "nodemon server.js",
     "start": "node server.js",
+    "start:voice": "node agents/pulseWhatsAppVoice.mjs start --log-level fatal",
     "test": "node --test",
     "validate:amp": "node scripts/validateAmp.js",
     "create-admin": "node scripts/createAdmin.js",
@@ -14,6 +15,10 @@
     "sync-contact": "node scripts/syncContact.js"
   },
   "dependencies": {
+    "@livekit/agents": "1.11.0",
+    "@livekit/agents-plugin-google": "1.11.0",
+    "@livekit/agents-plugin-openai": "1.11.0",
+    "@livekit/protocol": "1.55.0",
     "bcryptjs": "^2.4.3",
     "cloudinary": "^2.5.1",
     "compression": "^1.7.5",
@@ -25,16 +30,23 @@
     "express-rate-limit": "^7.5.0",
     "helmet": "^8.0.0",
     "jsonwebtoken": "^9.0.2",
+    "livekit-server-sdk": "2.20.1",
     "mongodb": "^7.2.0",
     "mongoose": "^8.9.5",
     "multer": "^2.1.1",
     "sharp": "^0.34.5",
     "socket.io": "^4.8.1",
-    "zod": "^3.24.1"
+    "zod": "^3.24.1",
+    "zod4": "npm:zod@4.6.7"
   },
   "devDependencies": {
     "amphtml-validator": "^1.0.38",
     "nodemon": "^3.1.9"
+  },
+  "overrides": {
+    "@livekit/throws-transformer": {
+      "glob": "14.0.6"
+    }
   },
   "engines": {
     "node": ">=20.0.0"

@@ -19,6 +19,7 @@ const {
   importWhatsAppAccountFromEnv,
   getWhatsAppGreeting,
   upsertWhatsAppGreeting,
+  publishWhatsAppAdWelcome,
   resolveWhatsAppOgImage,
   getWhatsAppAISettings,
   upsertWhatsAppAISettings,
@@ -34,8 +35,14 @@ const {
 } = require("../controllers/whatsappAdminController");
 
 const router = express.Router();
+const { getVoiceSettings, updateVoiceSettings, listVoiceCalls, resolveVoiceCallback } = require("../controllers/whatsappVoiceAdminController");
 
 router.use(requireAdmin, requirePermission("manageWhatsApp"));
+
+router.get("/voice/settings", getVoiceSettings);
+router.put("/voice/settings", updateVoiceSettings);
+router.get("/voice/calls", listVoiceCalls);
+router.patch("/voice/calls/:id/callback", resolveVoiceCallback);
 
 router.get("/events", streamWhatsAppEvents);
 router.get("/accounts", listWhatsAppAccounts);
@@ -46,6 +53,7 @@ router.delete("/accounts/:id", deleteWhatsAppAccount);
 
 router.get("/greeting", getWhatsAppGreeting);
 router.put("/greeting", validateBody(whatsAppGreetingSchema), upsertWhatsAppGreeting);
+router.post("/greeting/ad-welcome", publishWhatsAppAdWelcome);
 router.post("/og-image", validateBody(ogImageSchema), resolveWhatsAppOgImage);
 
 router.get("/ai-settings", getWhatsAppAISettings);

@@ -87,6 +87,48 @@
   gap: 10px;
 }
 
+.wa-voice,
+.wa-voice-settings {
+  display: grid;
+  gap: 14px;
+}
+
+.wa-voice-fields {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 175px), 1fr));
+}
+
+.wa-voice .wa-field {
+  display: grid;
+  gap: 6px;
+}
+
+.wa-voice-languages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px;
+}
+
+.wa-voice-call h3 {
+  overflow-wrap: anywhere;
+}
+
+.wa-voice nav {
+  margin-top: 12px;
+}
+
+@media (max-width: 600px) {
+  .wa-account-card.wa-voice-call {
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: start;
+  }
+}
+
 .wa-account-card {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

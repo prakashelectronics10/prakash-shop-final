@@ -76,6 +76,7 @@ function OrderSuccess({ order }) {
 export function CheckoutPage() {
   const { items, totals, clearCart } = useCart();
   const [form, setForm] = useState({ name: "", phone: "", whatsappNumber: "", address: "", pincode: "", landmark: "", message: "" });
+  const [whatsappOrderGreetingOptIn, setWhatsAppOrderGreetingOptIn] = useState(false);
   const [fieldErrors, setFieldErrors] = useState({});
   const [busy, setBusy] = useState(false);
   const [confirmedOrder, setConfirmedOrder] = useState(null);
@@ -256,7 +257,7 @@ export function CheckoutPage() {
       const created = await apiRequest("/orders/payment", {
         method: "POST",
         cache: "no-store",
-        body: JSON.stringify({ customer: form, ...payload }),
+        body: JSON.stringify({ customer: form, ...payload, whatsappOrderGreetingOptIn }),
       });
       setPaymentQuote(created.data);
       await launchPayment(created.data, true);
@@ -364,6 +365,11 @@ export function CheckoutPage() {
                   aria-invalid={Boolean(fieldErrors.whatsappNumber)}
                 />
                 {fieldErrors.whatsappNumber && <small>{fieldErrors.whatsappNumber}</small>}
+              </label>
+              <label className="checkout-whatsapp-opt-in checkout-field-wide">
+                <input type="checkbox" checked={whatsappOrderGreetingOptIn}
+                  onChange={(event) => setWhatsAppOrderGreetingOptIn(event.target.checked)} />
+                <span>I agree to receive a welcome message and updates for this order from Prakash Electronics on WhatsApp.</span>
               </label>
               <label className="checkout-field checkout-field-wide">
                 <span>Complete address *</span>

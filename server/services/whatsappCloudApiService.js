@@ -74,7 +74,7 @@ async function sendWhatsAppPayload({ phoneNumberId, accessToken, to, type, paylo
     type,
     [type]: payload,
   };
-  logger.info("whatsapp.send", { phoneNumberId, type, to: body.to });
+  logger.info("whatsapp.send", { phoneNumberId, type });
   return graphRequest({ phoneNumberId, accessToken, body });
 }
 
@@ -188,29 +188,22 @@ async function sendTemplateMessage({
   };
   logger.info("whatsapp.send_template", {
     phoneNumberId,
-    to: body.to,
     templateName: body.template.name,
     languageCode: body.template.language.code,
   });
   return graphRequest({ phoneNumberId, accessToken, body });
 }
 
-async function configureConversationalAutomation({ phoneNumberId, accessToken, enableWelcomeMessage, prompts = [] }) {
+async function configureConversationalAutomation({ phoneNumberId, accessToken, prompts = [] }) {
   const cleanPrompts = (Array.isArray(prompts) ? prompts : [])
     .map((item) => String(item || "").trim().slice(0, 80))
     .filter(Boolean)
     .slice(0, 4);
 
-  const body = {
-    enable_welcome_message: Boolean(enableWelcomeMessage),
-  };
-  if (cleanPrompts.length) {
-    body.prompts = cleanPrompts;
-  }
+  const body = { prompts: cleanPrompts };
 
   logger.info("whatsapp.conversational_automation", {
     phoneNumberId,
-    enableWelcomeMessage: body.enable_welcome_message,
     prompts: cleanPrompts.length,
   });
 
@@ -221,6 +214,14 @@ async function configureConversationalAutomation({ phoneNumberId, accessToken, e
     method: "POST",
     body,
   });
+}
+
+function publishWelcomeMessageSequence({ businessAccountId, accessToken, sequenceId, name, sequence }) {
+  const body = new FormData();
+  body.set("name", name);
+  body.set("welcome_message_sequence", JSON.stringify(sequence));
+  if (sequenceId) body.set("sequence_id", sequenceId);
+  return graphRequest({ businessAccountId, accessToken, path: "welcome_message_sequences", body });
 }
 
 function extractInboundMedia(message) {
@@ -304,6 +305,7 @@ module.exports = {
   isWhatsAppTemplateTemporarilyUnavailable,
   hasWhatsAppBillingBlock,
   configureConversationalAutomation,
+  publishWelcomeMessageSequence,
   parseInboundWebhook,
   graphRequest,
 };

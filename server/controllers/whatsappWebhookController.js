@@ -8,11 +8,9 @@ const {
   sendTextMessage,
   sendInteractiveMessage,
 } = require("../services/whatsappCloudApiService");
-const { sendGreetingForAccount } = require("../services/whatsappGreetingService");
 const { recordMessage, applyReactionToMessage } = require("../services/whatsappConversationService");
 const { maybeReplyWithAI } = require("../services/whatsappAIService");
 const {
-  shouldSuppressGreeting,
   handlePaymentIssueFlow,
   resolveCopyCodeFromConversation,
   sendCopyCodeReply,
@@ -20,6 +18,7 @@ const {
 const { logger } = require("../utils/logger");
 const { recordDeliveryReceipts } = require("../services/whatsappDeliveryService");
 const { isSignedReviewAction, getContextReviewAction, handleReviewAction } = require("../services/reviewWhatsAppService");
+const voice = require("../services/whatsappVoiceService");
 
 function requestsOrderHistory(text = "") {
   const message = text.toLowerCase().trim().replace(/[.!?]+$/, "");
@@ -129,6 +128,20 @@ exports.handleWhatsAppWebhook = catchAsync(async (req, res) => {
     return res.status(200).json({ success: true });
   }
 
+  if (env.pulseVoice.enabled && voice.configurationReady()) {
+    const calls = voice.parseCallEvents(payload);
+    try {
+      if (calls.length) await voice.ensureIndexes();
+      for (const call of calls) {
+        const work = await voice.receive(call);
+        if (work) void work().catch(() => logger.warn("whatsapp.voice.event_failed"));
+      }
+    } catch {
+      logger.warn("whatsapp.voice.webhook_retry");
+      return res.status(503).json({ success: false, message: "Calling temporarily unavailable" });
+    }
+  }
+
   const conversationEvents = [];
   const reviewReplies = [];
   for (const event of parseInboundWebhook(payload)) {
@@ -163,6 +176,7 @@ exports.handleWhatsAppWebhook = catchAsync(async (req, res) => {
   }
 
   for (const event of conversationEvents) {
+    if (event.isWelcomeRequest) continue;
     try {
       const account = await resolveAccountByPhoneNumberId(event.phoneNumberId);
       if (!account) {
@@ -180,11 +194,8 @@ exports.handleWhatsAppWebhook = catchAsync(async (req, res) => {
         continue;
       }
 
-      const inboundType = event.isWelcomeRequest
-        ? "text"
-        : ["image", "document", "audio", "video", "sticker", "interactive", "button"].includes(event.type)
-          ? event.type
-          : "text";
+      const inboundType = ["image", "document", "audio", "video", "sticker", "interactive", "button"].includes(event.type)
+        ? event.type : "text";
 
       const { conversation, duplicate } = await recordMessage({
         accountId: account._id,
@@ -192,13 +203,13 @@ exports.handleWhatsAppWebhook = catchAsync(async (req, res) => {
         customerName: event.customerName,
         direction: "inbound",
         sender: "customer",
-        type: event.isWelcomeRequest ? "text" : inboundType,
-        text: event.isWelcomeRequest ? "[Chat opened]" : (event.text || ""),
+        type: inboundType,
+        text: event.text || "",
         waMessageId: event.messageId,
         mediaMimeType: event.mediaMimeType || "",
         mediaFilename: event.mediaFilename || "",
         meta: {
-          isWelcomeRequest: Boolean(event.isWelcomeRequest),
+          receivedAt: Number.isFinite(+event.timestamp) ? event.timestamp : new Date(),
           rawType: event.type,
           mediaId: event.mediaId || "",
           channel: "whatsapp",
@@ -265,40 +276,6 @@ exports.handleWhatsAppWebhook = catchAsync(async (req, res) => {
         continue;
       }
 
-      const suppressGreeting = shouldSuppressGreeting(conversation)
-        || Boolean(conversation.flowState?.type);
-
-      // First chat open OR first real message → greeting (but never during OTP/booking/order/payment flows)
-      if (!suppressGreeting) {
-        const greetingResult = await sendGreetingForAccount({
-          account,
-          customerWaId: event.customerWaId,
-          force: Boolean(event.isWelcomeRequest),
-          onOutbound: async (item) => {
-            await recordMessage({
-              accountId: account._id,
-              conversationId: conversation._id,
-              customerWaId: event.customerWaId,
-              direction: "outbound",
-              sender: "system",
-              type: item.type || "text",
-              text: item.text || "",
-              mediaUrl: item.mediaUrl || "",
-              buttons: item.buttons || [],
-              waMessageId: item.result?.messages?.[0]?.id || "",
-              meta: { greeting: true },
-            });
-          },
-        });
-
-        if (greetingResult.sent) {
-          conversation.greetingSentAt = new Date();
-          await conversation.save();
-        }
-      }
-
-      // Welcome-only open: greeting is enough. Real questions → AI.
-      if (event.isWelcomeRequest) continue;
       if (!event.text && !event.buttonReplyId && !(["image", "audio"].includes(event.type) && event.mediaId)) continue;
 
       const aiInput = event.text

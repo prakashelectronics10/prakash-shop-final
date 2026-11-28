@@ -69,7 +69,8 @@ async function previewCheckout({ account, conversation, patch }) {
     }
   }
   const base = prior.orderId ? {} : prior;
-  const saved = !base.items?.length && parsed.data.items?.length ? await savedDelivery(conversation.customerWaId) : null;
+  const saved = !conversation.voiceCallId && !base.items?.length && parsed.data.items?.length
+    ? await savedDelivery(conversation.customerWaId) : null;
   const draft = {
     ...base, ...parsed.data,
     customer: { ...saved, ...base.customer, ...parsed.data.customer, whatsappNumber: conversation.customerWaId },
@@ -104,7 +105,7 @@ async function previewCheckout({ account, conversation, patch }) {
       `Subtotal: ${money(quote.subtotal)}`, `Discount: ${money(quote.discountTotal)}`,
       ...quote.additionalCharges.map((c) => `${c.name}: ${money(c.amount)}`), `*Total: ${money(quote.total)}*`,
     ];
-    return reply([
+    const result = reply([
       ["*Order review*", "Payment ke baad order confirm hoga."].join("\n"),
       ["*Products*", items.join("\n\n")].join("\n"),
       ["*Payment summary*", ...totals].join("\n"),
@@ -112,6 +113,18 @@ async function previewCheckout({ account, conversation, patch }) {
       "Details sahi hain toh Pay online tap karein ya CONFIRM bhejein. Correction yahin bhej sakte hain.",
       settings?.codEnabled ? "COD choose karne ke liye Confirm COD tap karein." : "",
     ].filter(Boolean).join("\n\n"), buttons);
+    if (conversation.voiceCallId) {
+      result.voiceSummary = {
+        items: quote.items.map((item) => ({ name: item.productName, variant: item.variantSummary,
+          quantity: item.quantity, unitPrice: item.unitPrice, lineTotal: item.discountedLineTotal })),
+        subtotal: quote.subtotal, discount: quote.discountTotal,
+        charges: quote.additionalCharges.map((charge) => ({ name: charge.name, amount: charge.amount })),
+        total: quote.total, currency: "INR",
+        delivery: { name: customer.name, phone: customer.phone, address: customer.address,
+          pincode: customer.pincode, landmark: customer.landmark, message: customer.message },
+      };
+    }
+    return result;
   } catch (error) {
     return reply(`Order abhi confirm nahi hua. ${error.statusCode && error.statusCode < 500 ? error.message : "Details, stock ya pricing verify nahi ho payi. Details check karke dobara bhejein."}`);
   }
@@ -125,6 +138,13 @@ function orderReply(order, token) {
   return { ...reply(`Order ${order.orderId} *payment ka wait kar raha hai; confirm nahi hua*.\nTotal: ${money(order.total)}\n${order.paymentLinkUrl ? "WhatsApp payment card ke Review and Pay button se payment karein. Payment verify hone par confirmation milega." : "Payment request abhi taiyar nahi hua. Check payment button se retry karein."}`,
     token ? [button("Check payment", "status", token), button("Cancel unpaid", "cancel", token)] : []),
     ...(order.paymentLinkUrl ? { paymentRequestOrderId: order.orderId } : {}) };
+}
+
+function checkoutOrderReply(order, token, conversation) {
+  const result = orderReply(order, token);
+  return conversation.voiceCallId ? { ...result, voiceOrder: {
+    orderStatus: order.orderStatus, paymentStatus: order.paymentStatus,
+  } } : result;
 }
 
 function validLinkPayment(order, link, payment) {
@@ -174,7 +194,7 @@ async function handleCheckoutButton({ account, conversation, buttonReplyId }) {
   if (!draft || token !== draft.token) return reply("Yeh purana order button hai. Current order details dobara bhejein.");
   let order = await Order.findOne({ checkoutKey: `${conversation._id}:${token}` });
   if (order) {
-    if (order.orderStatus === "cancelled") return orderReply(order, token);
+    if (order.orderStatus === "cancelled") return checkoutOrderReply(order, token, conversation);
     if (order.razorpayOrderId && ["pending", "failed"].includes(order.paymentStatus)) {
       return reply(`Order ${order.orderId} ka payment website par resume hua hai. Status ya payment ke liye View all orders kholein: https://prakashshop.in/orders`);
     }
@@ -194,13 +214,13 @@ async function handleCheckoutButton({ account, conversation, buttonReplyId }) {
             { $set: { orderStatus: "cancelled", statusUpdatedAt: new Date() } }, { new: true });
           if (cancelled) {
             await saveDraft(conversation, null);
-            return orderReply(cancelled, token);
+            return checkoutOrderReply(cancelled, token, conversation);
           }
           order = await Order.findById(order._id);
         }
       } catch (_error) { return reply("Payment provider abhi verify nahi ho paya. Order ko paid confirm nahi kiya gaya. Thodi der baad Check payment dobara tap karein.", [button("Check payment", "status", token)]); }
     }
-    return orderReply(order, token);
+    return checkoutOrderReply(order, token, conversation);
   }
   if (action === "cancel") {
     await saveDraft(conversation, null);
@@ -238,6 +258,8 @@ async function handleCheckoutButton({ account, conversation, buttonReplyId }) {
       order = await Order.create({ ...quote, customer, orderId: newPublicOrderId(),
         itemCount: quote.items.reduce((sum, i) => sum + i.quantity, 0),
         source: "whatsapp", whatsappAccount: account._id, whatsappConversation: conversation._id,
+        whatsappVoiceCall: conversation.voiceCallId,
+        whatsappVoiceMessaging: conversation.voiceMessaging,
         checkoutKey: `${conversation._id}:${token}`, paymentMethod: action,
         paymentStatus: action === "cod" ? "cod" : "pending", orderStatus: action === "cod" ? "confirmed" : "awaiting_payment",
       });
@@ -249,7 +271,7 @@ async function handleCheckoutButton({ account, conversation, buttonReplyId }) {
     await saveDraft(conversation, { ...draft, orderId: order.orderId });
     if (order.paymentMethod === "cod") enqueueOrderPaidNotification(order);
     else await ensurePaymentLink(order);
-    return orderReply(order, token);
+    return checkoutOrderReply(order, token, conversation);
   } catch (error) {
     return reply(`Order paid confirm nahi hua. ${error.statusCode && error.statusCode < 500 ? error.message : "Order process nahi ho paya. Thodi der baad retry karein."}`, [button("Check payment", "status", token)]);
   }

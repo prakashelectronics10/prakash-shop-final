@@ -24,6 +24,7 @@ const {
   sendTextMessage,
   sendImageMessage,
   sendDocumentMessage,
+  publishWelcomeMessageSequence,
 } = require("../services/whatsappCloudApiService");
 const { collectPublicIdsFromSources, deleteImagesStrict, uploadBuffer } = require("../services/cloudinaryService");
 const { addClient } = require("../services/whatsappRealtimeService");
@@ -83,6 +84,9 @@ function serializeGreeting(greeting) {
     enabled: doc.enabled !== false,
     enableWelcomeMessage: doc.enableWelcomeMessage !== false,
     iceBreakers: Array.isArray(doc.iceBreakers) ? doc.iceBreakers : [],
+    orderTemplateName: doc.orderTemplateName || "",
+    orderTemplateLanguage: doc.orderTemplateLanguage || "en",
+    adWelcomeSequenceId: doc.adWelcomeSequenceId || "",
     messages,
     updatedAt: doc.updatedAt,
   };
@@ -255,7 +259,10 @@ exports.upsertWhatsAppGreeting = catchAsync(async (req, res) => {
         iceBreakers: (payload.iceBreakers || []).map((item) => String(item).trim().slice(0, 80)).filter(Boolean).slice(0, 4),
         messages: nextMessages,
         bodyText: first.bodyText || "",
+        headerText: first.headerText || "",
         footerText: first.footerText || "",
+        ...(payload.orderTemplateName !== undefined && { orderTemplateName: payload.orderTemplateName }),
+        ...(payload.orderTemplateLanguage !== undefined && { orderTemplateLanguage: payload.orderTemplateLanguage }),
         imageUrl: first.imageUrl || "",
         imagePublicId: first.imagePublicId || "",
         imageSourceUrl: first.imageSourceUrl || "",
@@ -269,7 +276,7 @@ exports.upsertWhatsAppGreeting = catchAsync(async (req, res) => {
   try {
     await syncConversationalAutomation(account, greeting);
   } catch (error) {
-    automationWarning = error.message || "Could not sync Meta welcome/ice breakers";
+    automationWarning = "Greeting saved, but Meta ice breakers could not be synced.";
   }
 
   res.json({
@@ -277,6 +284,38 @@ exports.upsertWhatsAppGreeting = catchAsync(async (req, res) => {
     data: serializeGreeting(greeting),
     warning: automationWarning || undefined,
   });
+});
+
+exports.publishWhatsAppAdWelcome = catchAsync(async (req, res) => {
+  const { accountId } = req.body || {};
+  if (typeof accountId !== "string" || !mongoose.Types.ObjectId.isValid(accountId)) {
+    throw new AppError("Valid accountId is required", 400);
+  }
+  const account = await WhatsAppAccount.findOne({ _id: accountId, isActive: true });
+  if (!account) throw new AppError("Active WhatsApp account not found", 404);
+  const greeting = await WhatsAppGreeting.findOne({ account: account._id, enabled: true });
+  const first = normalizeGreetingMessages(greeting).find((step) => step.headerText || step.bodyText);
+  if (!greeting || !first) throw new AppError("Save an enabled greeting with a header or message before publishing.", 400);
+  const sequence = { text: [first.headerText, first.bodyText, first.footerText].filter(Boolean).join("\n\n") };
+  if (greeting.iceBreakers?.length) {
+    sequence.ice_breakers = greeting.iceBreakers.map((title) => ({ title }));
+  }
+  let result;
+  try {
+    result = await publishWelcomeMessageSequence({ businessAccountId: account.businessAccountId,
+      accessToken: account.accessToken, sequenceId: greeting.adWelcomeSequenceId,
+      name: `Pulse AI welcome - ${account.phoneNumberId}`, sequence });
+  } catch (error) {
+    if (Number(error.payload?.error?.error_subcode || error.payload?.error?.code) === 4027012) {
+      throw new AppError("Meta locks sequences linked to an active ad. Unlink the sequence in Ads Manager before updating it.", 409);
+    }
+    const code = Number(error.payload?.error?.code);
+    throw new AppError(`Meta could not publish the ad welcome sequence${code ? ` (code ${code})` : ""}.`, 502);
+  }
+  const sequenceId = String(result.sequence_id || (result.success && greeting.adWelcomeSequenceId) || "");
+  if (!/^\d{1,40}$/.test(sequenceId)) throw new AppError("Meta did not return a welcome sequence ID.", 502);
+  await WhatsAppGreeting.updateOne({ _id: greeting._id }, { $set: { adWelcomeSequenceId: sequenceId } });
+  res.json({ success: true, data: { sequenceId } });
 });
 
 exports.resolveWhatsAppOgImage = catchAsync(async (req, res) => {

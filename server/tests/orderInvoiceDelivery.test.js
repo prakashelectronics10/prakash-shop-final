@@ -7,6 +7,7 @@ const Order = require("../models/Order");
 const WhatsAppAccount = require("../models/WhatsAppAccount");
 const WhatsAppConversation = require("../models/WhatsAppConversation");
 const WhatsAppMessage = require("../models/WhatsAppMessage");
+const WhatsAppGreeting = require("../models/WhatsAppGreeting");
 const { downloadPublicOrderInvoice } = require("../controllers/orderController");
 const { sendOrderInvoiceWhatsApp, sendPaymentReceivedWhatsApp } = require("../services/whatsappTransactionalService");
 const { getOrderInvoicePdf } = require("../services/orderInvoiceService");
@@ -92,6 +93,7 @@ test("checkout and WhatsApp use the same branded PDF, sent to the entered WhatsA
   t.mock.method(WhatsAppConversation, "findById", async () => conversation);
   t.mock.method(WhatsAppMessage, "findOne", () => ({ lean: async () => null }));
   t.mock.method(WhatsAppMessage, "create", async (data) => ({ ...data, _id: "message" }));
+  t.mock.method(WhatsAppGreeting, "findOne", () => ({ lean: async () => null }));
   t.mock.method(globalThis, "fetch", async (url, options) => {
     if (url === invoice.signatureUrl) return new Response(signature);
     if (url.includes("/test-waba/message_templates?")) {

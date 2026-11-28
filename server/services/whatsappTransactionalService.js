@@ -11,6 +11,7 @@ const {
 const { getOrderInvoicePdf } = require("./orderInvoiceService");
 const { recordMessage, upsertConversation } = require("./whatsappConversationService");
 const { formatCopyCodeMessage } = require("./whatsappFormatService");
+const greetingService = require("./whatsappGreetingService");
 const {
   getActiveWhatsAppAccount,
   toWhatsAppE164,
@@ -79,6 +80,27 @@ async function recordOutbound({
   });
 }
 
+async function greetBeforeOrderUpdate({ account, conversation, customerWaId, order }) {
+  try {
+    const greeting = await greetingService.sendGreetingForAccount({
+      account, conversationId: conversation._id, customerWaId, order,
+      onOutbound: (item) => recordMessage({
+        accountId: account._id, conversationId: conversation._id, customerWaId,
+        direction: "outbound", sender: "system", type: item.type,
+        text: item.text || "", mediaUrl: item.mediaUrl || "", buttons: item.buttons || [],
+        waMessageId: item.result.messages[0].id, meta: { greeting: true },
+      }),
+    });
+    if (greeting.sent) {
+      conversation.greetingSentAt = new Date();
+      await conversation.save();
+    }
+  } catch (error) {
+    // A missing or rejected greeting must never discard a customer's order update.
+    logger.warn("whatsapp.order_greeting_failed", { status: error.status, metaCode: error.payload?.error?.code });
+  }
+}
+
 async function tryTemplateThenFallback({
   account,
   customerWaId,
@@ -99,14 +121,15 @@ async function tryTemplateThenFallback({
       });
       return { result, usedTemplate: true };
     } catch (error) {
+      if (!fallback) return { result: null, usedTemplate: false };
       logger.warn("whatsapp.template_failed_fallback", {
         templateName,
-        message: error.message,
         status: error.status,
-        details: error.payload?.error || null,
+        metaCode: error.payload?.error?.code,
       });
     }
   }
+  if (!fallback) return { result: null, usedTemplate: false };
   const result = await fallback();
   return { result, usedTemplate: false };
 }
@@ -165,8 +188,8 @@ async function sendOtpWhatsApp({ whatsappNumber, otp, customerName = "" }) {
 
   return { phoneNumberId: account.phoneNumberId, messageId };
 }
-async function sendBookingConfirmationWhatsApp({ booking }) {
-  const account = await withAccount();
+async function sendBookingConfirmationWhatsApp({ booking, senderAccount, templateOnly = false }) {
+  const account = senderAccount || await withAccount();
   if (!account) return { ok: false, reason: "whatsapp_disabled" };
 
   const whatsappNumber = booking.whatsappNumber || booking.phoneNumber;
@@ -206,7 +229,7 @@ async function sendBookingConfirmationWhatsApp({ booking }) {
         parameters: [{ type: "text", text: bookingId }],
       },
     ],
-    fallback: async () => {
+    fallback: templateOnly ? null : async () => {
       try {
         return await sendInteractiveMessage({
           phoneNumberId: account.phoneNumberId,
@@ -236,6 +259,7 @@ async function sendBookingConfirmationWhatsApp({ booking }) {
     },
   });
 
+  if (templateOnly && !result?.messages?.[0]?.id) return { ok: false, reason: "template_unavailable" };
   await recordOutbound({
     account,
     conversation,
@@ -251,6 +275,7 @@ async function sendBookingConfirmationWhatsApp({ booking }) {
 }
 
 async function sendOrderConfirmationWhatsApp({ order }) {
+  if (order.whatsappVoiceCall && !order.whatsappVoiceMessaging) return { ok: false, reason: "messaging_not_requested" };
   const account = await withAccount(order);
   if (!account) return { ok: false, reason: "whatsapp_disabled" };
 
@@ -262,6 +287,7 @@ async function sendOrderConfirmationWhatsApp({ order }) {
     whatsappNumber,
     order.customer?.name || "",
   );
+  await greetBeforeOrderUpdate({ account, conversation, customerWaId, order });
 
   conversation.lastCopyCodes = {
     ...(conversation.lastCopyCodes || {}),
@@ -284,6 +310,7 @@ async function sendOrderConfirmationWhatsApp({ order }) {
 
   const templates = env.whatsapp.templates || {};
   // Template URL is https://prakashelectronics.in/orders?id={{1}} → button param is Order ID only.
+  const maySendFreeForm = await voiceOrderMaySendFreeForm(order);
   const { result, usedTemplate } = await tryTemplateThenFallback({
     account,
     customerWaId,
@@ -301,7 +328,7 @@ async function sendOrderConfirmationWhatsApp({ order }) {
         parameters: [{ type: "text", text: orderId }],
       },
     ],
-    fallback: async () => {
+    fallback: maySendFreeForm ? async () => {
       try {
         return await sendInteractiveMessage({
           phoneNumberId: account.phoneNumberId,
@@ -324,9 +351,10 @@ async function sendOrderConfirmationWhatsApp({ order }) {
           text: `${bodyText}\n\n${formatCopyCodeMessage(orderId, "Order ID")}\n\nTrack Order: ${trackUrl}`,
         });
       }
-    },
+    } : null,
   });
 
+  if (!result) return { ok: false, reason: "template_unavailable" };
   await recordOutbound({
     account,
     conversation,
@@ -339,6 +367,15 @@ async function sendOrderConfirmationWhatsApp({ order }) {
   });
 
   return { ok: true };
+}
+
+async function voiceOrderMaySendFreeForm(order) {
+  if (!order.whatsappVoiceCall) return true;
+  const Message = require("../models/WhatsAppMessage");
+  return Boolean(await Message.exists({
+    conversation: order.whatsappConversation, direction: "inbound",
+    "meta.isWelcomeRequest": { $ne: true }, createdAt: { $gt: new Date(Date.now() - 24 * 3600_000) },
+  }));
 }
 
 async function sendPaidOrderCardStatus(order) {
@@ -522,6 +559,7 @@ async function sendPaymentUnsuccessfulWhatsApp({ order }) {
 }
 
 async function sendPaymentReceivedWhatsApp({ order }) {
+  if (order.whatsappVoiceCall && !order.whatsappVoiceMessaging) return { ok: false, reason: "messaging_not_requested" };
   const account = await withAccount(order);
   if (!account) return { ok: false, reason: "whatsapp_disabled" };
 
@@ -534,6 +572,7 @@ async function sendPaymentReceivedWhatsApp({ order }) {
     whatsappNumber,
     name,
   );
+  await greetBeforeOrderUpdate({ account, conversation, customerWaId, order });
 
   const templates = env.whatsapp.templates || {};
   const receiptUrl = trackOrderUrl(order.orderId);
@@ -557,7 +596,7 @@ async function sendPaymentReceivedWhatsApp({ order }) {
       },
       { type: "button", sub_type: "url", index: "0", parameters: [{ type: "text", text: encodeURIComponent(order.orderId) }] },
     ],
-    fallback: async () => {
+    fallback: await voiceOrderMaySendFreeForm(order) ? async () => {
       try {
         return await sendInteractiveMessage({
           ...credentials,
@@ -570,9 +609,10 @@ async function sendPaymentReceivedWhatsApp({ order }) {
       } catch (_error) {
         return sendTextMessage({ ...credentials, text: `${bodyText}\n\nReceipt: ${receiptUrl}` });
       }
-    },
+    } : null,
   });
 
+  if (!result) return { ok: false, reason: "template_unavailable" };
   await recordOutbound({
     account,
     conversation,
@@ -918,11 +958,6 @@ async function sendCopyCodeReply({ account, conversation, code, label = "Code" }
   return { ok: true };
 }
 
-function shouldSuppressGreeting(conversation) {
-  if (!conversation?.suppressGreetingUntil) return false;
-  return new Date(conversation.suppressGreetingUntil).getTime() > Date.now();
-}
-
 module.exports = {
   sendOtpWhatsApp,
   sendBookingConfirmationWhatsApp,
@@ -936,7 +971,6 @@ module.exports = {
   handlePaymentIssueFlow,
   resolveCopyCodeFromConversation,
   sendCopyCodeReply,
-  shouldSuppressGreeting,
   trackOrderUrl,
   toWhatsAppE164,
   toLocalTenDigit,

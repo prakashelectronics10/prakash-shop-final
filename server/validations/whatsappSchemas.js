@@ -27,6 +27,7 @@ const greetingMessageSchema = z.object({
   id: z.string().trim().min(1).max(80).optional(),
   type: z.enum(["text", "image", "interactive"]).optional().default("text"),
   bodyText: z.string().trim().max(1024).optional().default(""),
+  headerText: z.string().trim().max(60).regex(/^[^\r\n]*$/).optional().default(""),
   footerText: z.string().trim().max(60).optional().default(""),
   imageUrl: z.string().trim().optional().default(""),
   imagePublicId: z.string().trim().optional().default(""),
@@ -37,6 +38,7 @@ const greetingMessageSchema = z.object({
 }).superRefine((message, ctx) => {
   const hasContent = Boolean(
     String(message.bodyText || "").trim()
+    || message.headerText
     || String(message.imageUrl || "").trim()
     || (message.imageUrls || []).length
     || (message.buttons || []).length,
@@ -72,6 +74,8 @@ const whatsAppGreetingSchema = z.object({
   enabled: booleanValue.default(true),
   enableWelcomeMessage: booleanValue.default(true),
   iceBreakers: z.array(z.string().trim().max(80)).max(4).optional().default([]),
+  orderTemplateName: z.string().trim().max(512).regex(/^[a-z0-9_]*$/).optional(),
+  orderTemplateLanguage: z.string().trim().regex(/^[a-z]{2,3}(?:_[A-Z]{2})?$/).optional(),
   messages: z.array(greetingMessageSchema).max(10).optional().default([]),
 }).superRefine((value, ctx) => {
   if (!(value.messages || []).length) {

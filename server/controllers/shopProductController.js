@@ -333,14 +333,14 @@ async function normalizeShopDisplayOrders(targetProduct) {
   })));
 }
 
-exports.getShopProducts = catchAsync(async (req, res) => {
-  const page = positiveInt(req.query.page, 1);
-  const limit = Math.min(positiveInt(req.query.limit, 60), 120);
+async function searchPublicProducts(query) {
+  const page = positiveInt(query.page, 1);
+  const limit = Math.min(positiveInt(query.limit, 60), 120);
   const skip = (page - 1) * limit;
   const loadResults = async (searchFilter) => {
-    const query = searchFilter ? { ...req.query, search: "" } : req.query;
-    const shopFilter = buildPublicShopFilter(query);
-    const projectPartFilter = buildPublicProjectPartFilter(query);
+    const filters = searchFilter ? { ...query, search: "" } : query;
+    const shopFilter = buildPublicShopFilter(filters);
+    const projectPartFilter = buildPublicProjectPartFilter(filters);
     const pipeline = [
       { $match: shopFilter ? { ...shopFilter, ...searchFilter } : { _id: { $exists: false } } },
       { $project: projectShopProductFields() },
@@ -383,14 +383,20 @@ exports.getShopProducts = catchAsync(async (req, res) => {
       maxPrice: result?.price?.[0]?.maxPrice || 0,
     };
   };
-  const { items: matches, total, maxPrice, searchMode, canAnalyze } = await searchCatalog(req.query, loadResults);
-  const items = await attachPublicProductRatings(matches.map((item) =>
-    item.sourceType === "project-part" ? normalizeProjectPart(item) : normalizeShopProduct(item)));
+  const { items: matches, total, maxPrice, searchMode, canAnalyze } = await searchCatalog(query, loadResults);
+  const items = matches.map((item) =>
+    item.sourceType === "project-part" ? normalizeProjectPart(item) : normalizeShopProduct(item));
+  return { items, total, page, pages: Math.ceil(total / limit), maxPrice, searchMode, canAnalyze };
+}
 
-  res.set("Cache-Control", req.query.smartSearch === "analyze" && !total
+exports.searchPublicProducts = searchPublicProducts;
+exports.getShopProducts = catchAsync(async (req, res) => {
+  const result = await searchPublicProducts(req.query);
+  const items = await attachPublicProductRatings(result.items);
+  res.set("Cache-Control", req.query.smartSearch === "analyze" && !result.total
     ? "no-store"
     : "public, max-age=120, stale-while-revalidate=600");
-  res.json({ success: true, data: { items, total, page, pages: Math.ceil(total / limit), maxPrice, searchMode, canAnalyze } });
+  res.json({ success: true, data: { ...result, items } });
 });
 
 exports.getShopProductById = catchAsync(async (req, res) => {

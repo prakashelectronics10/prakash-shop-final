@@ -10,6 +10,12 @@ Online checkout uses the approved English template `order_details_with_product_l
 
 Send REPAIR to begin. The customer supplies booking details, adds up to eight photos, and sends CONFIRM to submit. The booking enters the regular admin booking list, email queue and mobile notification flow.
 
+## Customer greetings
+
+1. Open **Admin → Manage WhatsApp → Greetings**, select the active account, and enable the greeting. Each message can have an optional 60-character header and footer. Save the greeting.
+2. For Click-to-WhatsApp ads, select **Publish ad welcome sequence**. In the ad creative in Meta Ads Manager, open **Message Template → Partner App → Message sequence**, select the sequence, and preview and save the ad. The ad welcome uses the first text-bearing greeting step and its ice breakers. A normal WhatsApp chat open does not provide the Cloud API with a trigger, and the app does not send a greeting on the first inbound message. [Meta ad welcome sequences](https://developers.facebook.com/documentation/business-messaging/whatsapp/ctwa/welcome-message-sequences)
+3. For new customers with an open WhatsApp customer service window, the saved greeting goes before their order confirmation or payment receipt. For opted-in customers outside the window, create a static welcome template in WhatsApp Manager, wait for Meta approval, and enter its name and language under **Approved order welcome template**. Use the intended header and body in the approved template itself. The order update can still be sent if the greeting is unavailable or rejected. [Meta customer service windows](https://developers.facebook.com/documentation/business-messaging/whatsapp/messages/send-messages)
+
 ## Razorpay verification
 
 - Configure `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, and **`RAZORPAY_WEBHOOK_SECRET`** on the backend.

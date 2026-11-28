@@ -9,7 +9,9 @@ const whatsAppGreetingLogSchema = new mongoose.Schema(
       index: true,
     },
     customerWaId: { type: String, required: true, trim: true, index: true },
-    sentAt: { type: Date, default: Date.now, index: true },
+    sentAt: { type: Date, default: null, index: true },
+    claimUntil: Date,
+    claimId: String,
   },
   { timestamps: true },
 );

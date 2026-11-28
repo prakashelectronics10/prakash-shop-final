@@ -25,6 +25,7 @@ const greetingMessageSchema = new mongoose.Schema(
       default: "text",
     },
     bodyText: { type: String, default: "", trim: true, maxlength: 1024 },
+    headerText: { type: String, default: "", trim: true, maxlength: 60 },
     footerText: { type: String, default: "", trim: true, maxlength: 60 },
     imageUrl: { type: String, default: "", trim: true },
     imagePublicId: { type: String, default: "", trim: true },
@@ -50,10 +51,14 @@ const whatsAppGreetingSchema = new mongoose.Schema(
     // Meta Conversational Components — fires request_welcome when chat opens first time
     enableWelcomeMessage: { type: Boolean, default: true },
     iceBreakers: { type: [String], default: [] },
+    orderTemplateName: { type: String, default: "", trim: true },
+    orderTemplateLanguage: { type: String, default: "en", trim: true },
+    adWelcomeSequenceId: { type: String, default: "" },
     // Ordered multi-message greeting sequence
     messages: { type: [greetingMessageSchema], default: [] },
     // Legacy single-message fields (kept for migration / backward compat)
     bodyText: { type: String, default: "", trim: true, maxlength: 1024 },
+    headerText: { type: String, default: "", trim: true, maxlength: 60 },
     footerText: { type: String, default: "", trim: true, maxlength: 60 },
     imageUrl: { type: String, default: "", trim: true },
     imagePublicId: { type: String, default: "", trim: true },

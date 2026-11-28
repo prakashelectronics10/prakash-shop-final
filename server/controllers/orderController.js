@@ -393,6 +393,7 @@ exports.createPaymentOrder = asyncHandler(async (req, res) => {
     deliveryCharge,
     total,
     razorpayOrderId: razorpayOrder.id,
+    whatsappOrderGreetingOptIn: req.body.whatsappOrderGreetingOptIn === true,
   });
 
   res.status(201).json({

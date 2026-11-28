@@ -83,18 +83,25 @@ async function handleRepairBooking({ account, conversation, customerMessage, med
     return fields[draft.step]?.[1] || review(draft);
   }
   if (!/^(?:confirm(?: booking| repair)?|booking confirm|yes|haan|han|ha|हाँ|हां)[.!]?$/i.test(input)) return review(draft);
-  let booking;
-  try {
-    booking = await Booking.create({ _id: draft.id, ...draft.data, images: draft.images,
-      imageUrl: draft.images[0]?.url, imagePublicId: draft.images[0]?.publicId, bookingSource: "whatsapp" });
-  } catch (error) {
-    if (error.code === 11000) booking = await Booking.findById(draft.id);
-    if (!booking) require("../utils/logger").logger.error("whatsapp.repair_booking_failed", { code: error.code, bookingId: draft.id });
-  }
+  const booking = await createRepairBooking({ id: draft.id, data: draft.data, images: draft.images }).catch((error) => {
+    require("../utils/logger").logger.error("whatsapp.repair_booking_failed", { code: error.code, bookingId: draft.id });
+    return null;
+  });
   if (!booking) return "Booking save verify nahi ho payi. Thodi der baad CONFIRM dobara bhejein.";
-  enqueueBookingNotification(booking);
   await save(null);
   return "Repair booking submit ho gayi. Booking ID: " + booking._id;
 }
 
-module.exports = { handleRepairBooking };
+async function createRepairBooking({ id, data, images = [], source = "whatsapp" }) {
+  try {
+    const booking = await Booking.create({ _id: id, ...data, images,
+      imageUrl: images[0]?.url, imagePublicId: images[0]?.publicId, bookingSource: source });
+    enqueueBookingNotification(booking);
+    return booking;
+  } catch (error) {
+    if (error.code !== 11000) throw error;
+    return Booking.findById(id);
+  }
+}
+
+module.exports = { handleRepairBooking, createRepairBooking };

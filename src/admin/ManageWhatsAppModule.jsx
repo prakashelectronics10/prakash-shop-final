@@ -15,6 +15,7 @@ import {
   X,
 } from "lucide-react";
 import AdminToggle from "./AdminToggle";
+import WhatsAppVoiceCalls from "./WhatsAppVoiceCalls";
 import "./ManageWhatsAppModule.css";
 
 const TABS = [
@@ -22,6 +23,7 @@ const TABS = [
   { id: "greeting", label: "Greeting" },
   { id: "ai", label: "AI replies" },
   { id: "customers", label: "Customers" },
+  { id: "voice", label: "Voice calls" },
 ];
 
 const API_BASE = process.env.REACT_APP_API_URL || process.env.VITE_API_URL || "/api";
@@ -55,6 +57,7 @@ const emptyGreetingMessage = () => ({
   id: `msg_${Date.now()}`,
   type: "text",
   bodyText: "",
+  headerText: "",
   footerText: "",
   imageUrl: "",
   imagePublicId: "",
@@ -67,6 +70,9 @@ const emptyGreetingMessage = () => ({
 const emptyGreeting = () => ({
   enabled: true,
   enableWelcomeMessage: true,
+  orderTemplateName: "",
+  orderTemplateLanguage: "en",
+  adWelcomeSequenceId: "",
   iceBreakers: ["View offers", "Book a repair", "Shop products"],
   messages: [emptyGreetingMessage()],
 });
@@ -194,6 +200,9 @@ export default function ManageWhatsAppModule({ apiFetch }) {
         setGreeting({
           enabled: response.data.enabled !== false,
           enableWelcomeMessage: response.data.enableWelcomeMessage !== false,
+          orderTemplateName: response.data.orderTemplateName || "",
+          orderTemplateLanguage: response.data.orderTemplateLanguage || "en",
+          adWelcomeSequenceId: response.data.adWelcomeSequenceId || "",
           iceBreakers: response.data.iceBreakers?.length
             ? response.data.iceBreakers
             : ["View offers", "Book a repair", "Shop products"],
@@ -468,6 +477,23 @@ export default function ManageWhatsAppModule({ apiFetch }) {
     }
   };
 
+  const publishAdWelcome = async () => {
+    if (!selectedAccountId) return;
+    setBusy(true);
+    try {
+      const { data } = await apiFetch("/whatsapp/admin/greeting/ad-welcome", {
+        method: "POST",
+        body: JSON.stringify({ accountId: selectedAccountId }),
+      });
+      setGreeting((current) => ({ ...current, adWelcomeSequenceId: data.sequenceId }));
+      toast.success("Ad welcome sequence published");
+    } catch (error) {
+      toast.error(error.message || "Unable to publish ad welcome");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const saveAI = async (event) => {
     event.preventDefault();
     if (!selectedAccountId) return toast.error("Select an account first");
@@ -639,6 +665,8 @@ export default function ManageWhatsAppModule({ apiFetch }) {
         </div>
       </div>
 
+      {tab === "voice" && <WhatsAppVoiceCalls apiFetch={apiFetch} />}
+
       {tab === "accounts" && (
         <section className="wa-panel glass-panel">
           <div className="wa-panel-toolbar">
@@ -704,23 +732,35 @@ export default function ManageWhatsAppModule({ apiFetch }) {
             <form className="wa-greeting-layout" onSubmit={saveGreeting}>
               {AccountSelect}
               <p className="wa-hint">
-                Meta <strong>Welcome Message</strong> notifies us when a customer opens chat the first time
-                (<code>request_welcome</code>). Then this multi-step greeting is sent automatically.
+                Meta supports a welcome screen for Click-to-WhatsApp ads. Opening a regular WhatsApp chat
+                does not send this app a chat-open event.
               </p>
               <AdminToggle
                 className="wa-toggle-row"
                 label={<strong>Enable greeting sequence</strong>}
-                description="Sent on first chat open / first contact (with cooldown)."
+                description="Send the greeting once before the first eligible order update."
                 checked={greeting.enabled}
                 onChange={(enabled) => setGreeting((current) => ({ ...current, enabled }))}
               />
-              <AdminToggle
-                className="wa-toggle-row"
-                label={<strong>Enable Meta welcome trigger</strong>}
-                description="Syncs Conversational Components so chat-open fires a webhook."
-                checked={greeting.enableWelcomeMessage}
-                onChange={(enableWelcomeMessage) => setGreeting((current) => ({ ...current, enableWelcomeMessage }))}
-              />
+              <Field label="Approved order welcome template (optional)"
+                hint="Used when no WhatsApp service window is open and the customer has opted in. Use a static template without placeholders.">
+                <input value={greeting.orderTemplateName}
+                  pattern="[a-z0-9_]+" maxLength={512}
+                  onChange={(event) => setGreeting((current) => ({ ...current, orderTemplateName: event.target.value }))} />
+              </Field>
+              <Field label="Order welcome template language">
+                <input value={greeting.orderTemplateLanguage} required maxLength={6} placeholder="en"
+                  onChange={(event) => setGreeting((current) => ({ ...current, orderTemplateLanguage: event.target.value }))} />
+              </Field>
+              <div className="wa-button-card">
+                <div className="wa-button-card-head"><strong>Click-to-WhatsApp ad welcome</strong></div>
+                <p className="wa-hint">Save the greeting, then publish its first text message and ice breakers to Meta.
+                  Select the published sequence in Ads Manager for each ad that should show the welcome on open.</p>
+                <button type="button" className="wa-secondary" disabled={busy || !greeting.enabled} onClick={publishAdWelcome}>
+                  {greeting.adWelcomeSequenceId ? "Update ad welcome sequence" : "Publish ad welcome sequence"}
+                </button>
+                {greeting.adWelcomeSequenceId && <p className="wa-hint">Sequence ID <code>{greeting.adWelcomeSequenceId}</code></p>}
+              </div>
               <Field label="Ice breakers" hint="up to 4, max 80 chars each (no emoji)">
                 <textarea
                   value={(greeting.iceBreakers || []).join("\n")}
@@ -748,6 +788,10 @@ export default function ManageWhatsAppModule({ apiFetch }) {
                       <Trash2 size={14} />
                     </button>
                   </div>
+                  <Field label="Header (optional)" hint="Up to 60 characters">
+                    <input type="text" maxLength={60} value={message.headerText || ""}
+                      onChange={(event) => updateGreetingMessage(index, { headerText: event.target.value })} />
+                  </Field>
                   <Field label="Text">
                     <textarea
                       value={message.bodyText}
