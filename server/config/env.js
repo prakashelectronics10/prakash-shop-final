@@ -115,6 +115,7 @@ const env = {
   },
   pulseVoice: {
     enabled: bool(process.env.PULSE_VOICE_ENABLED, false),
+    outboundEnabled: bool(process.env.PULSE_VOICE_OUTBOUND_ENABLED, false),
     phoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID || "",
     businessAccountId: process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || "",
     accessToken: process.env.WHATSAPP_ACCESS_TOKEN || process.env.META_ACCESS_TOKEN || "",

@@ -31,6 +31,10 @@ const bookingSchema = new mongoose.Schema(
       sourceId: { type: String, default: "", trim: true },
     }],
     bookingSource: { type: String, default: "manual", trim: true },
+    voiceNotificationNextAttemptAt: { type: Date, index: { sparse: true } },
+    voiceNotificationClaimUntil: Date,
+    voiceNotificationAttempts: Number,
+    voiceAppNotifiedAt: Date,
     imageUrl: { type: String, default: "" },
     imagePublicId: { type: String, default: "" },
     images: [{

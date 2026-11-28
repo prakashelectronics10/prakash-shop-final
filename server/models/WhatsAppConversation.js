@@ -18,6 +18,11 @@ const whatsAppConversationSchema = new mongoose.Schema(
     humanTakeover: { type: Boolean, default: false },
     conversationMemory: { type: mongoose.Schema.Types.Mixed, default: {} },
     greetingSentAt: { type: Date, default: null },
+    voicePermission: {
+      status: String,
+      messageId: String,
+      sentAt: Date,
+    },
     /** When set in the future, auto-greeting is skipped (OTP / booking / order / payment flows). */
     suppressGreetingUntil: { type: Date, default: null },
     /** Last IDs for Copy-to-clipboard quick replies from transactional WhatsApp messages. */

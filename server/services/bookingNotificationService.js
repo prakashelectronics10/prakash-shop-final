@@ -3,6 +3,7 @@ const Booking = require("../models/Booking");
 const NotificationEmail = require("../models/NotificationEmail");
 const WebSetting = require("../models/WebSetting");
 const env = require("../config/env");
+const { logger } = require("../utils/logger");
 const { normalizeSettings } = require("../utils/webSettings");
 const { isEmailConfigured: isEmailProviderConfigured, sendMail } = require("./mailService");
 const { notifyBookingCreated: notifyMobileBookingCreated } = require("./mobileNotificationService");
@@ -517,7 +518,7 @@ async function markRecipientsDelivered(recipients) {
   ).catch(() => undefined);
 }
 
-async function sendBookingAdminNotification(booking, { uploadFiles = [] } = {}) {
+async function sendBookingAdminNotification(booking, { uploadFiles = [], resumeDelivery = false } = {}) {
   if (booking.emailNotification?.status === "sent") {
     return { delivered: true, skipped: true };
   }
@@ -550,8 +551,11 @@ async function sendBookingAdminNotification(booking, { uploadFiles = [] } = {}) 
   try {
     const assets = await getBrandAssets();
     const template = renderAdminBookingEmail({ booking, logoUrl: assets.logoUrl });
+    const alreadySent = new Map(resumeDelivery ? (booking.emailNotification.logs || [])
+      .filter((entry) => entry.status === "sent")
+      .map((entry) => [entry.recipient, { recipient: entry.recipient, ok: true, provider: entry.provider, messageId: entry.messageId }]) : []);
     const results = await Promise.all(
-      recipients.map((recipient) => sendRecipientWithRetry({ booking, recipient, template })),
+      recipients.map((recipient) => alreadySent.get(recipient) || sendRecipientWithRetry({ booking, recipient, template })),
     );
     const sent = results.filter((result) => result.ok);
     const failed = results.filter((result) => !result.ok);
@@ -772,10 +776,66 @@ async function processEmailQueue() {
   }
 }
 
+async function deliverNextVoiceBookingNotification(now = new Date()) {
+  const claimUntil = new Date(+now + 5 * 60_000);
+  const booking = await Booking.findOneAndUpdate({ bookingSource: "whatsapp-voice",
+    voiceNotificationNextAttemptAt: { $lte: now },
+    $or: [{ voiceNotificationClaimUntil: null }, { voiceNotificationClaimUntil: { $lte: now } }],
+  }, { $set: { voiceNotificationClaimUntil: claimUntil }, $inc: { voiceNotificationAttempts: 1 } },
+  { new: true, sort: { voiceNotificationNextAttemptAt: 1 }, timestamps: false });
+  if (!booking) return false;
+
+  const [appResult, emailResult] = await Promise.allSettled([
+    booking.voiceAppNotifiedAt ? undefined : notifyMobileBookingCreated(booking),
+    sendBookingAdminNotification(booking, { resumeDelivery: true }),
+  ]);
+  const emailComplete = emailResult.status === "fulfilled" && (emailResult.value.delivered
+    || ["email_not_configured", "no_recipients"].includes(emailResult.value.reason));
+  const complete = appResult.status === "fulfilled" && emailComplete;
+  const update = { $unset: { voiceNotificationClaimUntil: 1 }, $set: {} };
+  if (appResult.status === "fulfilled" && !booking.voiceAppNotifiedAt) update.$set.voiceAppNotifiedAt = now;
+  if (complete || booking.voiceNotificationAttempts >= 5) {
+    update.$unset.voiceNotificationNextAttemptAt = 1;
+    if (!complete) logger.warn("booking.voice_notification_exhausted");
+  } else {
+    update.$set.voiceNotificationNextAttemptAt = new Date(+now + 60_000);
+  }
+  if (!Object.keys(update.$set).length) delete update.$set;
+  await Booking.updateOne({ _id: booking._id, voiceNotificationClaimUntil: claimUntil }, update, { timestamps: false });
+  if (booking.customerEmail && !["sent", "not_configured"].includes(booking.customerConfirmation?.status)) {
+    await sendCustomerConfirmation(booking);
+  }
+  return true;
+}
+
+let voiceNotificationTimer;
+function startVoiceBookingNotifications() {
+  if (voiceNotificationTimer) return;
+  let running = false;
+  const run = async () => {
+    if (running) return;
+    running = true;
+    try {
+      for (let count = 0; count < 5; count += 1) if (!await deliverNextVoiceBookingNotification()) break;
+    } catch {
+      logger.warn("booking.voice_notification_worker_failed");
+    } finally {
+      running = false;
+    }
+  };
+  voiceNotificationTimer = setInterval(run, 5000);
+  voiceNotificationTimer.unref();
+  void Booking.collection.createIndex({ voiceNotificationNextAttemptAt: 1 }, { sparse: true })
+    .catch(() => logger.warn("booking.voice_notification_index_failed"));
+  void run();
+}
+
 module.exports = {
   enqueueBookingNotification,
   getAdminNotificationRecipients,
   notifyBookingCreated,
   sendRepairCompletedNotification,
   sendBookingAdminNotification,
+  startVoiceBookingNotifications,
+  deliverNextVoiceBookingNotification,
 };

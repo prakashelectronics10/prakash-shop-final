@@ -1,5 +1,6 @@
 const crypto = require("crypto");
 const { z } = require("zod");
+const env = require("../config/env");
 const Order = require("../models/Order");
 const AppError = require("../utils/AppError");
 const WhatsAppAISettings = require("../models/WhatsAppAISettings");
@@ -22,6 +23,20 @@ const orderPatchSchema = z.object({
 const reply = (text, buttons = []) => ({ text, buttons, images: [], model: "checkout" });
 const button = (label, action, token) => ({ type: "quick_reply", label, payload: `checkout:${action}:${token}` });
 const money = (value) => `Rs. ${Number(value).toFixed(2)}`;
+
+function onlineCheckoutIssue({ voice = false } = {}) {
+  if (!env.razorpay.webhookSecret || !env.razorpay.keyId || !env.razorpay.keySecret) return "razorpay_not_configured";
+  const stagingVoice = voice && env.nodeEnv !== "production" && env.razorpay.keyId.startsWith("rzp_test_");
+  if (!env.razorpay.keyId.startsWith("rzp_live_") && !stagingVoice) return "razorpay_live_key_required";
+  return undefined;
+}
+
+async function getCheckoutOptions(account) {
+  const settings = await WhatsAppAISettings.findOne({ account: account._id }).lean();
+  const onlineIssue = onlineCheckoutIssue({ voice: true });
+  return { online: !onlineIssue, cod: settings?.codEnabled === true, ...(onlineIssue && { onlineIssue }) };
+}
+
 function fingerprint(quote) {
   return crypto.createHash("sha256").update(JSON.stringify({
     items: quote.items.map((i) => [String(i.productId), i.variantCombinationId, i.quantity, i.unitPrice, i.discountedLineTotal, i.couponCode]),
@@ -135,7 +150,8 @@ function orderReply(order, token) {
   if (order.paymentStatus === "cod") return reply(`*Order confirmed — Cash on Delivery*\nOrder ID: ${order.orderId}\nDelivery par ${money(order.total)} pay karein.`);
   if (["paid", "refunded"].includes(order.paymentStatus)) return reply(`Order ID: ${order.orderId}\nPayment: ${order.paymentStatus}\nOrder status: ${order.orderStatus}\nTotal: ${money(order.total)}`);
   if (order.paymentLinkExpiresAt && new Date(order.paymentLinkExpiresAt) <= new Date()) return reply(`Order ${order.orderId} ka payment link expire ho gaya. Order confirm nahi hua. Cancel unpaid tap karke naya order shuru kar sakte hain.`, [button("Cancel unpaid", "cancel", token)]);
-  return { ...reply(`Order ${order.orderId} *payment ka wait kar raha hai; confirm nahi hua*.\nTotal: ${money(order.total)}\n${order.paymentLinkUrl ? "WhatsApp payment card ke Review and Pay button se payment karein. Payment verify hone par confirmation milega." : "Payment request abhi taiyar nahi hua. Check payment button se retry karein."}`,
+  const paymentButton = order.whatsappVoiceCall ? "WhatsApp ke Pay now button" : "WhatsApp payment card ke Review and Pay button";
+  return { ...reply(`Order ${order.orderId} *payment ka wait kar raha hai; confirm nahi hua*.\nTotal: ${money(order.total)}\n${order.paymentLinkUrl ? `${paymentButton} se payment karein. Payment verify hone par confirmation milega.` : "Payment request abhi taiyar nahi hua. Check payment button se retry karein."}`,
     token ? [button("Check payment", "status", token), button("Cancel unpaid", "cancel", token)] : []),
     ...(order.paymentLinkUrl ? { paymentRequestOrderId: order.orderId } : {}) };
 }
@@ -190,6 +206,8 @@ async function ensurePaymentLink(order) {
 async function handleCheckoutButton({ account, conversation, buttonReplyId }) {
   if (!String(buttonReplyId || "").startsWith("checkout:")) return null;
   const [, action, token] = buttonReplyId.split(":");
+  const blocked = (message, checkoutIssue, buttons) => ({ ...reply(message, buttons),
+    ...(conversation.voiceCallId && { checkoutIssue }) });
   const draft = conversation.checkout;
   if (!draft || token !== draft.token) return reply("Yeh purana order button hai. Current order details dobara bhejein.");
   let order = await Order.findOne({ checkoutKey: `${conversation._id}:${token}` });
@@ -235,7 +253,7 @@ async function handleCheckoutButton({ account, conversation, buttonReplyId }) {
     return reply("Order review expire ho gaya. Product aur details dobara bhejein taaki latest total check ho sake.");
   }
   const settings = await WhatsAppAISettings.findOne({ account: account._id }).lean();
-  if (action === "cod" && settings?.codEnabled !== true) return reply("Abhi COD service available nahi hai. Online payment choose karein.", [button("Pay online", "online", token)]);
+  if (action === "cod" && settings?.codEnabled !== true) return blocked("Abhi COD service available nahi hai. Online payment choose karein.", "cod_disabled", [button("Pay online", "online", token)]);
   const { sanitizeCustomer, buildOrderQuote, newPublicOrderId } = require("../controllers/orderController");
   try {
     const customer = sanitizeCustomer(draft.customer);
@@ -243,15 +261,19 @@ async function handleCheckoutButton({ account, conversation, buttonReplyId }) {
     if (fingerprint(quote) !== draft.quoteHash) return previewCheckout({ account, conversation, patch: {} });
     await require("./whatsappCheckoutIndexes").ensureWhatsAppCheckoutIndexes();
     if (action === "online") {
-      const env = require("../config/env");
-      if (!env.metaCatalog.catalogId || quote.items.some((item) => !item.retailerId)) {
-        return reply("In products ki WhatsApp catalog listing abhi available nahi hai. Shop team se contact karein.");
+      if (!conversation.voiceCallId && (!env.metaCatalog.catalogId || quote.items.some((item) => !item.retailerId))) {
+        return blocked("In products ki WhatsApp catalog listing abhi available nahi hai. Shop team se contact karein.",
+          env.metaCatalog.catalogId ? "catalog_item_not_linked" : "catalog_not_configured");
       }
-      if (!env.razorpay.webhookSecret || !env.razorpay.keyId || !env.razorpay.keySecret) return reply("Online payments abhi available nahi hain. Shop team se contact karein; order confirm nahi hua.");
-      try {
-        await require("./whatsappPaymentRequestService").getPaymentTemplate({ account, settings });
-      } catch (_error) {
-        return reply("WhatsApp Pay now service abhi available nahi hai. Shop team se contact karein; order confirm nahi hua.");
+      const issue = onlineCheckoutIssue({ voice: Boolean(conversation.voiceCallId) });
+      if (issue) return blocked("Online payments abhi available nahi hain. Shop team se contact karein; order confirm nahi hua.", issue);
+      if (!conversation.voiceCallId) {
+        try {
+          await require("./whatsappPaymentRequestService").getPaymentTemplate({ account, settings });
+        } catch (_error) {
+          return blocked("WhatsApp Pay now service abhi available nahi hai. Shop team se contact karein; order confirm nahi hua.",
+            settings?.enhancedPaymentsEnabled === true ? "payment_template_unavailable" : "whatsapp_payments_disabled");
+        }
       }
     }
     try {
@@ -316,4 +338,4 @@ async function resumeHostedPayment(order) {
   return { order, paymentUrl: url.href };
 }
 
-module.exports = { previewCheckout, handleCheckoutButton, handlePaymentLinkWebhook, validLinkPayment, confirmLinkPayment, orderPatchSchema, fingerprint, resumeHostedPayment };
+module.exports = { previewCheckout, handleCheckoutButton, getCheckoutOptions, handlePaymentLinkWebhook, validLinkPayment, confirmLinkPayment, orderPatchSchema, fingerprint, resumeHostedPayment };

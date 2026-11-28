@@ -177,6 +177,7 @@ export default function WhatsAppVoiceCalls({ apiFetch }) {
                 <h3>{call.caller || "Caller ID unavailable"}</h3>
                 <div className="wa-account-meta">
                   <span className={`wa-badge ${["failed", "missed"].includes(call.state) ? "off" : "on"}`}>{call.state}</span>
+                  {call.direction === "outbound" && <span>Outbound</span>}
                   <time dateTime={call.createdAt}>{new Date(call.createdAt).toLocaleString()}</time>
                   <span>{durationLabel(call)}</span>
                   {call.model && <span>{[call.providerLabel, call.model, call.voice].filter(Boolean).join(" · ")}</span>}

@@ -19,6 +19,8 @@ const { logger } = require("../utils/logger");
 const { recordDeliveryReceipts } = require("../services/whatsappDeliveryService");
 const { isSignedReviewAction, getContextReviewAction, handleReviewAction } = require("../services/reviewWhatsAppService");
 const voice = require("../services/whatsappVoiceService");
+const permission = require("../services/whatsappVoicePermissionService");
+const { sendGreetingForAccount } = require("../services/whatsappGreetingService");
 
 function requestsOrderHistory(text = "") {
   const message = text.toLowerCase().trim().replace(/[.!?]+$/, "");
@@ -145,6 +147,19 @@ exports.handleWhatsAppWebhook = catchAsync(async (req, res) => {
   const conversationEvents = [];
   const reviewReplies = [];
   for (const event of parseInboundWebhook(payload)) {
+    if (permission.isPermissionReply(event)) {
+      if (env.metaApp.appSecret && env.pulseVoice.enabled && env.pulseVoice.outboundEnabled) {
+        try {
+          const account = await resolveAccountByPhoneNumberId(event.phoneNumberId);
+          const work = await permission.prepareReply({ account, event });
+          if (work) void work().catch(() => logger.warn("whatsapp.voice.outbound_failed"));
+        } catch (error) {
+          logger.warn("whatsapp.voice.permission_webhook_retry", { code: error.code });
+          return res.status(503).json({ success: false, message: "Call permission temporarily unavailable" });
+        }
+      }
+      continue;
+    }
     const signedReviewAction = isSignedReviewAction(event.buttonReplyId);
     if (env.metaApp.appSecret && (signedReviewAction || getContextReviewAction(event))) {
       try {
@@ -217,6 +232,26 @@ exports.handleWhatsAppWebhook = catchAsync(async (req, res) => {
       });
 
       if (duplicate) continue;
+
+      if (env.metaApp.appSecret && event.messageId && ((event.type === "text" && event.text)
+        || (["image", "audio", "document", "video", "sticker"].includes(event.type) && event.mediaId))) {
+        try {
+          const greeting = await sendGreetingForAccount({ account, customerWaId: event.customerWaId,
+            conversationId: conversation._id, firstMessageId: event.messageId,
+            onOutbound: (item) => recordMessage({ accountId: account._id, conversationId: conversation._id,
+              customerWaId: event.customerWaId, direction: "outbound", sender: "system", type: item.type,
+              text: item.text || "", mediaUrl: item.mediaUrl, buttons: item.buttons,
+              waMessageId: item.result.messages[0].id, meta: { greeting: true } }),
+          });
+          if (greeting.sent) {
+            conversation.greetingSentAt = new Date();
+            await conversation.save();
+            await permission.sendAfterGreeting({ account, conversation, customerWaId: event.customerWaId });
+          }
+        } catch (error) {
+          logger.warn("whatsapp.first_message_greeting_failed", { status: error.status, metaCode: error.payload?.error?.code });
+        }
+      }
 
       if (event.type === "text" && requestsOrderHistory(event.text)) {
         await sendOrderHistoryButton({ account, conversation, customerWaId: event.customerWaId });

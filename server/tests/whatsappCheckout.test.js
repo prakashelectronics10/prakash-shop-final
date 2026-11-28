@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 process.env.META_CATALOG_ID = "catalog";
-process.env.RAZORPAY_KEY_ID = "rzp_test_checkout";
+process.env.RAZORPAY_KEY_ID = "rzp_live_checkout_fixture";
 process.env.RAZORPAY_KEY_SECRET = "test-secret";
 process.env.RAZORPAY_WEBHOOK_SECRET = "test-webhook";
 const Order = require("../models/Order");
@@ -9,7 +9,7 @@ const Settings = require("../models/WhatsAppAISettings");
 const notifications = require("../services/orderNotificationService");
 const enqueued = [];
 notifications.enqueueOrderPaidNotification = (order) => enqueued.push(order);
-const { handleCheckoutButton, previewCheckout, validLinkPayment, confirmLinkPayment, fingerprint } = require("../services/whatsappCheckoutService");
+const { handleCheckoutButton, previewCheckout, validLinkPayment, confirmLinkPayment, fingerprint, getCheckoutOptions } = require("../services/whatsappCheckoutService");
 const controller = require("../controllers/orderController");
 const { whatsAppAISettingsSchema } = require("../validations/whatsappSchemas");
 test.beforeEach((t) => {
@@ -29,6 +29,25 @@ test("COD defaults off in both storage and admin validation; unpaid orders defau
   assert.equal(new Settings({ account: account._id }).codEnabled, false);
   assert.equal(whatsAppAISettingsSchema.parse({ accountId: account._id }).codEnabled, false);
   assert.equal(new Order().orderStatus, "awaiting_payment");
+});
+
+test("payment options report missing worker configuration without offering COD when disabled", async (t) => {
+  t.mock.method(Settings, "findOne", () => ({ lean: async () => ({ enhancedPaymentsEnabled: true, codEnabled: false }) }));
+  const env = require("../config/env");
+  const { razorpay } = env;
+  const secret = razorpay.keySecret;
+  const keyId = razorpay.keyId;
+  const nodeEnv = env.nodeEnv;
+  t.after(() => { razorpay.keySecret = secret; razorpay.keyId = keyId; env.nodeEnv = nodeEnv; });
+  razorpay.keySecret = "";
+  assert.deepEqual(await getCheckoutOptions(account), { online: false, cod: false, onlineIssue: "razorpay_not_configured" });
+  razorpay.keySecret = secret;
+  assert.deepEqual(await getCheckoutOptions(account), { online: true, cod: false });
+  razorpay.keyId = "rzp_test_checkout_fixture";
+  env.nodeEnv = "development";
+  assert.deepEqual(await getCheckoutOptions(account), { online: true, cod: false });
+  env.nodeEnv = "production";
+  assert.deepEqual(await getCheckoutOptions(account), { online: false, cod: false, onlineIssue: "razorpay_live_key_required" });
 });
 
 test("only full captured payment for the exact link, reference, order and currency qualifies", () => {
@@ -56,6 +75,66 @@ test("repeated paid webhook atomically confirms and notifies once", async (t) =>
   assert.equal(await confirmLinkPayment(online, link, payment), true);
   assert.equal(await confirmLinkPayment(online, link, payment), false);
   assert.equal(enqueued.length, 1);
+});
+
+test("a voice order uses shared checkout and becomes confirmed only after captured Razorpay payment", async (t) => {
+  const { createVoiceTools, createConfirmation } = require("../services/whatsappVoiceTools");
+  const consent = createConfirmation();
+  let stored;
+  const voiceMessages = [];
+  const call = { _id: "voice-call-test", phone: "919876543210" };
+  t.mock.method(Order, "findOne", async () => stored || null);
+  t.mock.method(Order, "findOneAndUpdate", async (_filter, { $set }) => {
+    if (stored.paymentStatus === "paid") return null;
+    Object.assign(stored, $set);
+    return stored;
+  });
+  const { metaCatalog } = require("../config/env");
+  const priorCatalog = metaCatalog.catalogId;
+  metaCatalog.catalogId = "";
+  t.after(() => { metaCatalog.catalogId = priorCatalog; });
+  t.mock.method(Settings, "findOne", () => ({ lean: async () => ({ codEnabled: false, enhancedPaymentsEnabled: false }) }));
+  t.mock.method(controller, "buildOrderQuote", async () => ({ ...quote, items: quote.items.map(({ retailerId, ...item }) => item) }));
+  const create = t.mock.method(Order, "create", async (data) => { stored = { ...data, _id: online._id, async save() {} }; return stored; });
+  const paymentTemplate = t.mock.method(require("../services/whatsappPaymentRequestService"), "getPaymentTemplate", async () => { throw new Error("voice does not use catalog cards"); });
+  t.mock.method(globalThis, "fetch", async (url, options) => {
+    if (String(url).includes("reference_id=")) return Response.json({ payment_links: [] });
+    assert.equal(options.method, "POST");
+    assert.equal(JSON.parse(options.body).amount, 52500);
+    return Response.json({ id: "plink_test", reference_id: stored.orderId, amount: 52500,
+      currency: "INR", short_url: "https://rzp.io/rzp/test", status: "created" });
+  });
+  const tools = createVoiceTools({ call, account, consent, services: {
+    Call: { exists: async () => true }, getConversation: async () => ({ _id: conversation()._id }),
+    sendPaymentRequest: async ({ orderId }) => { voiceMessages.push(orderId); return { sent: true }; },
+  } });
+  assert.deepEqual(await tools.get_order_options.execute({}), { online: true, cod: false });
+  const { name, address, pincode } = customer;
+  const draft = { items, customer: { name, address, pincode } };
+  assert.equal((await tools.review_order.execute({ ...draft, method: "cod" })).status, "cod_unavailable");
+  assert.equal((await tools.review_order.execute({ ...draft, method: "online" })).summary.total, 525);
+  assert.equal((await tools.submit_order.execute({})).status, "awaiting_confirmation");
+  assert.equal(create.mock.callCount(), 0);
+
+  consent.speechStarted(Date.now() + 1, "voice-consent");
+  consent.transcript({ isFinal: true, itemId: "voice-consent", transcript: "Order confirm kar do aur WhatsApp pe link bhej do" });
+  const placed = await tools.submit_order.execute({});
+  assert.equal(placed.status, "awaiting_payment");
+  assert.equal(placed.reference, stored.orderId);
+  assert.equal(placed.whatsappAccepted, true);
+  assert.equal(stored.whatsappVoiceCall, call._id);
+  assert.equal(stored.customer.phone, customer.phone);
+  assert.equal(stored.orderStatus, "awaiting_payment");
+  await tools.submit_order.execute({});
+  assert.equal(create.mock.callCount(), 1);
+  assert.equal(paymentTemplate.mock.callCount(), 0);
+  assert.deepEqual(voiceMessages, [stored.orderId]);
+
+  const capturedLink = { ...link, reference_id: stored.orderId };
+  assert.equal(await confirmLinkPayment(stored, capturedLink, { ...payment, status: "authorized" }), false);
+  assert.equal(await confirmLinkPayment(stored, capturedLink, payment), true);
+  assert.equal(stored.orderStatus, "confirmed");
+  assert.equal(stored.paymentStatus, "paid");
 });
 
 test("stale review button does not query or create an order", async (t) => {

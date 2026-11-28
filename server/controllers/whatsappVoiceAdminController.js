@@ -56,7 +56,7 @@ exports.listVoiceCalls = catchAsync(async (req, res) => {
   const { page, ...filter } = input.data;
   const limit = 25;
   const rows = await Call.find(filter)
-    .select("caller state provider model voice startedAt endedAt durationSeconds errorCode callback callbackAt summaryTopic usage createdAt")
+    .select("caller direction state provider model voice startedAt endedAt durationSeconds errorCode callback callbackAt summaryTopic usage createdAt")
     .sort({ createdAt: -1, _id: -1 }).skip((page - 1) * limit).limit(limit + 1).lean();
   res.json({ success: true, data: { calls: rows.slice(0, limit).map((call) => {
     const provider = callProvider(call);

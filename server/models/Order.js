@@ -99,6 +99,7 @@ const orderSchema = new mongoose.Schema(
     paymentLinkExpiresAt: Date,
     paymentRequestMessageId: { type: String, default: "" },
     paymentRequestClaimUntil: Date,
+    paymentRequestFormat: { type: String, enum: ["cta_url"] },
     orderStatus: {
       type: String,
       default: "awaiting_payment",

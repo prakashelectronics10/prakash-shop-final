@@ -9,6 +9,7 @@ const { voiceProvider, supportsModel, resolveVoiceModel } = require("./whatsappV
 const LIVE = ["incoming", "active"];
 const LANGUAGES = ["hi", "en", "hinglish"];
 const START_TIMEOUT = 25_000;
+const OUTBOUND_SETUP_TIMEOUT = 45_000;
 const RETENTION = 30 * 86400_000;
 const SETTINGS_ID = "default";
 const DEFAULT_GREETING = "Namaste! Main Pulse AI, Prakash Electronics ka AI assistant hoon. Batayein, aaj main aapki kya help kar sakta hoon?";
@@ -45,16 +46,20 @@ function parseCallEvents(payload) {
         || !Array.isArray(value.calls)) continue;
       for (const call of value.calls) {
         if (typeof call?.id !== "string" || !/^[\w.+/=:-]{1,256}$/.test(call.id)
-          || (call.direction && call.direction !== "USER_INITIATED")) continue;
-        const phone = typeof call.from === "string" && /^\+?\d{7,15}$/.test(call.from)
-          ? call.from.replace(/^\+/, "") : undefined;
+          || (call.direction && !["USER_INITIATED", "BUSINESS_INITIATED"].includes(call.direction))) continue;
+        const outbound = call.direction === "BUSINESS_INITIATED";
+        const number = outbound ? call.to : call.from;
+        const phone = typeof number === "string" && /^\+?\d{7,15}$/.test(number)
+          ? number.replace(/^\+/, "") : undefined;
         const scopedId = typeof call.from_user_id === "string" && /^[\w.-]{1,128}$/.test(call.from_user_id)
           ? call.from_user_id : undefined;
         const common = {
           id: call.id, phoneNumberId: String(phoneNumberId), businessAccountId: String(entry.id),
           caller: phone || scopedId, phone, timestamp: Number(call.timestamp), type: call.event,
+          ...(outbound && { outbound, attemptId: typeof call.biz_opaque_callback_data === "string"
+            && /^pulse-outbound-[a-f0-9-]{36}$/.test(call.biz_opaque_callback_data) ? call.biz_opaque_callback_data : undefined }),
         };
-        if (call.event === "connect" && call.session?.sdp_type === "offer"
+        if (call.event === "connect" && call.session?.sdp_type === (outbound ? "answer" : "offer")
           && typeof call.session.sdp === "string" && call.session.sdp.length <= 64_000
           && call.session.sdp.startsWith("v=0")) events.push({ ...common, sdp: call.session.sdp });
         if (call.event === "terminate") {
@@ -92,6 +97,13 @@ function createVoiceService({ calls = Call, loadSettings = getSettings, transpor
       if (error.code !== 11000) throw error;
       return null;
     }
+  }
+
+  async function slotLimit(limit) {
+    const occupied = await calls.find({ slot: { $exists: true } }).select("slot").sort({ slot: -1 }).lean();
+    // Keep a slot for calls above a newly lowered limit until those calls finish.
+    for (const entry of occupied) if (entry.slot >= limit) limit -= 1;
+    return limit;
   }
 
   async function clean(call, fromMeta) {
@@ -145,8 +157,74 @@ function createVoiceService({ calls = Call, loadSettings = getSettings, transpor
     if (work) await work();
   }
 
+  async function startOutbound(customerWaId) {
+    if (!config.outboundEnabled || !/^91[6-9]\d{9}$/.test(customerWaId) || !withinRate()) return false;
+    const settings = await loadSettings();
+    if (!settings.enabled) return false;
+    const now = Date.now();
+    const slots = await slotLimit(settings.maxConcurrent);
+    for (let slot = 0; slot < slots; slot += 1) {
+      const call = await createCall({
+        _id: `pulse-outbound-${randomUUID()}`, direction: "outbound", state: "incoming", slot,
+        phoneNumberId: config.phoneNumberId, caller: customerWaId, phone: customerWaId,
+        roomName: `pulse-wa-${randomUUID()}`, deadline: new Date(now + OUTBOUND_SETUP_TIMEOUT),
+        expiresAt: new Date(now + RETENTION), provider: settings.provider, model: settings.model,
+        voice: settings.voice, greeting: settings.greeting, languages: settings.languages,
+      });
+      if (!call) continue;
+      try {
+        const metaCallId = await transport.dial(call);
+        const stored = await calls.updateOne({ _id: call._id, state: { $in: LIVE },
+          $or: [{ metaCallId: { $exists: false } }, { metaCallId }] }, { $set: { metaCallId } });
+        if (!stored.matchedCount && !stored.modifiedCount) {
+          await clean({ ...(call.toObject?.() || call), metaCallId }, false);
+          return false;
+        }
+        return true;
+      } catch {
+        await finish(call._id, "failed", "connector_dial");
+        return false;
+      }
+    }
+    return false;
+  }
+
+  async function receiveOutbound(event) {
+    const call = await calls.findOne({ direction: "outbound", phoneNumberId: event.phoneNumberId,
+      ...(event.attemptId ? { _id: event.attemptId } : { metaCallId: event.id }) }).lean();
+    if (!call || (event.phone && event.phone !== call.phone) || (call.metaCallId && call.metaCallId !== event.id)) return;
+    const locate = { _id: call._id, $or: [{ metaCallId: { $exists: false } }, { metaCallId: event.id }] };
+    if (event.type === "terminate") {
+      const saved = await calls.updateOne(locate, { $set: { metaCallId: event.id } });
+      if (!saved.matchedCount && !saved.modifiedCount) return;
+      const work = await markFinished(call._id, event.failed ? "failed" : "completed", event.errorCode, {
+        fromMeta: true, duration: event.duration,
+      });
+      if (!work && event.duration !== undefined) await calls.updateOne({ _id: call._id,
+        state: { $nin: LIVE }, metaFinal: { $ne: true } }, { $set: { metaFinal: true, durationSeconds: event.duration } });
+      return work;
+    }
+    const claimed = await calls.findOneAndUpdate({ ...locate, state: "incoming", deadline: { $gt: new Date() },
+      outboundAnswerClaimed: { $ne: true } }, { $set: { metaCallId: event.id, outboundAnswerClaimed: true,
+      deadline: new Date(Date.now() + START_TIMEOUT) } }, { new: true }).lean();
+    if (!claimed) return;
+    return async () => {
+      try {
+        await transport.connectOutbound(claimed, event.sdp);
+        if (await calls.exists({ _id: call._id, state: "incoming" })) {
+          await transport.dispatchOutbound(call.roomName);
+        } else {
+          await clean(claimed, false);
+        }
+      } catch {
+        await finish(call._id, "failed", "connector_outbound_connect");
+      }
+    };
+  }
+
   async function receive(event) {
     if (event.phoneNumberId !== config.phoneNumberId || event.businessAccountId !== config.businessAccountId) return;
+    if (event.outbound) return receiveOutbound(event);
     const before = await calls.findById(event.id).lean();
     if (event.type === "terminate") {
       if (before) {
@@ -186,10 +264,7 @@ function createVoiceService({ calls = Call, loadSettings = getSettings, transpor
     if (settings.enabled && !withinRate()) reason = "rate_limit";
     if (reason === "concurrency_limit") {
       const roomName = `pulse-wa-${randomUUID()}`;
-      let slots = settings.maxConcurrent;
-      const occupied = await calls.find({ slot: { $exists: true } }).select("slot").sort({ slot: -1 }).lean();
-      // Keep a slot for each call above the new limit until that call drains.
-      for (const entry of occupied) if (entry.slot >= slots) slots -= 1;
+      const slots = await slotLimit(settings.maxConcurrent);
       for (let slot = 0; slot < slots; slot += 1) {
         const claimed = await createCall({ ...base, state: "incoming", roomName, slot,
           deadline: new Date(now + START_TIMEOUT), greeting: settings.greeting, languages: settings.languages });
@@ -224,7 +299,7 @@ function createVoiceService({ calls = Call, loadSettings = getSettings, transpor
     await Promise.all(pending.map((call) => cleanupPending(call._id)));
   }
 
-  return { receive, finish, expire };
+  return { receive, finish, expire, startOutbound };
 }
 
 const voice = createVoiceService();

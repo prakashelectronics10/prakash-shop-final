@@ -9,7 +9,7 @@ const {
   uploadPdfMedia,
 } = require("./whatsappCloudApiService");
 const { getOrderInvoicePdf } = require("./orderInvoiceService");
-const { recordMessage, upsertConversation } = require("./whatsappConversationService");
+const { hasVoiceCustomerServiceWindow, recordMessage, upsertConversation } = require("./whatsappConversationService");
 const { formatCopyCodeMessage } = require("./whatsappFormatService");
 const greetingService = require("./whatsappGreetingService");
 const {
@@ -310,7 +310,7 @@ async function sendOrderConfirmationWhatsApp({ order }) {
 
   const templates = env.whatsapp.templates || {};
   // Template URL is https://prakashelectronics.in/orders?id={{1}} → button param is Order ID only.
-  const maySendFreeForm = await voiceOrderMaySendFreeForm(order);
+  const maySendFreeForm = await voiceOrderMaySendFreeForm(order, account, customerWaId);
   const { result, usedTemplate } = await tryTemplateThenFallback({
     account,
     customerWaId,
@@ -369,16 +369,14 @@ async function sendOrderConfirmationWhatsApp({ order }) {
   return { ok: true };
 }
 
-async function voiceOrderMaySendFreeForm(order) {
+async function voiceOrderMaySendFreeForm(order, account, customerWaId) {
   if (!order.whatsappVoiceCall) return true;
-  const Message = require("../models/WhatsAppMessage");
-  return Boolean(await Message.exists({
-    conversation: order.whatsappConversation, direction: "inbound",
-    "meta.isWelcomeRequest": { $ne: true }, createdAt: { $gt: new Date(Date.now() - 24 * 3600_000) },
-  }));
+  return hasVoiceCustomerServiceWindow({ callId: order.whatsappVoiceCall, account,
+    conversationId: order.whatsappConversation, customerWaId });
 }
 
 async function sendPaidOrderCardStatus(order) {
+  if (order.paymentRequestFormat === "cta_url") return false;
   const account = await withAccount(order);
   const customerWaId = toWhatsAppE164(order.customer?.whatsappNumber);
   if (!account || !/^\d{8,15}$/.test(customerWaId)) return false;
@@ -596,7 +594,7 @@ async function sendPaymentReceivedWhatsApp({ order }) {
       },
       { type: "button", sub_type: "url", index: "0", parameters: [{ type: "text", text: encodeURIComponent(order.orderId) }] },
     ],
-    fallback: await voiceOrderMaySendFreeForm(order) ? async () => {
+    fallback: await voiceOrderMaySendFreeForm(order, account, customerWaId) ? async () => {
       try {
         return await sendInteractiveMessage({
           ...credentials,

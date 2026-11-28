@@ -113,7 +113,7 @@ test("an ad welcome uses Meta's WABA multipart sequence endpoint", async (t) => 
     sequenceId: "456", name: "Pulse welcome", sequence }), { success: true });
 });
 
-test("first messages go to the existing WhatsApp chat flow without triggering a configured greeting", async (t) => {
+test("new messages trigger greeting before permission and chat, while returning messages skip both", async (t) => {
   const previous = [env.whatsapp.enabled, env.metaApp.appSecret, env.pulseVoice.enabled];
   t.after(() => {
     [env.whatsapp.enabled, env.metaApp.appSecret, env.pulseVoice.enabled] = previous;
@@ -126,16 +126,26 @@ test("first messages go to the existing WhatsApp chat flow without triggering a 
   const account = { _id: "account", phoneNumberId: "123" };
   const conversation = { _id: "conversation", async save() {} };
   t.mock.method(Account, "findOne", async () => account);
-  const greetingLookup = t.mock.method(Greeting, "findOne", () => ({ lean: async () => ({ messages: [{ headerText }] }) }));
+  t.mock.method(Greeting, "findOne", () => ({ lean: async () => ({ messages: [{ headerText }] }) }));
   const record = t.mock.method(require("../services/whatsappConversationService"), "recordMessage", async () => ({ conversation, duplicate: false }));
   const handled = [];
+  t.mock.method(Message, "exists", async (filter) => filter.direction === "inbound");
+  t.mock.method(Message, "findOne", () => ({ sort: () => ({ select: () => ({ lean: async () => ({ waMessageId: "direct" }) }) }) }));
+  t.mock.method(GreetingLog, "findOneAndUpdate", async () => ({}));
+  t.mock.method(GreetingLog, "updateOne", async () => ({}));
+  t.mock.method(globalThis, "fetch", async (_url, options) => {
+    assert.equal(JSON.parse(options.body).text.body, `*${headerText}*`);
+    handled.push("greeting");
+    return Response.json({ messages: [{ id: "greeting-id" }] });
+  });
+  t.mock.method(require("../services/whatsappVoicePermissionService"), "sendAfterGreeting", async () => handled.push("permission"));
   t.mock.method(require("../services/whatsappAIService"), "maybeReplyWithAI", async ({ customerMessage }) => handled.push(customerMessage));
   const { handleWhatsAppWebhook } = require("../controllers/whatsappWebhookController");
 
   const body = Buffer.from(JSON.stringify({ object: "whatsapp_business_account", entry: [{ changes: [{ field: "messages", value: {
     metadata: { phone_number_id: "123" }, messages: [
       { id: "direct", from: customerWaId, type: "text", text: { body: "Hi directly" } },
-      { id: "ad", from: "919876543211", type: "text", text: { body: "Hi from ad" }, referral: { source_type: "ad" } },
+      { id: "second", from: customerWaId, type: "text", text: { body: "My next message" } },
       { id: "old_event", from: "919876543212", type: "request_welcome" },
     ],
   } }] }] }));
@@ -147,7 +157,6 @@ test("first messages go to the existing WhatsApp chat flow without triggering a 
   await new Promise(setImmediate);
   assert.ifError(failure);
   assert.equal(status, 200);
-  assert.deepEqual(handled, ["Hi directly", "Hi from ad"]);
-  assert.equal(record.mock.callCount(), 2);
-  assert.equal(greetingLookup.mock.callCount(), 0);
+  assert.deepEqual(handled, ["greeting", "permission", "Hi directly", "My next message"]);
+  assert.equal(record.mock.callCount(), 3);
 });

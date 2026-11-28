@@ -25,6 +25,7 @@ export default defineAgent({
     let ended = false;
     let timer;
     let shutdown;
+    let closing = false;
     let usageTracker;
     const consent = voiceTools.createConfirmation();
     // Shutdown and provider events can fire together. Only one owner should close the session.
@@ -70,8 +71,29 @@ export default defineAgent({
       ]);
       if (ended) return;
       const account = storedAccount && { ...storedAccount, accessToken: config.accessToken };
+      const endCall = () => {
+        if (closing || ended) return false;
+        closing = true;
+        setImmediate(async () => {
+          if (ended) return;
+          try {
+            const goodbye = session.generateReply({
+              instructions: "Say a brief friendly goodbye in the caller's language. Do not ask another question or use any tools.",
+              ...(call.provider === "openai" && { toolChoice: "none" }),
+              allowInterruptions: true,
+            });
+            await goodbye.waitForPlayout();
+            if (goodbye.interrupted) { closing = false; return; }
+            await finish("completed");
+          } catch {
+            closing = false;
+            logger.warn("whatsapp.voice.farewell_failed");
+          }
+        });
+        return true;
+      };
       const tools = Object.entries(voiceTools.createVoiceTools({
-        call, account, consent, stopped: () => ended,
+        call, account, consent, stopped: () => ended, endCall,
       })).map(([name, tool]) => llm.tool({ name, ...tool }));
       call.provider = voiceModels.callProvider(call);
       const runtime = await audio.createVoiceRuntime(call, config, consent, inference);
@@ -101,7 +123,9 @@ export default defineAgent({
       clearTimeout(timer);
       timer = setTimeout(() => void finish("completed", "duration_limit"), config.maxDuration * 1000);
       const greeting = session.generateReply({
-        instructions: `Say this greeting once as written, then listen. Do not call tools to greet: ${call.greeting}`,
+        instructions: call.direction === "outbound"
+          ? "Briefly identify yourself as Pulse AI from Prakash Electronics and say you are calling because they allowed a WhatsApp call. Ask how you can help with their recent message. Do not call tools to greet."
+          : `Say this greeting once as written, then listen. Do not call tools to greet: ${call.greeting}`,
         ...(call.provider === "openai" && { toolChoice: "none" }),
         allowInterruptions: true,
       });

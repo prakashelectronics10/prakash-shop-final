@@ -9,18 +9,19 @@ const { resolveProductPricing } = require("../utils/productPricing");
 const { formatVariantSummary, resolveVariantPricing, resolveVariantStock } = require("../utils/productVariants");
 const { validateEmailDeliverability } = require("../utils/validateEmail");
 const { createRepairBooking } = require("./whatsappRepairBookingService");
-const { previewCheckout, handleCheckoutButton } = require("./whatsappCheckoutService");
+const { previewCheckout, handleCheckoutButton, getCheckoutOptions } = require("./whatsappCheckoutService");
+const { loadVoiceChatContext } = require("./whatsappConversationService");
 const { sendPaymentRequest } = require("./whatsappPaymentRequestService");
 const { sendBookingConfirmationWhatsApp } = require("./whatsappTransactionalService");
 const { logger } = require("../utils/logger");
 
 const confirmation = {
   repair: /^(?:(?:yes )?confirm (?:the )?repair(?: booking)?|(?:haan )?repair (?:booking )?confirm (?:karo|kijiye)|(?:हाँ )?रिपेयर (?:बुकिंग )?कन्फर्म कीजिए)$/iu,
-  order: /^(?:(?:yes )?confirm (?:the )?order|(?:haan )?order confirm (?:karo|kijiye)|(?:हाँ )?ऑर्डर कन्फर्म कीजिए)$/iu,
+  order: /^(?:(?:yes )?(?:please )?(?:confirm|place) (?:the |my )?order(?: please)?|(?:haan |han |ha )?(?:mera )?order confirm (?:karo|kijiye|kar do|kar dijiye|kar dena)|(?:हाँ |हां )?(?:मेरा )?ऑर्डर कन्फर्म (?:कीजिए|करो|कर दो|कर दीजिए|कर देना))$/iu,
   callback: /^(?:please call me back|(?:haan )?mujhe callback kijiye|मुझे कॉलबैक कीजिए)$/iu,
   summary: /^(?:save the call topic|call ka topic save kijiye|कॉल का विषय सेव कीजिए)$/iu,
 };
-const messageSuffix = /(?: and message me| aur whatsapp par bhejo| और व्हाट्सऐप पर भेजिए)$/iu;
+const messageSuffix = /(?: and (?:message me|send (?:me )?(?:the )?(?:payment )?link on whatsapp)| aur (?:mujhe )?whatsapp (?:par|pe) (?:(?:payment )?link )?(?:bhejo|bhejiye|bhej do|bhej dijiye)| और (?:मुझे )?व्हाट्सऐप (?:पर|पे) (?:(?:पेमेंट )?लिंक )?(?:भेजो|भेजिए|भेज दीजिए|भेज दो))$/iu;
 const confirmationPrompt = {
   repair: "Confirm the repair", order: "Confirm the order", callback: "Please call me back",
   summary: "Save the call topic",
@@ -31,6 +32,7 @@ function createConfirmation() {
   let grant;
   let activeItem;
   let beganAt = 0;
+  let speechSequence = 0;
   function clear() {
     pending = undefined;
     grant = undefined;
@@ -42,6 +44,7 @@ function createConfirmation() {
       pending = { kind, issuedAt: Date.now() };
     },
     speechStarted(at, itemId) {
+      speechSequence += 1;
       beganAt = at;
       activeItem = itemId;
       grant = undefined;
@@ -52,7 +55,7 @@ function createConfirmation() {
       if (!pending || beganAt <= pending.issuedAt || typeof transcript !== "string") return;
       const words = transcript.toLowerCase().normalize("NFKC").replace(/[,.!?।]/gu, "")
         .replace(/कन्फ़र्म|कंफ़र्म|कंफर्म|कनफर्म/gu, "कन्फर्म")
-        .replace(/व्हाट्सएप|व्हाट्सएप्प/gu, "व्हाट्सऐप")
+        .replace(/व्हाट्सएप|व्हाट्सएप्प|वॉट्सऐप|वॉट्सएप/gu, "व्हाट्सऐप")
         .trim().replace(/\s+/g, " ");
       const message = messageSuffix.test(words);
       if (confirmation[pending.kind].test(words.replace(messageSuffix, ""))) {
@@ -61,6 +64,18 @@ function createConfirmation() {
     },
     get(kind) {
       return grant?.kind === kind && grant.expires >= Date.now() ? grant : null;
+    },
+    async waitFor(kind) {
+      if (!grant && pending?.kind === kind && activeItem && beganAt > pending.issuedAt) {
+        const awaiting = pending;
+        const item = activeItem;
+        const sequence = speechSequence;
+        for (let attempts = 0; attempts < 6 && awaiting === pending && item === activeItem; attempts += 1) {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+        if (awaiting !== pending || sequence !== speechSequence) return null;
+      }
+      return this.get(kind);
     },
   };
 }
@@ -87,13 +102,15 @@ async function getConversation(account, phone) {
   }
 }
 
-function createVoiceTools({ call, account, consent, stopped = () => false, services = {} }) {
+function createVoiceTools({ call, account, consent, stopped = () => false, endCall, services = {} }) {
   const deps = {
     searchPublicProducts, validateEmailDeliverability, createRepairBooking, previewCheckout, handleCheckoutButton,
-    sendPaymentRequest, sendBookingConfirmationWhatsApp, getConversation, Booking, Order, Call, ...services,
+    sendPaymentRequest, sendBookingConfirmationWhatsApp, getConversation, getCheckoutOptions, loadVoiceChatContext,
+    Booking, Order, Call, ...services,
   };
   const phones = callerPhones(call.phone);
   let repair;
+  let repairDraft = {};
   let bookingResult;
   let order;
   let orderResult;
@@ -148,6 +165,9 @@ function createVoiceTools({ call, account, consent, stopped = () => false, servi
     if (!valid) {
       order = undefined;
       consent.clear();
+      if (method === "cod" && result.buttons?.some((button) => button.payload === `checkout:online:${conversation.checkout?.token}`)) {
+        return { status: "cod_unavailable", message: "Cash on delivery is disabled. Offer online payment if available." };
+      }
       return { status: "review_unavailable", details: result.text };
     }
     order = { method, token: conversation.checkout.token };
@@ -157,6 +177,17 @@ function createVoiceTools({ call, account, consent, stopped = () => false, servi
   }
 
   return {
+    recall_whatsapp_chat: tool("Read recent chat and saved memory for this verified caller only. Use it when the caller wants to continue their WhatsApp discussion. Saved chat never authorizes an order or proves payment.", empty, async () => {
+      if (!account) return { status: "chat_unavailable" };
+      const chat = await deps.loadVoiceChatContext({ accountId: account._id, customerWaId: phones[1] });
+      return chat ? { status: "found", chat } : { status: "no_chat_history" };
+    }, withPhone),
+    get_order_options: tool("Check which payment methods this store currently supports before collecting delivery details. Offer only methods returned as available.", empty, async () => {
+      if (!account) return { status: "checkout_unavailable" };
+      const options = await deps.getCheckoutOptions(account);
+      if (options.onlineIssue) logger.warn("whatsapp.voice.online_checkout_unavailable", { reason: options.onlineIssue });
+      return options;
+    }, withPhone),
     search_products: tool("Search the live catalog for real prices and available stock. Use the returned product and variant IDs for order review.", z.strictObject({ query: text(120) }), async ({ query }) => {
       const { items } = await deps.searchPublicProducts({ search: query, limit: 5 });
       return items.map((product) => ({
@@ -167,18 +198,25 @@ function createVoiceTools({ call, account, consent, stopped = () => false, servi
             priceINR: resolveVariantPricing(product, variant).price, stock: resolveVariantStock(product, variant) })) }),
       }));
     }),
-    review_repair: tool("Prepare a repair review. Collect each detail individually. Read back the entire summary and ask the caller to speak the confirmation phrase. Ask if they want a WhatsApp confirmation.", z.strictObject({
-      fullName: text(120), customerEmail: z.email().max(254).optional(), phoneNumber: localPhone,
-      device: text(100), brand: text(45).optional(), model: text(45).optional(), problem: text(750), ...location,
-    }), async ({ device, brand, model, problem, customerEmail, ...data }) => {
+    review_repair: tool("Save the repair details collected so far or prepare the full review when every required field is present. Ask for any returned missing fields one at a time. Include the customer's approval before using their current WhatsApp number as the contact number.", z.strictObject({
+      fullName: text(120), customerEmail: z.union([z.email().max(254), z.literal("")]), phoneNumber: localPhone,
+      useWhatsAppNumber: z.boolean(), device: text(100), brand: text(45), model: text(45), problem: text(750), ...location,
+    }).partial(), async ({ useWhatsAppNumber, customerEmail, ...patch }) => {
       if (bookingResult) return bookingResult;
       consent.clear();
       repair = undefined;
+      repairDraft = { ...repairDraft, ...patch };
+      if (useWhatsAppNumber === true) repairDraft.phoneNumber = phones[0];
       if (customerEmail) {
         const email = await deps.validateEmailDeliverability(customerEmail);
-        if (!email.valid) return { status: "invalid_email" };
-        data.customerEmail = email.email || customerEmail;
+        if (!email.valid) return { status: "invalid_email", message: "Ask for a corrected email or continue without it." };
+        repairDraft.customerEmail = email.email || customerEmail;
+      } else if (customerEmail === "") {
+        delete repairDraft.customerEmail;
       }
+      const missing = ["fullName", "device", "problem", "phoneNumber", "address", "pincode"].filter((field) => !repairDraft[field]);
+      if (missing.length) return { status: "needs_details", missing };
+      const { device, brand, model, problem, ...data } = repairDraft;
       const details = { ...data, repairType: [device, brand, model].filter(Boolean).join(" "), message: problem, whatsappNumber: phones[1] };
       if (stopped()) return unavailable;
       repair = { id: new Types.ObjectId().toString(), data: details };
@@ -187,7 +225,8 @@ function createVoiceTools({ call, account, consent, stopped = () => false, servi
     }, withPhone),
     submit_repair: tool("Submit the existing repair review only after the caller speaks the confirmation phrase.", empty, async () => {
       if (bookingResult) return bookingResult;
-      if (!repair || !consent.get("repair")) return instructionsFor("repair");
+      if (!repair) return { status: "review_required" };
+      if (!await consent.waitFor("repair")) return instructionsFor("repair");
       if (!await callIsActive()) return unavailable;
       const grant = consent.get("repair");
       if (!grant) return instructionsFor("repair");
@@ -203,7 +242,7 @@ function createVoiceTools({ call, account, consent, stopped = () => false, servi
     }, withPhone),
     review_order: tool("Quote the live order using catalog IDs and exact delivery details. Read back products, quantities, delivery, charges and total, then ask for the confirmation phrase. Online orders require consent to send the payment request through WhatsApp.", z.strictObject({
       method: z.enum(["online", "cod"]),
-      customer: z.strictObject({ name: text(100), phone: localPhone, ...location, message: z.string().max(1000).optional() }),
+      customer: z.strictObject({ name: text(100), phone: localPhone.optional(), ...location, message: z.string().max(1000).optional() }),
       items: z.array(z.strictObject({ sourceType: z.enum(["shop-product", "project-part"]), sourceId: objectId,
         quantity: z.number().int().min(1).max(99), variantCombinationId: text(100).optional() })).min(1).max(20),
       couponCode: z.string().trim().max(60).optional(),
@@ -216,14 +255,14 @@ function createVoiceTools({ call, account, consent, stopped = () => false, servi
       if (!conversation._id || stopped()) return unavailable;
       // Each review replaces the draft so removed items and delivery fields cannot carry over.
       conversation.checkout = null;
+      patch.customer.phone ||= phones[0];
       return orderReview(await deps.previewCheckout({ account, conversation, patch }), method);
     }, withPhone),
     submit_order: tool("Place the reviewed order only after the caller speaks the confirmation phrase. For online payment say the order awaits payment, and report whether WhatsApp accepted the payment message.", empty, async () => {
       if (orderResult) return orderResult;
       const alreadyCreated = Boolean(conversation.checkout?.orderId);
-      if (!order || (!alreadyCreated && !consent.get("order"))) {
-        return instructionsFor("order", { requireMessage: order?.method === "online" });
-      }
+      if (!order) return { status: "review_required" };
+      if (!alreadyCreated && !await consent.waitFor("order")) return instructionsFor("order", { requireMessage: order.method === "online" });
       if (!await callIsActive()) return unavailable;
       const grant = consent.get("order");
       if (!alreadyCreated && (!grant || (order.method === "online" && !grant.message))) {
@@ -233,7 +272,10 @@ function createVoiceTools({ call, account, consent, stopped = () => false, servi
       const result = await deps.handleCheckoutButton({ account, conversation,
         buttonReplyId: `checkout:${order.method}:${order.token}` });
       if (conversation.checkout?.token !== order.token) return orderReview(result, order.method);
-      if (!conversation.checkout?.orderId) return { status: "not_placed", details: result.text };
+      if (!conversation.checkout?.orderId) {
+        if (result.checkoutIssue) logger.warn("whatsapp.voice.order_blocked", { reason: result.checkoutIssue });
+        return { status: "not_placed", details: result.text, ...(result.checkoutIssue && { reason: result.checkoutIssue }) };
+      }
       const reference = conversation.checkout.orderId;
       consent.clear();
       if (result.voiceOrder?.orderStatus === "cancelled") {
@@ -245,7 +287,10 @@ function createVoiceTools({ call, account, consent, stopped = () => false, servi
         orderResult = { status: "confirmed_cod", reference, whatsappRequested: Boolean(conversation.voiceMessaging) };
       } else {
         const sent = result.paymentRequestOrderId === reference
-          ? await deps.sendPaymentRequest({ account, conversation, orderId: reference }).catch(() => null) : null;
+          ? await deps.sendPaymentRequest({ account, conversation, orderId: reference }).catch((error) => {
+            logger.warn("whatsapp.voice_payment_request_failed", { orderId: reference, status: error.status });
+            return null;
+          }) : null;
         const payment = { status: "awaiting_payment", reference, whatsappAccepted: Boolean(sent?.sent) };
         if (!sent?.sent) return payment; // Allow a retry against the same order and payment link.
         orderResult = payment;
@@ -258,7 +303,10 @@ function createVoiceTools({ call, account, consent, stopped = () => false, servi
       if (kind === "repair" && bookingResult) return { status: "already_submitted" };
       if (kind === "order" && (orderResult || conversation.checkout?.orderId)) return { status: "already_submitted" };
       consent.clear();
-      if (kind === "repair") repair = undefined;
+      if (kind === "repair") {
+        repair = undefined;
+        repairDraft = {};
+      }
       else {
         order = undefined;
         conversation.checkout = null;
@@ -312,6 +360,10 @@ function createVoiceTools({ call, account, consent, stopped = () => false, servi
       consent.clear();
       return { status: "topic_saved" };
     }),
+    ...(endCall && { end_call: tool("End the call after the customer's request is complete and they confirm they need nothing else, say goodbye, or ask to end the call. The system will play a brief farewell. Do not use while an order or booking is being reviewed or during a pause.", empty, async () => {
+      if (!await callIsActive()) return unavailable;
+      return { status: endCall() ? "ending_call" : "already_ending" };
+    }) }),
   };
 }
 

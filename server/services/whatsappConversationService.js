@@ -1,5 +1,7 @@
 const WhatsAppConversation = require("../models/WhatsAppConversation");
 const WhatsAppMessage = require("../models/WhatsAppMessage");
+const WhatsAppVoiceCall = require("../models/WhatsAppVoiceCall");
+const { sanitizeConversationMemory } = require("./pulseAIConversationMemoryService");
 const {
   publishConversationUpsert,
   publishMessage,
@@ -12,6 +14,38 @@ function previewFromPayload({ text, type, mediaFilename }) {
   if (type === "document") return `📄 ${mediaFilename || "Document"}`;
   if (type === "interactive") return "Interactive message";
   return type ? String(type) : "Message";
+}
+
+async function loadVoiceChatContext({ accountId, customerWaId }) {
+  const conversation = await WhatsAppConversation.findOne({ account: accountId, customerWaId })
+    .select("conversationMemory").lean();
+  if (!conversation) return null;
+
+  const messages = await WhatsAppMessage.find({
+    account: accountId, customerWaId, conversation: conversation._id, type: "text",
+    $or: [{ direction: "inbound", sender: "customer" }, { direction: "outbound", sender: "ai" }],
+  }).select("direction text").sort({ createdAt: -1 }).limit(10).lean();
+  const safeText = (value, max) => value.trim().replace(/^\d{4,8}$|\b(?:otp|upi pin|card pin)\s*(?:is\s+|hai\s+)?[:=]?\s*\d{4,8}\b/gi, "[private code]")
+    .replace(/https?:\/\/\S+/gi, "[link]").slice(0, max);
+  const { summary, importantFacts, openTopics } = sanitizeConversationMemory(conversation.conversationMemory || {});
+  return {
+    summary: safeText(summary, 1500),
+    importantFacts: importantFacts.slice(0, 6).map((item) => safeText(item, 200)),
+    openTopics: openTopics.slice(0, 4).map((item) => safeText(item, 200)),
+    recentMessages: messages.reverse().filter((item) => item.text).map((item) => ({
+      speaker: item.direction === "inbound" ? "customer" : "Pulse AI",
+      text: safeText(item.text, 400),
+    })),
+  };
+}
+
+async function hasVoiceCustomerServiceWindow({ callId, account, conversationId, customerWaId }) {
+  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  if (await WhatsAppVoiceCall.exists({ _id: callId, phoneNumberId: account.phoneNumberId,
+    phone: customerWaId, startedAt: { $gt: cutoff } })) return true;
+  return Boolean(await WhatsAppMessage.exists({ account: account._id, conversation: conversationId, customerWaId,
+    direction: "inbound", "meta.isWelcomeRequest": { $ne: true }, createdAt: { $gt: cutoff },
+  }));
 }
 
 async function upsertConversation({
@@ -203,6 +237,8 @@ function serializeMessage(doc) {
 }
 
 module.exports = {
+  loadVoiceChatContext,
+  hasVoiceCustomerServiceWindow,
   upsertConversation,
   recordMessage,
   applyReactionToMessage,

@@ -5,6 +5,9 @@ const call = new mongoose.Schema({
   phoneNumberId: String,
   caller: String,
   phone: String,
+  direction: { type: String, enum: ["inbound", "outbound"] },
+  metaCallId: String,
+  outboundAnswerClaimed: Boolean,
   roomName: String,
   state: { type: String, enum: ["incoming", "active", "completed", "missed", "failed"], required: true },
   slot: Number,
@@ -38,6 +41,7 @@ call.index({ slot: 1 }, { unique: true, partialFilterExpression: { slot: { $exis
 call.index({ state: 1, deadline: 1 });
 call.index({ cleanupAfter: 1 }, { sparse: true });
 call.index({ roomName: 1 }, { unique: true, sparse: true });
+call.index({ metaCallId: 1 }, { unique: true, sparse: true });
 call.index({ createdAt: -1, _id: -1 });
 call.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 

@@ -68,6 +68,7 @@ async function deliverNextOrderCardStatus(now = new Date()) {
     source: "whatsapp", paymentStatus: "paid",
     orderStatus: { $in: ["confirmed", "shipped", "out_for_delivery", "delivered"] },
     paymentRequestMessageId: { $gt: "" },
+    paymentRequestFormat: { $ne: "cta_url" },
     "items.retailerId": { $gt: "" },
     whatsappCardStatusSentAt: null,
     paidAt: { $gte: new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000) },

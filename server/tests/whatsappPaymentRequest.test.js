@@ -106,3 +106,45 @@ test("order details template carries the catalog variant, product image and exac
   assert.equal(details.total_amount.value, details.order.subtotal.value + details.order.shipping.value - details.order.discount.value);
   assert.equal(details.payment_settings[0].payment_link.uri, "https://rzp.io/rzp/abc");
 });
+
+test("voice order sends one Pay now button and the same Razorpay URL in the body only to the consenting caller", async (t) => {
+  const Order = require("../models/Order");
+  const VoiceCall = require("../models/WhatsAppVoiceCall");
+  const paymentLinkUrl = "https://rzp.io/rzp/voicetest";
+  const order = { _id: "order", orderId: "PEVOICE", total: 525, paymentLinkUrl, paymentRequestMessageId: "",
+    whatsappVoiceCall: "call", paymentStatus: "pending", orderStatus: "awaiting_payment" };
+  const args = { account: { _id: "account", phoneNumberId: "123", accessToken: "test" },
+    conversation: { _id: "conversation", customerWaId: "919876543210" }, orderId: order.orderId };
+  t.mock.method(Order, "findOne", async () => order);
+  t.mock.method(Order, "findOneAndUpdate", async () => order);
+  t.mock.method(Order, "updateOne", async (_filter, update) => Object.assign(order, update.$set || {}));
+  let callExists = false;
+  t.mock.method(require("../models/WhatsAppMessage"), "exists", async () => null);
+  t.mock.method(VoiceCall, "exists", async (filter) => {
+    assert.equal(filter._id, "call");
+    assert.equal(filter.phoneNumberId, "123");
+    assert.equal(filter.phone, args.conversation.customerWaId);
+    assert.ok(Date.now() - filter.startedAt.$gt >= 24 * 60 * 60 * 1000);
+    return callExists;
+  });
+  const fetch = t.mock.method(global, "fetch", async (url, options) => {
+    assert.match(new URL(url).pathname, /\/123\/messages$/);
+    const body = JSON.parse(options.body);
+    assert.equal(body.to, args.conversation.customerWaId);
+    assert.equal(body.interactive.type, "cta_url");
+    assert.deepEqual(body.interactive.action, { name: "cta_url", parameters: { display_text: "Pay now", url: paymentLinkUrl } });
+    assert.match(body.interactive.body.text, /PEVOICE.*525\.00/);
+    assert.ok(body.interactive.body.text.endsWith(paymentLinkUrl));
+    return Response.json({ messages: [{ id: "wamid.voice-pay" }] });
+  });
+  assert.deepEqual(await sendPaymentRequest(args), { skipped: true });
+  order.whatsappVoiceMessaging = true;
+  assert.deepEqual(await sendPaymentRequest(args), { skipped: true });
+  callExists = true;
+  assert.deepEqual(await sendPaymentRequest(args), { sent: true });
+  assert.deepEqual(await sendPaymentRequest(args), { sent: true, reused: true });
+  assert.equal(fetch.mock.callCount(), 1);
+  assert.equal(order.paymentRequestFormat, "cta_url");
+  assert.equal(order.orderStatus, "awaiting_payment");
+  assert.equal(records.at(-1).waMessageId, "wamid.voice-pay");
+});

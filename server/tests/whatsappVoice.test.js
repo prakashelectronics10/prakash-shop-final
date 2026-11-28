@@ -27,8 +27,10 @@ function store() {
   const rows = new Map();
   const equal = (left, right) => left instanceof Date && right instanceof Date ? +left === +right : left === right;
   const matches = (row, filter) => Object.entries(filter).every(([key, value]) => {
+    if (key === "$or") return value.some((part) => matches(row, part));
     if (value?.$in) return value.$in.includes(row[key]);
     if (value?.$lte) return row[key] <= value.$lte;
+    if (value?.$gt) return row[key] > value.$gt;
     if (value?.$ne) return !equal(row[key], value.$ne);
     if (typeof value?.$exists === "boolean") return Object.hasOwn(row, key) === value.$exists;
     return equal(row[key], value);
@@ -71,10 +73,10 @@ function store() {
   };
 }
 
-function fixture({ maxConcurrent = 1, enabled = true, acceptError } = {}) {
+function fixture({ maxConcurrent = 1, enabled = true, acceptError, outboundEnabled = false } = {}) {
   const calls = store();
   const signals = [];
-  const life = voice.createVoiceService({ calls, config,
+  const life = voice.createVoiceService({ calls, config: { ...config, outboundEnabled },
     loadSettings: async () => ({ enabled, maxConcurrent, provider: "gemini", model: "gemini-3.8-live", voice: "Kore", greeting: "Namaste", languages: ["hi"] }),
     transport: {
       accept: async (call, sdp) => {
@@ -83,6 +85,9 @@ function fixture({ maxConcurrent = 1, enabled = true, acceptError } = {}) {
       },
       reject: async (call) => signals.push(["reject", call._id]),
       disconnect: async (call, byMeta) => signals.push(["disconnect", call._id, byMeta]),
+      dial: async (call) => { signals.push(["dial", call._id]); return "wacid.outbound"; },
+      connectOutbound: async (call, sdp) => signals.push(["connect", call.metaCallId, sdp]),
+      dispatchOutbound: async (room) => signals.push(["dispatch", room]),
     },
   });
   const receive = async (...events) => {
@@ -91,6 +96,36 @@ function fixture({ maxConcurrent = 1, enabled = true, acceptError } = {}) {
   };
   return { ...life, receive, calls, signals };
 }
+
+test("outbound calls share capacity and dispatch the agent only after the matching SDP answer", async () => {
+  assert.equal(await fixture().startOutbound(from), false);
+  const life = fixture({ outboundEnabled: true });
+  assert.equal(await life.startOutbound(from), true);
+  const [call] = life.calls.rows.values();
+  assert.equal(await life.startOutbound(from), false);
+  assert.deepEqual(life.signals, [["dial", call._id]]);
+  const answer = { ...offer("wacid.outbound"), direction: "BUSINESS_INITIATED", to: from,
+    biz_opaque_callback_data: call._id, session: { sdp_type: "answer", sdp: "v=0\r\n" } };
+  await life.receive({ ...answer, to: "918765432109" });
+  assert.equal(life.signals.length, 1);
+  await life.receive(answer, answer);
+  assert.deepEqual(life.signals.slice(1), [["connect", "wacid.outbound", "v=0\r\n"], ["dispatch", call.roomName]]);
+  await life.receive({ ...terminate("wacid.outbound"), direction: "BUSINESS_INITIATED", to: from });
+  assert.equal(life.calls.rows.get(call._id).state, "completed");
+  assert.equal(life.calls.rows.get(call._id).slot, undefined);
+});
+
+test("the end-call tool delegates the farewell only for an active call", async () => {
+  let active = true;
+  let endings = 0;
+  const tools = createVoiceTools({ call: { _id: "voice", phone: from }, consent: createConfirmation(),
+    endCall: () => ++endings === 1, services: { Call: { exists: async () => active } } });
+  assert.equal((await tools.end_call.execute({})).status, "ending_call");
+  assert.equal((await tools.end_call.execute({})).status, "already_ending");
+  active = false;
+  assert.equal((await tools.end_call.execute({})).status, "unavailable");
+  assert.equal(endings, 2);
+});
 
 test("Meta payload only routes inbound offers and extracts the documented BSUID and terminate fields", () => {
   const body = payload(offer(), { ...offer("out"), direction: "BUSINESS_INITIATED" },
@@ -216,7 +251,10 @@ test("repair requires a new explicit utterance, records one booking, and only se
     },
   } });
   geminiSpeech(adapter, "Confirm the repair and message me", "early");
-  assert.equal((await tools.review_repair.execute(repairDetails)).status, "awaiting_confirmation");
+  assert.equal((await tools.review_repair.execute({ fullName: repairDetails.fullName, device: repairDetails.device })).status, "needs_details");
+  assert.equal((await tools.submit_repair.execute({})).status, "review_required");
+  const { fullName: _name, device: _device, phoneNumber: _phone, ...remaining } = repairDetails;
+  assert.equal((await tools.review_repair.execute({ ...remaining, useWhatsAppNumber: true })).status, "awaiting_confirmation");
   assert.equal((await tools.submit_repair.execute({})).status, "awaiting_confirmation");
   geminiSpeech(adapter, "Don't confirm the repair");
   assert.equal((await tools.submit_repair.execute({})).status, "awaiting_confirmation");
@@ -236,6 +274,7 @@ test("online checkout stays unconfirmed, passes the exact draft to the shared Ra
     getConversation: async (_account, verifiedPhone) => ({ _id: verifiedPhone }),
     previewCheckout: async ({ conversation, patch }) => {
       assert.equal(patch.items[0].quantity, 2);
+      assert.equal(patch.customer.phone, conversation.customerWaId.slice(2));
       conversation.checkout = { token: conversation.voiceCallId };
       return { text: "2 TV cables, delivery charge and total", buttons: [{ payload: `checkout:online:${conversation.voiceCallId}` }] };
     },
@@ -259,14 +298,54 @@ test("online checkout stays unconfirmed, passes the exact draft to the shared Ra
   const caller = (consent, phone, id) => createVoiceTools({ call: { _id: id, phone }, account: { _id: "shop" }, consent, services });
   const a = caller(first, from, "first");
   const b = caller(second, "918765432109", "second");
-  await Promise.all([a.review_order.execute(orderDetails), b.review_order.execute(orderDetails)]);
+  const { phone: _phone, ...voiceCustomer } = orderDetails.customer;
+  const review = { ...orderDetails, customer: voiceCustomer };
+  await Promise.all([a.review_order.execute(review), b.review_order.execute(review)]);
   geminiSpeech(adapter, "Confirm the order");
   assert.equal((await a.submit_order.execute({})).status, "awaiting_confirmation");
-  geminiSpeech(adapter, "Order confirm kijiye aur WhatsApp par bhejo", "consent");
+  const beganAt = Date.now() + 1;
+  const itemId = "consent";
+  const transcript = "Haan, mera order confirm kar dijiye aur WhatsApp pe payment link bhej dijiye.";
+  adapter.onSpeechBoundary({ newState: "speaking", speechTimestamp: beganAt });
+  adapter.onTranscript({ itemId, isFinal: false, transcript });
+  adapter.onTranscript({ itemId, isFinal: true, transcript, turnStartedAt: beganAt + 1 });
   assert.equal((await b.submit_order.execute({})).status, "awaiting_confirmation");
-  assert.deepEqual(await a.submit_order.execute({}), { status: "awaiting_payment", reference: "PEABCD234567", whatsappAccepted: false });
+  const pending = a.submit_order.execute({});
+  await new Promise(setImmediate);
+  assert.equal(updates.length, 0);
+  adapter.onSpeechBoundary({ newState: "listening" });
+  assert.deepEqual(await pending, { status: "awaiting_payment", reference: "PEABCD234567", whatsappAccepted: false });
   assert.equal((await a.submit_order.execute({})).whatsappAccepted, true);
   assert.deepEqual(updates, [from, from]);
+});
+
+test("voice recalls only the verified account's chat and hides codes and links", async (t) => {
+  const Conversation = require("../models/WhatsAppConversation");
+  const Message = require("../models/WhatsAppMessage");
+  const account = { _id: "shop" };
+  t.mock.method(Conversation, "findOne", (filter) => {
+    assert.deepEqual(filter, { account: account._id, customerWaId: from });
+    return { select: () => ({ lean: async () => ({ _id: "chat-id", conversationMemory: {
+      summary: "Customer asked about the lamp. OTP: 123456", importantFacts: ["Needs two lamps"],
+    } }) }) };
+  });
+  t.mock.method(Message, "find", (filter) => {
+    assert.equal(filter.account, account._id);
+    assert.equal(filter.customerWaId, from);
+    assert.equal(filter.conversation, "chat-id");
+    assert.deepEqual(filter.$or.map((item) => item.sender), ["customer", "ai"]);
+    return { select: () => ({ sort: () => ({ limit: () => ({ lean: async () => [
+      { direction: "outbound", text: "Check https://example.test/private-link" },
+      { direction: "inbound", text: "I need two lamps" },
+    ] }) }) }) };
+  });
+  const makeTools = (phone) => createVoiceTools({ call: { _id: "voice", phone }, account, consent: createConfirmation() });
+  assert.equal((await makeTools(null).recall_whatsapp_chat.execute({})).status, "verified_number_required");
+  const result = await makeTools(from).recall_whatsapp_chat.execute({});
+  assert.equal(result.status, "found");
+  assert.doesNotMatch(JSON.stringify(result), /123456|https:\/\//);
+  assert.equal(result.chat.recentMessages[0].text, "I need two lamps");
+  assert.deepEqual(result.chat.importantFacts, ["Needs two lamps"]);
 });
 
 test("Realtime uses provider interruption and noise reduction, ignores stale transcript IDs and closes on fatal errors", async () => {
@@ -324,7 +403,7 @@ test("a discarded draft or a call that has ended cannot submit a repair", async 
   await tools.review_repair.execute(repairDetails);
   speech(consent, "Confirm the repair", "accepted");
   assert.equal((await tools.discard_review.execute({ kind: "repair" })).status, "draft_discarded");
-  assert.equal((await tools.submit_repair.execute({})).status, "awaiting_confirmation");
+  assert.equal((await tools.submit_repair.execute({})).status, "review_required");
   await tools.review_repair.execute(repairDetails);
   speech(consent, "Confirm the repair", "ended-confirmation");
   assert.equal((await tools.submit_repair.execute({})).status, "unavailable");

@@ -95,8 +95,9 @@ async function handleRepairBooking({ account, conversation, customerMessage, med
 async function createRepairBooking({ id, data, images = [], source = "whatsapp" }) {
   try {
     const booking = await Booking.create({ _id: id, ...data, images,
-      imageUrl: images[0]?.url, imagePublicId: images[0]?.publicId, bookingSource: source });
-    enqueueBookingNotification(booking);
+      imageUrl: images[0]?.url, imagePublicId: images[0]?.publicId, bookingSource: source,
+      ...(source === "whatsapp-voice" && { voiceNotificationNextAttemptAt: new Date(), emailNotification: { status: "queued" } }) });
+    if (source !== "whatsapp-voice") enqueueBookingNotification(booking);
     return booking;
   } catch (error) {
     if (error.code !== 11000) throw error;

@@ -10,6 +10,7 @@ const { ensureMetaCatalogIndexes } = require("./services/metaCatalogService");
 const { startOrderInvoiceWhatsAppWorker } = require("./services/orderInvoiceWhatsAppWorker");
 const { startReviewWhatsAppWorker } = require("./services/reviewWhatsAppService");
 const { startVoiceCleanup } = require("./services/whatsappVoiceService");
+const { startVoiceBookingNotifications } = require("./services/bookingNotificationService");
 
 let server;
 
@@ -30,6 +31,7 @@ async function startServer() {
     startOrderInvoiceWhatsAppWorker();
     startReviewWhatsAppWorker();
     startVoiceCleanup();
+    startVoiceBookingNotifications();
     await ensureMetaCatalogIndexes();
     logger.info("mongodb.meta_catalog_indexes_ready");
     startMetaCatalogWorker();

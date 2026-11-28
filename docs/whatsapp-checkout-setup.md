@@ -6,6 +6,8 @@ The implementation accepts captionless images, transcribes supported voice messa
 
 Online checkout uses the approved English template `order_details_with_product_list` (ID `1468551722067479`). Its header shows the first available product image. Its Review and Pay button opens the itemized INR order and its Razorpay payment link. Configure the linked Meta catalog and sync the products and variants with their retailer IDs. Enable the payment card for the account in Manage WhatsApp after payment links are activated.
 
+Voice checkout creates an order ID after spoken confirmation. During the Meta customer service window, the verified caller receives the order ID, amount, one **Pay now** button, and the same Razorpay link as text. The order stays pending until the verified payment is captured. [Voice checkout setup](whatsapp-voice-setup.md)
+
 ## Repair bookings
 
 Send REPAIR to begin. The customer supplies booking details, adds up to eight photos, and sends CONFIRM to submit. The booking enters the regular admin booking list, email queue and mobile notification flow.
@@ -13,7 +15,7 @@ Send REPAIR to begin. The customer supplies booking details, adds up to eight ph
 ## Customer greetings
 
 1. Open **Admin → Manage WhatsApp → Greetings**, select the active account, and enable the greeting. Each message can have an optional 60-character header and footer. Save the greeting.
-2. For Click-to-WhatsApp ads, select **Publish ad welcome sequence**. In the ad creative in Meta Ads Manager, open **Message Template → Partner App → Message sequence**, select the sequence, and preview and save the ad. The ad welcome uses the first text-bearing greeting step and its ice breakers. A normal WhatsApp chat open does not provide the Cloud API with a trigger, and the app does not send a greeting on the first inbound message. [Meta ad welcome sequences](https://developers.facebook.com/documentation/business-messaging/whatsapp/ctwa/welcome-message-sequences)
+2. A new customer's first message triggers the saved greeting once. With outbound voice enabled, the app then sends the approved `call_request_to_customer` template, and a customer who accepts that request can receive one Pulse AI call. For Click-to-WhatsApp ads, **Publish ad welcome sequence** also lets you show a welcome before the first message. In the ad creative in Meta Ads Manager, open **Message Template → Partner App → Message sequence**, then select, preview, and save the sequence. [Meta ad welcome sequences](https://developers.facebook.com/documentation/business-messaging/whatsapp/ctwa/welcome-message-sequences)
 3. For new customers with an open WhatsApp customer service window, the saved greeting goes before their order confirmation or payment receipt. For opted-in customers outside the window, create a static welcome template in WhatsApp Manager, wait for Meta approval, and enter its name and language under **Approved order welcome template**. Use the intended header and body in the approved template itself. The order update can still be sent if the greeting is unavailable or rejected. [Meta customer service windows](https://developers.facebook.com/documentation/business-messaging/whatsapp/messages/send-messages)
 
 ## Razorpay verification
