@@ -244,7 +244,7 @@ function sendGreetingForAccount(options = {}) {
   return pending;
 }
 
-async function sendGreetingOnce({ account, customerWaId, order, firstMessageId, conversationId, onOutbound } = {}) {
+async function sendGreetingOnce({ account, customerWaId, order, firstMessageId, conversationId, resetBeforeFirstInbound, onOutbound } = {}) {
   if (!account?._id || !customerWaId || (!order && !firstMessageId) || !conversationId) return { sent: false, reason: "missing_context" };
 
   const greeting = await WhatsAppGreeting.findOne({
@@ -257,6 +257,8 @@ async function sendGreetingOnce({ account, customerWaId, order, firstMessageId, 
   const steps = normalizeGreetingMessages(greeting);
   if (!steps.length) return { sent: false, reason: "empty_greeting" };
 
+  if (resetBeforeFirstInbound && !firstMessageId) return { sent: false, reason: "awaiting_first_message" };
+
   if (firstMessageId) {
     const first = await WhatsAppMessage.findOne({ conversation: conversationId, direction: "inbound", sender: "customer",
       "meta.isWelcomeRequest": { $ne: true }, "meta.rawType": { $nin: ["request_welcome", "reaction", "system", "unknown", "unsupported"] },
@@ -264,7 +266,7 @@ async function sendGreetingOnce({ account, customerWaId, order, firstMessageId, 
     if (first?.waMessageId !== firstMessageId) return { sent: false, reason: "returning_customer" };
   }
 
-  const previous = await WhatsAppMessage.exists({ conversation: conversationId, direction: "outbound",
+  const previous = !resetBeforeFirstInbound && await WhatsAppMessage.exists({ conversation: conversationId, direction: "outbound",
     "meta.kind": { $in: ["order_confirmation", "payment_received"] } });
   if (previous) return { sent: false, reason: "returning_customer" };
   const templateOnly = !await hasGreetingWindow({ conversationId, order, account, customerWaId });

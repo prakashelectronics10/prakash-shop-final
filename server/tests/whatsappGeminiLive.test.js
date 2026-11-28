@@ -114,7 +114,7 @@ test("official Gemini plugin sets up all Pulse tools and streams audio in both d
     const runtime = await createVoiceRuntime(call, { googleKey: "fake-key", openaiKey: "" }, consent, inference);
     assert.ok(runtime.llm instanceof llm.RealtimeModel);
     assert.ok(runtime.vad instanceof inference.VAD);
-    const tools = createVoiceTools({ call: { _id: "mock" }, consent });
+    const tools = createVoiceTools({ call: { _id: "mock" }, consent, endCall: () => false });
     const context = new llm.ToolContext(Object.entries(tools)
       .map(([name, definition]) => llm.tool({ name, ...definition })));
     const realtime = runtime.llm.session({ instructions: "Pulse AI", tools: context });
@@ -130,6 +130,10 @@ test("official Gemini plugin sets up all Pulse tools and streams audio in both d
     const order = declarations.find((tool) => tool.name === "review_order").parameters;
     assert.deepEqual(order.properties.method.enum, ["online", "cod"]);
     assert.ok(order.properties.items.items.required.includes("quantity"));
+    const repair = declarations.find((tool) => tool.name === "review_repair").parameters;
+    assert.deepEqual(repair.properties.customerEmail, { type: "string" });
+    assert.ok(!repair.required?.includes("customerEmail"));
+    assert.ok(declarations.some((tool) => tool.name === "end_call"));
     assert.equal(declarations.find((tool) => tool.name === "submit_order").parameters, undefined);
     connectArgs.callbacks.onmessage({ serverContent: { modelTurn: { parts: [
       { inlineData: { data: Buffer.alloc(960).toString("base64") } },

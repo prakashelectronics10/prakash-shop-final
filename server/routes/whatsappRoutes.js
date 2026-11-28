@@ -10,6 +10,7 @@ const {
   sendTextSchema,
   sendMediaSchema,
   conversationFlagsSchema,
+  customerBlockSchema,
 } = require("../validations/whatsappSchemas");
 const {
   listWhatsAppAccounts,
@@ -26,6 +27,8 @@ const {
   listWhatsAppConversations,
   getWhatsAppConversationMessages,
   updateWhatsAppConversationFlags,
+  updateWhatsAppCustomerBlock,
+  deleteWhatsAppCustomer,
   sendWhatsAppText,
   sendWhatsAppImage,
   sendWhatsAppDocument,
@@ -62,6 +65,8 @@ router.put("/ai-settings", validateBody(whatsAppAISettingsSchema), upsertWhatsAp
 router.get("/conversations", listWhatsAppConversations);
 router.get("/conversations/:id/messages", getWhatsAppConversationMessages);
 router.patch("/conversations/:id", validateBody(conversationFlagsSchema), updateWhatsAppConversationFlags);
+router.patch("/conversations/:id/block", validateBody(customerBlockSchema), updateWhatsAppCustomerBlock);
+router.delete("/conversations/:id", deleteWhatsAppCustomer);
 router.post("/conversations/send-text", validateBody(sendTextSchema), sendWhatsAppText);
 router.post("/conversations/send-image", validateBody(sendMediaSchema), sendWhatsAppImage);
 router.post("/conversations/send-document", validateBody(sendMediaSchema), sendWhatsAppDocument);

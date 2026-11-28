@@ -55,6 +55,7 @@ async function upsertConversation({
   direction,
   preview,
   bumpUnread = false,
+  awaitingCustomerMessage = false,
 }) {
   const update = {
     $set: {
@@ -67,6 +68,7 @@ async function upsertConversation({
       customerWaId,
       aiEnabled: true,
       humanTakeover: false,
+      ...(awaitingCustomerMessage && { awaitingCustomerMessage: true, resetBeforeFirstInbound: true }),
     },
   };
 
@@ -76,6 +78,7 @@ async function upsertConversation({
   if (bumpUnread) {
     update.$inc = { unreadCount: 1 };
   }
+  if (direction === "inbound") update.$unset = { awaitingCustomerMessage: 1 };
 
   return WhatsAppConversation.findOneAndUpdate(
     { account: accountId, customerWaId },
@@ -102,6 +105,10 @@ async function recordMessage({
   meta = {},
   customerName = "",
 }) {
+  if (waMessageId) {
+    const existing = await WhatsAppMessage.findOne({ account: accountId, waMessageId }).lean();
+    if (existing) return { message: existing, duplicate: true };
+  }
   const conversation = conversationId
     ? await WhatsAppConversation.findById(conversationId)
     : await upsertConversation({
@@ -126,11 +133,6 @@ async function recordMessage({
     await conversation.save();
   }
 
-  if (waMessageId) {
-    const existing = await WhatsAppMessage.findOne({ waMessageId }).lean();
-    if (existing) return { conversation, message: existing, duplicate: true };
-  }
-
   const message = await WhatsAppMessage.create({
     account: accountId,
     conversation: conversation._id,
@@ -149,10 +151,11 @@ async function recordMessage({
     meta,
   });
 
-  const serializedConversation = serializeConversation(conversation);
-  const serializedMessage = serializeMessage(message);
-  publishConversationUpsert(serializedConversation);
-  publishMessage(serializedMessage, serializedConversation);
+  if (!conversation.awaitingCustomerMessage) {
+    const serializedConversation = serializeConversation(conversation);
+    publishConversationUpsert(serializedConversation);
+    publishMessage(serializeMessage(message), serializedConversation);
+  }
 
   return { conversation, message, duplicate: false };
 }
@@ -188,11 +191,13 @@ async function applyReactionToMessage({
 }
 
 async function markConversationRead(conversationId) {
-  return WhatsAppConversation.findByIdAndUpdate(
-    conversationId,
+  const conversation = await WhatsAppConversation.findOneAndUpdate(
+    { _id: conversationId, unreadCount: { $gt: 0 } },
     { $set: { unreadCount: 0 } },
     { new: true },
   );
+  if (conversation && !conversation.awaitingCustomerMessage) publishConversationUpsert(serializeConversation(conversation));
+  return conversation;
 }
 
 function serializeConversation(doc) {
@@ -209,6 +214,7 @@ function serializeConversation(doc) {
     unreadCount: item.unreadCount || 0,
     aiEnabled: item.aiEnabled !== false,
     humanTakeover: Boolean(item.humanTakeover),
+    blockedAt: item.blockedAt || null,
     greetingSentAt: item.greetingSentAt,
     updatedAt: item.updatedAt,
   };

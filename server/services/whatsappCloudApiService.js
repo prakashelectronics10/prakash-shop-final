@@ -1,6 +1,8 @@
 const crypto = require("crypto");
 const env = require("../config/env");
 const { logger } = require("../utils/logger");
+const { getCustomerState } = require("./whatsappCustomerService");
+const AppError = require("../utils/AppError");
 
 function graphBase() {
   const version = env.whatsapp.graphApiVersion || "v26.0";
@@ -30,6 +32,10 @@ function verifyWebhookChallenge({ mode, token, challenge }) {
 }
 
 async function graphRequest({ phoneNumberId, businessAccountId, accessToken, path = "messages", method = "POST", body, query, timeoutMs }) {
+  if (path === "messages" && method === "POST" && body?.to
+    && (await getCustomerState(phoneNumberId, body.to))?.blockedAt) {
+    throw new AppError("This customer is blocked", 403);
+  }
   const formBody = body instanceof FormData;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs || env.whatsapp.requestTimeoutMs || 15000);

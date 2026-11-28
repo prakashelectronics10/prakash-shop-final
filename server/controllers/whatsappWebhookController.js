@@ -21,6 +21,7 @@ const { isSignedReviewAction, getContextReviewAction, handleReviewAction } = req
 const voice = require("../services/whatsappVoiceService");
 const permission = require("../services/whatsappVoicePermissionService");
 const { sendGreetingForAccount } = require("../services/whatsappGreetingService");
+const { shouldIgnoreInbound } = require("../services/whatsappCustomerService");
 
 function requestsOrderHistory(text = "") {
   const message = text.toLowerCase().trim().replace(/[.!?]+$/, "");
@@ -147,6 +148,7 @@ exports.handleWhatsAppWebhook = catchAsync(async (req, res) => {
   const conversationEvents = [];
   const reviewReplies = [];
   for (const event of parseInboundWebhook(payload)) {
+    if (await shouldIgnoreInbound(event)) continue;
     if (permission.isPermissionReply(event)) {
       if (env.metaApp.appSecret && env.pulseVoice.enabled && env.pulseVoice.outboundEnabled) {
         try {
@@ -238,6 +240,7 @@ exports.handleWhatsAppWebhook = catchAsync(async (req, res) => {
         try {
           const greeting = await sendGreetingForAccount({ account, customerWaId: event.customerWaId,
             conversationId: conversation._id, firstMessageId: event.messageId,
+            resetBeforeFirstInbound: conversation.resetBeforeFirstInbound,
             onOutbound: (item) => recordMessage({ accountId: account._id, conversationId: conversation._id,
               customerWaId: event.customerWaId, direction: "outbound", sender: "system", type: item.type,
               text: item.text || "", mediaUrl: item.mediaUrl, buttons: item.buttons,

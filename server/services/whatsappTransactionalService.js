@@ -1,5 +1,6 @@
 const env = require("../config/env");
 const { logger } = require("../utils/logger");
+const AppError = require("../utils/AppError");
 const {
   sendTextMessage,
   sendInteractiveMessage,
@@ -12,6 +13,7 @@ const { getOrderInvoicePdf } = require("./orderInvoiceService");
 const { hasVoiceCustomerServiceWindow, recordMessage, upsertConversation } = require("./whatsappConversationService");
 const { formatCopyCodeMessage } = require("./whatsappFormatService");
 const greetingService = require("./whatsappGreetingService");
+const { getCustomerState } = require("./whatsappCustomerService");
 const {
   getActiveWhatsAppAccount,
   toWhatsAppE164,
@@ -41,12 +43,15 @@ async function withAccount(order) {
 
 async function prepareConversation(account, whatsappNumber, customerName = "") {
   const customerWaId = toWhatsAppE164(whatsappNumber);
+  const state = await getCustomerState(account.phoneNumberId, customerWaId);
+  if (state?.blockedAt) throw new AppError("This customer is blocked", 403);
   const conversation = await upsertConversation({
     accountId: account._id,
     customerWaId,
     customerName,
     direction: "outbound",
     preview: "Transactional update",
+    awaitingCustomerMessage: Boolean(state?.deletedThrough),
   });
   conversation.suppressGreetingUntil = new Date(Date.now() + GREETING_SUPPRESS_MS);
   if (customerName && !conversation.customerName) {
@@ -83,7 +88,7 @@ async function recordOutbound({
 async function greetBeforeOrderUpdate({ account, conversation, customerWaId, order }) {
   try {
     const greeting = await greetingService.sendGreetingForAccount({
-      account, conversationId: conversation._id, customerWaId, order,
+      account, conversationId: conversation._id, customerWaId, order, resetBeforeFirstInbound: conversation.resetBeforeFirstInbound,
       onOutbound: (item) => recordMessage({
         accountId: account._id, conversationId: conversation._id, customerWaId,
         direction: "outbound", sender: "system", type: item.type,

@@ -73,10 +73,10 @@ function store() {
   };
 }
 
-function fixture({ maxConcurrent = 1, enabled = true, acceptError, outboundEnabled = false } = {}) {
+function fixture({ maxConcurrent = 1, enabled = true, acceptError, outboundEnabled = false, customerState } = {}) {
   const calls = store();
   const signals = [];
-  const life = voice.createVoiceService({ calls, config: { ...config, outboundEnabled },
+  const life = voice.createVoiceService({ calls, config: { ...config, outboundEnabled }, customerState,
     loadSettings: async () => ({ enabled, maxConcurrent, provider: "gemini", model: "gemini-3.8-live", voice: "Kore", greeting: "Namaste", languages: ["hi"] }),
     transport: {
       accept: async (call, sdp) => {
@@ -97,6 +97,16 @@ function fixture({ maxConcurrent = 1, enabled = true, acceptError, outboundEnabl
   return { ...life, receive, calls, signals };
 }
 
+test("customer-initiated calls ring independently of outbound permission and a blocked customer is rejected", async () => {
+  const life = fixture({ customerState: async (_sender, phone) => phone === from ? { blockedAt: new Date() } : null });
+  await life.receive(offer("blocked"), offer("incoming", "918765432109"));
+  assert.equal(life.calls.rows.get("blocked").errorCode, "customer_blocked");
+  assert.equal(life.calls.rows.get("incoming").state, "incoming");
+  assert.ok(life.signals.some(([action, id]) => action === "reject" && id === "blocked"));
+  assert.ok(life.signals.some(([action, id]) => action === "accept" && id === "incoming"));
+  assert.equal(await life.startOutbound(from), false);
+});
+
 test("outbound calls share capacity and dispatch the agent only after the matching SDP answer", async () => {
   assert.equal(await fixture().startOutbound(from), false);
   const life = fixture({ outboundEnabled: true });
@@ -115,16 +125,32 @@ test("outbound calls share capacity and dispatch the agent only after the matchi
   assert.equal(life.calls.rows.get(call._id).slot, undefined);
 });
 
-test("the end-call tool delegates the farewell only for an active call", async () => {
+test("the end-call tool requires a fresh final spoken goodbye from the active caller", async () => {
   let active = true;
   let endings = 0;
-  const tools = createVoiceTools({ call: { _id: "voice", phone: from }, consent: createConfirmation(),
-    endCall: () => ++endings === 1, services: { Call: { exists: async () => active } } });
+  const consent = createConfirmation();
+  const tools = createVoiceTools({ call: { _id: "voice", phone: from }, consent,
+    endCall: () => { endings++; return true; }, services: { Call: { exists: async () => active } } });
+  const speak = (itemId, transcript) => {
+    consent.speechStarted(Date.now(), itemId);
+    consent.transcript({ isFinal: true, itemId, transcript });
+  };
+  assert.equal((await tools.end_call.execute({})).status, "keep_listening");
+  speak("hello", "Hello");
+  assert.equal((await tools.end_call.execute({})).status, "keep_listening");
+  speak("ack", "Haan");
+  assert.equal((await tools.end_call.execute({})).status, "keep_listening");
+  speak("old-goodbye", "Goodbye");
+  speak("question", "Can you check my order?");
+  consent.transcript({ isFinal: true, itemId: "old-goodbye", transcript: "Goodbye" });
+  assert.equal((await tools.end_call.execute({})).status, "keep_listening");
+  speak("goodbye", "Call band kar dijiye.");
   assert.equal((await tools.end_call.execute({})).status, "ending_call");
-  assert.equal((await tools.end_call.execute({})).status, "already_ending");
+  assert.equal((await tools.end_call.execute({})).status, "keep_listening");
   active = false;
+  speak("after-close", "Goodbye");
   assert.equal((await tools.end_call.execute({})).status, "unavailable");
-  assert.equal(endings, 2);
+  assert.equal(endings, 1);
 });
 
 test("Meta payload only routes inbound offers and extracts the documented BSUID and terminate fields", () => {

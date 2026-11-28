@@ -116,16 +116,19 @@ test("moderation buttons require the intended WhatsApp sender and affect only pe
   assert.equal(update.mock.callCount(), 2);
 });
 
-function postQuickReply(message) {
+async function postQuickReply(message) {
   const body = Buffer.from(JSON.stringify({ entry: [{ changes: [{ field: "messages", value: {
     metadata: { phone_number_id: account.phoneNumberId }, messages: [{
       id: "wamid.inbound", from: "919876543210", type: "button", ...message,
     }],
   } }] }] }));
   const signature = `sha256=${createHmac("sha256", env.metaApp.appSecret).update(body).digest("hex")}`;
-  return new Promise((resolve, reject) => handleWhatsAppWebhook({ body, get: () => signature }, {
+  const status = await new Promise((resolve, reject) => handleWhatsAppWebhook({ body, get: () => signature }, {
     status: (status) => ({ json: () => resolve(status) }),
   }, reject));
+  // The handler acknowledges Meta before sending the follow-up message.
+  await new Promise(setImmediate);
+  return status;
 }
 
 test("Meta can retry a signed approval when saving fails, even before the outbound message ID is recorded", async (t) => {

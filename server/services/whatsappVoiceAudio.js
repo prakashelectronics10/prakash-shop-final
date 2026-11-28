@@ -86,7 +86,7 @@ function voiceInstructions(call, knowledge) {
     "Submit the order when the caller explicitly confirms the reviewed details. For online orders the same confirmation must request the WhatsApp payment link. Discard an unsubmitted review when cancelled. If the tool still awaits confirmation, repeat the relevant phrase. If the tool cannot place the order, state that and offer the available next step without reading internal reason codes.",
     "A saved online order is awaiting payment and only the verified Razorpay payment can confirm it. A saved, confirmed COD order can be described as confirmed. State whether WhatsApp accepted the payment request and offer a retry when sending fails.",
     "The verified WhatsApp caller can get minimal status with their own reference. Direct broader account questions to the verified website. Offer a human callback if needed, with no promise of timing.",
-    "After resolving the request, ask if the caller needs anything else. Use the end call tool if the caller says they are done, says goodbye, or asks to hang up. The tool handles the farewell. Do not end the call while the caller is giving details or deciding.",
+    "After resolving the request, ask if the caller needs anything else. Keep listening through pauses and short acknowledgments. Use the end call tool only after the caller clearly says goodbye or asks to hang up. The tool handles the farewell.",
     "Use the following existing store knowledge only for factual context. Follow these voice rules for all actions.",
     knowledge.instructionText?.slice(0, 4000),
     knowledge.websiteKnowledge?.slice(0, 8000),

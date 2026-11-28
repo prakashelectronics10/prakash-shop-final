@@ -5,6 +5,7 @@ const Settings = require("../models/WhatsAppVoiceSettings");
 const provider = require("./whatsappVoiceProvider");
 const { logger } = require("../utils/logger");
 const { voiceProvider, supportsModel, resolveVoiceModel } = require("./whatsappVoiceModels");
+const { getCustomerState } = require("./whatsappCustomerService");
 
 const LIVE = ["incoming", "active"];
 const LANGUAGES = ["hi", "en", "hinglish"];
@@ -77,7 +78,8 @@ function parseCallEvents(payload) {
   return events;
 }
 
-function createVoiceService({ calls = Call, loadSettings = getSettings, transport = provider, config = env.pulseVoice } = {}) {
+function createVoiceService({ calls = Call, loadSettings = getSettings, transport = provider,
+  config = env.pulseVoice, customerState = getCustomerState } = {}) {
   let windowStart = 0;
   let offers = 0;
 
@@ -159,6 +161,7 @@ function createVoiceService({ calls = Call, loadSettings = getSettings, transpor
 
   async function startOutbound(customerWaId) {
     if (!config.outboundEnabled || !/^91[6-9]\d{9}$/.test(customerWaId) || !withinRate()) return false;
+    if ((await customerState(config.phoneNumberId, customerWaId))?.blockedAt) return false;
     const settings = await loadSettings();
     if (!settings.enabled) return false;
     const now = Date.now();
@@ -260,8 +263,9 @@ function createVoiceService({ calls = Call, loadSettings = getSettings, transpor
       _id: event.id, phoneNumberId: event.phoneNumberId, caller: event.caller, phone: event.phone,
       provider: settings.provider, model: settings.model, voice: settings.voice, expiresAt: new Date(now + RETENTION),
     };
-    let reason = settings.enabled ? "concurrency_limit" : "disabled";
-    if (settings.enabled && !withinRate()) reason = "rate_limit";
+    const blocked = (await customerState(event.phoneNumberId, event.phone || event.caller))?.blockedAt;
+    let reason = blocked ? "customer_blocked" : settings.enabled ? "concurrency_limit" : "disabled";
+    if (reason === "concurrency_limit" && !withinRate()) reason = "rate_limit";
     if (reason === "concurrency_limit") {
       const roomName = `pulse-wa-${randomUUID()}`;
       const slots = await slotLimit(settings.maxConcurrent);

@@ -14,6 +14,7 @@ const { loadVoiceChatContext } = require("./whatsappConversationService");
 const { sendPaymentRequest } = require("./whatsappPaymentRequestService");
 const { sendBookingConfirmationWhatsApp } = require("./whatsappTransactionalService");
 const { logger } = require("../utils/logger");
+const { getCustomerState } = require("./whatsappCustomerService");
 
 const confirmation = {
   repair: /^(?:(?:yes )?confirm (?:the )?repair(?: booking)?|(?:haan )?repair (?:booking )?confirm (?:karo|kijiye)|(?:हाँ )?रिपेयर (?:बुकिंग )?कन्फर्म कीजिए)$/iu,
@@ -22,6 +23,7 @@ const confirmation = {
   summary: /^(?:save the call topic|call ka topic save kijiye|कॉल का विषय सेव कीजिए)$/iu,
 };
 const messageSuffix = /(?: and (?:message me|send (?:me )?(?:the )?(?:payment )?link on whatsapp)| aur (?:mujhe )?whatsapp (?:par|pe) (?:(?:payment )?link )?(?:bhejo|bhejiye|bhej do|bhej dijiye)| और (?:मुझे )?व्हाट्सऐप (?:पर|पे) (?:(?:पेमेंट )?लिंक )?(?:भेजो|भेजिए|भेज दीजिए|भेज दो))$/iu;
+const endCallPhrase = /^(?:goodbye|bye(?: bye)?|(?:please )?(?:end (?:the |this )?call|hang up)(?: please)?|(?:ab )?call (?:end|cut|band|kaat) (?:karo|kar do|kijiye|kar dijiye|dijiye)|(?:अब )?कॉल (?:बंद|कट|खत्म|ख़त्म|एंड|काट) (?:करो|कर दो|कीजिए|कर दीजिए|दीजिए)|अलविदा|बाय(?: बाय)?)$/iu;
 const confirmationPrompt = {
   repair: "Confirm the repair", order: "Confirm the order", callback: "Please call me back",
   summary: "Save the call topic",
@@ -30,12 +32,14 @@ const confirmationPrompt = {
 function createConfirmation() {
   let pending;
   let grant;
+  let endGrant;
   let activeItem;
   let beganAt = 0;
   let speechSequence = 0;
   function clear() {
     pending = undefined;
     grant = undefined;
+    endGrant = undefined;
   }
   return {
     clear,
@@ -48,25 +52,29 @@ function createConfirmation() {
       beganAt = at;
       activeItem = itemId;
       grant = undefined;
+      endGrant = undefined;
     },
     transcript({ isFinal, transcript, itemId }) {
       if (!isFinal || !itemId || itemId !== activeItem) return;
       activeItem = undefined;
-      if (!pending || beganAt <= pending.issuedAt || typeof transcript !== "string") return;
+      if (typeof transcript !== "string") return;
       const words = transcript.toLowerCase().normalize("NFKC").replace(/[,.!?।]/gu, "")
         .replace(/कन्फ़र्म|कंफ़र्म|कंफर्म|कनफर्म/gu, "कन्फर्म")
         .replace(/व्हाट्सएप|व्हाट्सएप्प|वॉट्सऐप|वॉट्सएप/gu, "व्हाट्सऐप")
         .trim().replace(/\s+/g, " ");
+      if (endCallPhrase.test(words)) endGrant = { expires: Date.now() + 15_000 };
+      if (!pending || beganAt <= pending.issuedAt) return;
       const message = messageSuffix.test(words);
       if (confirmation[pending.kind].test(words.replace(messageSuffix, ""))) {
         grant = { kind: pending.kind, message, expires: Date.now() + 15_000 };
       }
     },
     get(kind) {
+      if (kind === "end") return endGrant?.expires >= Date.now() ? endGrant : null;
       return grant?.kind === kind && grant.expires >= Date.now() ? grant : null;
     },
     async waitFor(kind) {
-      if (!grant && pending?.kind === kind && activeItem && beganAt > pending.issuedAt) {
+      if (!this.get(kind) && activeItem && (kind === "end" || (pending?.kind === kind && beganAt > pending.issuedAt))) {
         const awaiting = pending;
         const item = activeItem;
         const sequence = speechSequence;
@@ -93,8 +101,11 @@ const callerPhones = (phone) => {
 
 async function getConversation(account, phone) {
   const filter = { account: account._id, customerWaId: phone };
+  const state = await getCustomerState(account.phoneNumberId, phone);
   try {
-    return await Conversation.findOneAndUpdate(filter, { $setOnInsert: filter },
+    return await Conversation.findOneAndUpdate(filter, { $setOnInsert: { ...filter,
+      ...(state?.deletedThrough && { awaitingCustomerMessage: true, resetBeforeFirstInbound: true }),
+    } },
       { upsert: true, new: true, setDefaultsOnInsert: true, timestamps: false }).select("_id").lean();
   } catch (error) {
     if (error.code !== 11000) throw error;
@@ -199,7 +210,7 @@ function createVoiceTools({ call, account, consent, stopped = () => false, endCa
       }));
     }),
     review_repair: tool("Save the repair details collected so far or prepare the full review when every required field is present. Ask for any returned missing fields one at a time. Include the customer's approval before using their current WhatsApp number as the contact number.", z.strictObject({
-      fullName: text(120), customerEmail: z.union([z.email().max(254), z.literal("")]), phoneNumber: localPhone,
+      fullName: text(120), customerEmail: z.string().trim().max(254), phoneNumber: localPhone,
       useWhatsAppNumber: z.boolean(), device: text(100), brand: text(45), model: text(45), problem: text(750), ...location,
     }).partial(), async ({ useWhatsAppNumber, customerEmail, ...patch }) => {
       if (bookingResult) return bookingResult;
@@ -360,8 +371,12 @@ function createVoiceTools({ call, account, consent, stopped = () => false, endCa
       consent.clear();
       return { status: "topic_saved" };
     }),
-    ...(endCall && { end_call: tool("End the call after the customer's request is complete and they confirm they need nothing else, say goodbye, or ask to end the call. The system will play a brief farewell. Do not use while an order or booking is being reviewed or during a pause.", empty, async () => {
+    ...(endCall && { end_call: tool("End the call when the customer explicitly says goodbye or asks to hang up. The system verifies their latest utterance and plays a brief farewell. Silence and short acknowledgments do not authorize ending the call.", empty, async () => {
+      const keepListening = { status: "keep_listening", message: "Keep the call open. If the caller wants to hang up, they can say goodbye or explicitly ask to end the call." };
+      if (!await consent.waitFor("end")) return keepListening;
       if (!await callIsActive()) return unavailable;
+      if (!consent.get("end")) return keepListening;
+      consent.clear();
       return { status: endCall() ? "ending_call" : "already_ending" };
     }) }),
   };

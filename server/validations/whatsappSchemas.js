@@ -124,6 +124,7 @@ const conversationFlagsSchema = z.object({
   humanTakeover: booleanValue.optional(),
   aiEnabled: booleanValue.optional(),
 });
+const customerBlockSchema = z.object({ blocked: z.boolean() });
 
 module.exports = {
   whatsAppAccountSchema,
@@ -134,4 +135,5 @@ module.exports = {
   sendTextSchema,
   sendMediaSchema,
   conversationFlagsSchema,
+  customerBlockSchema,
 };

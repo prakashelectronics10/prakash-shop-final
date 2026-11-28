@@ -27,7 +27,8 @@ const {
   publishWelcomeMessageSequence,
 } = require("../services/whatsappCloudApiService");
 const { collectPublicIdsFromSources, deleteImagesStrict, uploadBuffer } = require("../services/cloudinaryService");
-const { addClient } = require("../services/whatsappRealtimeService");
+const { addClient, publishConversationUpsert, publishWhatsAppEvent } = require("../services/whatsappRealtimeService");
+const { manageCustomer } = require("../services/whatsappCustomerService");
 const env = require("../config/env");
 const multer = require("multer");
 
@@ -370,8 +371,8 @@ exports.listWhatsAppConversations = catchAsync(async (req, res) => {
   if (!accountId || !mongoose.Types.ObjectId.isValid(accountId)) {
     throw new AppError("Valid accountId is required", 400);
   }
-  const search = String(req.query.search || "").trim();
-  const filter = { account: accountId };
+  const search = String(req.query.search || "").trim().slice(0, 100);
+  const filter = { account: accountId, awaitingCustomerMessage: { $ne: true } };
   if (search) {
     filter.$or = [
       { customerName: new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i") },
@@ -380,32 +381,34 @@ exports.listWhatsAppConversations = catchAsync(async (req, res) => {
     ];
   }
   const conversations = await WhatsAppConversation.find(filter)
-    .sort({ lastMessageAt: -1 })
+    .sort({ lastMessageAt: -1, _id: -1 })
     .limit(100);
   res.json({ success: true, data: conversations.map(serializeConversation) });
 });
 
 exports.getWhatsAppConversationMessages = catchAsync(async (req, res) => {
+  if (!mongoose.isObjectIdOrHexString(req.params.id)) throw new AppError("Invalid conversation ID", 400);
   const conversation = await WhatsAppConversation.findById(req.params.id);
-  if (!conversation) throw new AppError("Conversation not found", 404);
+  if (!conversation || conversation.awaitingCustomerMessage) throw new AppError("Conversation not found", 404);
 
-  await markConversationRead(conversation._id);
   const messages = await WhatsAppMessage.find({ conversation: conversation._id })
-    .sort({ createdAt: 1 })
+    .sort({ createdAt: -1, _id: -1 })
     .limit(300);
+  const read = await markConversationRead(conversation._id);
 
   res.json({
     success: true,
     data: {
-      conversation: serializeConversation(conversation),
-      messages: messages.map(serializeMessage),
+      conversation: serializeConversation(read || conversation),
+      messages: messages.reverse().map(serializeMessage),
     },
   });
 });
 
 exports.updateWhatsAppConversationFlags = catchAsync(async (req, res) => {
   const conversation = await WhatsAppConversation.findById(req.params.id);
-  if (!conversation) throw new AppError("Conversation not found", 404);
+  if (!conversation || conversation.awaitingCustomerMessage) throw new AppError("Conversation not found", 404);
+  if (conversation.blockedAt) throw new AppError("Unblock this customer first", 403);
 
   if (typeof req.body.humanTakeover === "boolean") {
     conversation.humanTakeover = req.body.humanTakeover;
@@ -416,12 +419,29 @@ exports.updateWhatsAppConversationFlags = catchAsync(async (req, res) => {
     if (req.body.aiEnabled) conversation.humanTakeover = false;
   }
   await conversation.save();
-  res.json({ success: true, data: serializeConversation(conversation) });
+  const data = serializeConversation(conversation);
+  publishConversationUpsert(data);
+  res.json({ success: true, data });
+});
+
+exports.updateWhatsAppCustomerBlock = catchAsync(async (req, res) => {
+  const conversation = await manageCustomer(req.params.id, req.body.blocked ? "block" : "unblock");
+  const data = serializeConversation(conversation);
+  publishConversationUpsert(data);
+  res.json({ success: true, data });
+});
+
+exports.deleteWhatsAppCustomer = catchAsync(async (req, res) => {
+  const conversation = await manageCustomer(req.params.id, "delete");
+  const data = { conversationId: String(conversation._id), accountId: String(conversation.account) };
+  publishWhatsAppEvent("whatsapp:customer-deleted", data);
+  res.json({ success: true, data });
 });
 
 async function loadConversationWithAccount(conversationId) {
   const conversation = await WhatsAppConversation.findById(conversationId);
-  if (!conversation) throw new AppError("Conversation not found", 404);
+  if (!conversation || conversation.awaitingCustomerMessage) throw new AppError("Conversation not found", 404);
+  if (conversation.blockedAt) throw new AppError("This customer is blocked", 403);
   const account = await WhatsAppAccount.findById(conversation.account);
   if (!account || !account.isActive) throw new AppError("WhatsApp account unavailable", 404);
   return { conversation, account };

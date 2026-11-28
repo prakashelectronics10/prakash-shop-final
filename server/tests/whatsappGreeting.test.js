@@ -95,6 +95,14 @@ test("order welcome is sent before confirmation and only once per customer", asy
   returning = true;
   assert.equal((await sendGreetingForAccount({ ...options, customerWaId: "919876543212" })).reason, "returning_customer");
   assert.equal(sent.length, 0);
+
+  const reset = { ...options, customerWaId: customerWaId, conversationId: "new-conversation", resetBeforeFirstInbound: true };
+  claimed.delete(customerWaId); // Admin deletion resets the previous greeting claim.
+  assert.equal((await sendGreetingForAccount(reset)).reason, "awaiting_first_message");
+  t.mock.method(Message, "findOne", () => ({ sort: () => ({ select: () => ({ lean: async () => ({ waMessageId: "after-delete" }) }) }) }));
+  assert.equal((await sendGreetingForAccount({ ...reset, firstMessageId: "after-delete" })).sent, true);
+  assert.equal((await sendGreetingForAccount({ ...reset, firstMessageId: "later-message" })).reason, "returning_customer");
+  assert.equal(sent.length, 1);
 });
 
 test("an ad welcome uses Meta's WABA multipart sequence endpoint", async (t) => {

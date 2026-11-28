@@ -1,21 +1,17 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import {
   Bot,
-  FileText,
-  Image as ImageIcon,
   LoaderCircle,
-  MessageSquare,
-  Paperclip,
   Pencil,
   Plus,
-  Send,
   Trash2,
   UploadCloud,
   X,
 } from "lucide-react";
 import AdminToggle from "./AdminToggle";
 import WhatsAppVoiceCalls from "./WhatsAppVoiceCalls";
+import WhatsAppCustomers from "./WhatsAppCustomers";
 import "./ManageWhatsAppModule.css";
 
 const TABS = [
@@ -25,8 +21,6 @@ const TABS = [
   { id: "customers", label: "Customers" },
   { id: "voice", label: "Voice calls" },
 ];
-
-const API_BASE = process.env.REACT_APP_API_URL || process.env.VITE_API_URL || "/api";
 
 const BUTTON_TYPES = [
   { value: "url", label: "Go Now (URL)" },
@@ -103,46 +97,6 @@ function Field({ label, hint, children }) {
   );
 }
 
-function formatTime(value) {
-  if (!value) return "";
-  return new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
-}
-
-function escapeHtml(value) {
-  return String(value || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-/** Render WhatsApp-style *bold* _italic_ ~strike~ ```code``` in admin bubbles */
-function WhatsAppText({ text }) {
-  let html = escapeHtml(text);
-  html = html.replace(/```([\s\S]*?)```/g, "<code class=\"wa-mono\">$1</code>");
-  html = html.replace(/\*([^*\n]+)\*/g, "<strong>$1</strong>");
-  html = html.replace(/_([^_\n]+)_/g, "<em>$1</em>");
-  html = html.replace(/~([^~\n]+)~/g, "<s>$1</s>");
-  html = html.replace(/\n/g, "<br />");
-  return <p className="wa-rich-text" dangerouslySetInnerHTML={{ __html: html }} />;
-}
-
-function ReactionBar({ reactions = [] }) {
-  if (!reactions.length) return null;
-  const grouped = reactions.reduce((acc, item) => {
-    const key = item.emoji || "👍";
-    acc[key] = (acc[key] || 0) + 1;
-    return acc;
-  }, {});
-  return (
-    <div className="wa-reactions" aria-label="Reactions">
-      {Object.entries(grouped).map(([emoji, count]) => (
-        <span key={emoji}>{emoji}{count > 1 ? ` ${count}` : ""}</span>
-      ))}
-    </div>
-  );
-}
-
 export default function ManageWhatsAppModule({ apiFetch }) {
   const [tab, setTab] = useState("accounts");
   const [loading, setLoading] = useState(true);
@@ -158,16 +112,6 @@ export default function ManageWhatsAppModule({ apiFetch }) {
   const [greetingLoading, setGreetingLoading] = useState(false);
   const [aiSettings, setAISettings] = useState(emptyAI());
   const [aiLoading, setAILoading] = useState(false);
-
-  const [conversations, setConversations] = useState([]);
-  const [conversationSearch, setConversationSearch] = useState("");
-  const [conversationsLoading, setConversationsLoading] = useState(false);
-  const [activeConversation, setActiveConversation] = useState(null);
-  const [messages, setMessages] = useState([]);
-  const [messagesLoading, setMessagesLoading] = useState(false);
-  const [composer, setComposer] = useState("");
-  const chatEndRef = useRef(null);
-  const activeConversationRef = useRef(null);
 
   const loadAccounts = useCallback(async () => {
     setLoading(true);
@@ -238,134 +182,11 @@ export default function ManageWhatsAppModule({ apiFetch }) {
     }
   }, [apiFetch]);
 
-  const loadConversations = useCallback(async (accountId, search = "") => {
-    if (!accountId) {
-      setConversations([]);
-      return;
-    }
-    setConversationsLoading(true);
-    try {
-      const query = new URLSearchParams({ accountId, search });
-      const response = await apiFetch(`/whatsapp/admin/conversations?${query.toString()}`);
-      setConversations(response.data || []);
-    } catch (error) {
-      toast.error(error.message || "Unable to load customers");
-    } finally {
-      setConversationsLoading(false);
-    }
-  }, [apiFetch]);
-
   useEffect(() => {
     if (!selectedAccountId) return;
     if (tab === "greeting") loadGreeting(selectedAccountId);
     if (tab === "ai") loadAI(selectedAccountId);
-    if (tab === "customers") loadConversations(selectedAccountId, conversationSearch);
-  }, [tab, selectedAccountId, loadGreeting, loadAI, loadConversations, conversationSearch]);
-
-  useEffect(() => {
-    activeConversationRef.current = activeConversation;
-  }, [activeConversation]);
-
-  // Live inbox via SSE (+ light polling backup)
-  useEffect(() => {
-    if (tab !== "customers" || !selectedAccountId) return undefined;
-
-    const params = new URLSearchParams({ accountId: selectedAccountId });
-    const source = new EventSource(`${API_BASE}/whatsapp/admin/events?${params.toString()}`, {
-      withCredentials: true,
-    });
-
-    const upsertConversationLocal = (conversation) => {
-      if (!conversation) return;
-      setConversations((current) => {
-        const id = conversation._id || conversation.id;
-        const without = current.filter((item) => String(item._id || item.id) !== String(id));
-        return [conversation, ...without].sort(
-          (a, b) => new Date(b.lastMessageAt || 0) - new Date(a.lastMessageAt || 0),
-        );
-      });
-    };
-
-    const onConversation = (event) => {
-      try {
-        upsertConversationLocal(JSON.parse(event.data).payload?.conversation);
-      } catch (_error) {
-        // ignore malformed events
-      }
-    };
-
-    const onMessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        const message = data.payload?.message;
-        upsertConversationLocal(data.payload?.conversation);
-        if (!message) return;
-        const active = activeConversationRef.current;
-        if (!active) return;
-        const activeId = String(active._id || active.id);
-        if (String(message.conversationId) !== activeId) return;
-        setMessages((current) => {
-          const id = message._id || message.id;
-          const exists = current.some((item) => (
-            String(item._id || item.id) === String(id)
-            || (message.waMessageId && item.waMessageId === message.waMessageId)
-          ));
-          if (exists) {
-            return current.map((item) => (
-              String(item._id || item.id) === String(id)
-              || (message.waMessageId && item.waMessageId === message.waMessageId)
-                ? { ...item, ...message }
-                : item
-            ));
-          }
-          return [...current, message];
-        });
-      } catch (_error) {
-        // ignore
-      }
-    };
-
-    const onReaction = (event) => {
-      try {
-        const message = JSON.parse(event.data).payload?.message;
-        if (!message) return;
-        setMessages((current) => current.map((item) => (
-          String(item._id || item.id) === String(message._id || message.id)
-          || (message.waMessageId && item.waMessageId === message.waMessageId)
-            ? { ...item, reactions: message.reactions || [] }
-            : item
-        )));
-      } catch (_error) {
-        // ignore
-      }
-    };
-
-    source.addEventListener("whatsapp:conversation", onConversation);
-    source.addEventListener("whatsapp:message", onMessage);
-    source.addEventListener("whatsapp:reaction", onReaction);
-
-    const poll = window.setInterval(() => {
-      loadConversations(selectedAccountId, conversationSearch);
-      const active = activeConversationRef.current;
-      if (!active) return;
-      const id = active._id || active.id;
-      apiFetch(`/whatsapp/admin/conversations/${id}/messages`)
-        .then((response) => {
-          if (response.data?.messages) setMessages(response.data.messages);
-          if (response.data?.conversation) setActiveConversation(response.data.conversation);
-        })
-        .catch(() => {});
-    }, 5000);
-
-    return () => {
-      source.close();
-      window.clearInterval(poll);
-    };
-  }, [tab, selectedAccountId, conversationSearch, loadConversations, apiFetch]);
-
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, activeConversation]);
+  }, [tab, selectedAccountId, loadGreeting, loadAI]);
 
   const openCreateModal = () => {
     setEditingId(null);
@@ -508,106 +329,6 @@ export default function ManageWhatsAppModule({ apiFetch }) {
       toast.error(error.message || "Unable to save AI settings");
     } finally {
       setBusy(false);
-    }
-  };
-
-  const openConversation = async (conversation) => {
-    setActiveConversation(conversation);
-    setMessagesLoading(true);
-    try {
-      const response = await apiFetch(`/whatsapp/admin/conversations/${conversation._id || conversation.id}/messages`);
-      setActiveConversation(response.data?.conversation || conversation);
-      setMessages(response.data?.messages || []);
-      await loadConversations(selectedAccountId, conversationSearch);
-    } catch (error) {
-      toast.error(error.message || "Unable to open chat");
-    } finally {
-      setMessagesLoading(false);
-    }
-  };
-
-  const sendText = async (event) => {
-    event?.preventDefault?.();
-    if (!activeConversation || !composer.trim()) return;
-    setBusy(true);
-    try {
-      await apiFetch("/whatsapp/admin/conversations/send-text", {
-        method: "POST",
-        body: JSON.stringify({
-          conversationId: activeConversation._id || activeConversation.id,
-          text: composer.trim(),
-        }),
-      });
-      setComposer("");
-      await openConversation(activeConversation);
-    } catch (error) {
-      toast.error(error.message || "Send failed");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const sendImageFile = async (file) => {
-    if (!activeConversation || !file) return;
-    setBusy(true);
-    try {
-      const uploaded = await uploadImage(file);
-      await apiFetch("/whatsapp/admin/conversations/send-image", {
-        method: "POST",
-        body: JSON.stringify({
-          conversationId: activeConversation._id || activeConversation.id,
-          mediaUrl: uploaded.url,
-          mediaPublicId: uploaded.publicId,
-        }),
-      });
-      await openConversation(activeConversation);
-    } catch (error) {
-      toast.error(error.message || "Image send failed");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const sendDocumentFile = async (file) => {
-    if (!activeConversation || !file) return;
-    setBusy(true);
-    try {
-      const formData = new FormData();
-      formData.append("document", file);
-      const uploaded = await apiFetch("/whatsapp/admin/conversations/upload-document", {
-        method: "POST",
-        body: formData,
-        timeout: 60000,
-      });
-      await apiFetch("/whatsapp/admin/conversations/send-document", {
-        method: "POST",
-        body: JSON.stringify({
-          conversationId: activeConversation._id || activeConversation.id,
-          mediaUrl: uploaded.data?.url,
-          filename: uploaded.data?.filename || file.name,
-          mediaPublicId: uploaded.data?.publicId || "",
-          mediaMimeType: uploaded.data?.mimeType || file.type,
-        }),
-      });
-      await openConversation(activeConversation);
-    } catch (error) {
-      toast.error(error.message || "Document send failed");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const toggleTakeover = async (humanTakeover) => {
-    if (!activeConversation) return;
-    try {
-      const response = await apiFetch(`/whatsapp/admin/conversations/${activeConversation._id || activeConversation.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ humanTakeover, aiEnabled: !humanTakeover }),
-      });
-      setActiveConversation(response.data);
-      toast.success(humanTakeover ? "AI paused — you are replying" : "AI replies enabled");
-    } catch (error) {
-      toast.error(error.message || "Unable to update chat mode");
     }
   };
 
@@ -1065,156 +786,8 @@ export default function ManageWhatsAppModule({ apiFetch }) {
       )}
 
       {tab === "customers" && (
-        <section className="wa-panel glass-panel wa-inbox">
-          <div className="wa-panel-toolbar">
-            <h2><MessageSquare size={18} style={{ marginRight: 8 }} />Customers</h2>
-          </div>
-          {accounts.length === 0 ? (
-            <div className="wa-empty">Add an account first.</div>
-          ) : (
-            <>
-              <div className="wa-inbox-toolbar">
-                {AccountSelect}
-                <input
-                  className="wa-search"
-                  value={conversationSearch}
-                  placeholder="Search name or number…"
-                  onChange={(event) => setConversationSearch(event.target.value)}
-                />
-              </div>
-              <div className="wa-inbox-list">
-                {conversationsLoading ? (
-                  <div className="wa-empty"><LoaderCircle size={22} /> Loading chats…</div>
-                ) : conversations.length === 0 ? (
-                  <div className="wa-empty">No customers yet for this account.</div>
-                ) : (
-                  conversations.map((conversation) => {
-                    const id = conversation._id || conversation.id;
-                    return (
-                      <button
-                        key={id}
-                        type="button"
-                        className="wa-chat-row"
-                        onClick={() => openConversation(conversation)}
-                      >
-                        <div className="wa-chat-avatar">
-                          {(conversation.customerName || conversation.customerWaId || "?").slice(0, 1).toUpperCase()}
-                        </div>
-                        <div className="wa-chat-row-body">
-                          <div className="wa-chat-row-top">
-                            <strong>{conversation.customerName || conversation.customerWaId}</strong>
-                            <span>{formatTime(conversation.lastMessageAt)}</span>
-                          </div>
-                          <div className="wa-chat-row-preview">
-                            <span>{conversation.lastMessagePreview || "—"}</span>
-                            {conversation.unreadCount > 0 ? (
-                              <em>{conversation.unreadCount}</em>
-                            ) : null}
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  })
-                )}
-              </div>
-            </>
-          )}
-        </section>
+        <WhatsAppCustomers key={selectedAccountId} accountId={selectedAccountId} accountSelect={AccountSelect} apiFetch={apiFetch} uploadImage={uploadImage} />
       )}
-
-      {activeConversation ? (
-        <div className="wa-drawer-layer" role="dialog" aria-modal="true">
-          <button type="button" className="wa-drawer-backdrop" aria-label="Close" onClick={() => setActiveConversation(null)} />
-          <aside className="wa-chat-drawer">
-            <header>
-              <div>
-                <h2>{activeConversation.customerName || activeConversation.customerWaId}</h2>
-                <span>{activeConversation.customerWaId}</span>
-              </div>
-              <div className="wa-chat-header-actions">
-                <button
-                  type="button"
-                  className={activeConversation.humanTakeover ? "wa-primary" : "wa-secondary"}
-                  onClick={() => toggleTakeover(!activeConversation.humanTakeover)}
-                >
-                  {activeConversation.humanTakeover ? "AI paused" : "Take over"}
-                </button>
-                <button type="button" className="wa-icon-btn" aria-label="Close" onClick={() => setActiveConversation(null)}>
-                  <X size={18} />
-                </button>
-              </div>
-            </header>
-
-            <div className="wa-chat-thread">
-              {messagesLoading ? (
-                <div className="wa-empty"><LoaderCircle size={22} /> Loading messages…</div>
-              ) : (
-                messages.map((message) => {
-                  const outbound = message.direction === "outbound";
-                  return (
-                    <div key={message._id || message.id} className={`wa-bubble-row ${outbound ? "out" : "in"}`}>
-                      <div className={`wa-bubble ${outbound ? "out" : "in"}`}>
-                        {["image", "interactive"].includes(message.type) && message.mediaUrl ? (
-                          <a href={message.mediaUrl} target="_blank" rel="noreferrer">
-                            <img src={message.mediaUrl} alt="" />
-                          </a>
-                        ) : null}
-                        {message.type === "document" && message.mediaUrl ? (
-                          <a className="wa-doc-link" href={message.mediaUrl} target="_blank" rel="noreferrer">
-                            <FileText size={16} /> {message.mediaFilename || "Document"}
-                          </a>
-                        ) : null}
-                        {message.text ? <WhatsAppText text={message.text} /> : null}
-                        <ReactionBar reactions={message.reactions} />
-                        <small>
-                          {message.sender === "ai" ? "AI · " : message.sender === "admin" ? "You · " : ""}
-                          {formatTime(message.createdAt)}
-                        </small>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-              <div ref={chatEndRef} />
-            </div>
-
-            <form className="wa-composer" onSubmit={sendText}>
-              <label className="wa-composer-icon" title="Image">
-                <ImageIcon size={18} />
-                <input
-                  type="file"
-                  accept="image/*"
-                  hidden
-                  onChange={(event) => {
-                    sendImageFile(event.target.files?.[0]);
-                    event.target.value = "";
-                  }}
-                />
-              </label>
-              <label className="wa-composer-icon" title="Document">
-                <Paperclip size={18} />
-                <input
-                  type="file"
-                  accept=".pdf,.doc,.docx,.txt,application/pdf"
-                  hidden
-                  onChange={(event) => {
-                    sendDocumentFile(event.target.files?.[0]);
-                    event.target.value = "";
-                  }}
-                />
-              </label>
-              <input
-                value={composer}
-                placeholder="Type a message"
-                onChange={(event) => setComposer(event.target.value)}
-              />
-              <button type="submit" className="wa-send" disabled={busy || !composer.trim()} aria-label="Send">
-                <Send size={18} />
-              </button>
-            </form>
-          </aside>
-        </div>
-      ) : null}
 
       {modalOpen ? (
         <div className="wa-modal-layer" role="dialog" aria-modal="true">

@@ -16,6 +16,9 @@ const whatsAppConversationSchema = new mongoose.Schema(
     unreadCount: { type: Number, default: 0, min: 0 },
     aiEnabled: { type: Boolean, default: true },
     humanTakeover: { type: Boolean, default: false },
+    blockedAt: Date,
+    awaitingCustomerMessage: Boolean,
+    resetBeforeFirstInbound: Boolean,
     conversationMemory: { type: mongoose.Schema.Types.Mixed, default: {} },
     greetingSentAt: { type: Date, default: null },
     voicePermission: {
